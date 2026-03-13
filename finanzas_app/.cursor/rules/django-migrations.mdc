@@ -1,0 +1,10 @@
+---
+description: Reglas para migraciones de Django
+alwaysApply: true
+---
+
+# Regla estricta de Migraciones
+
+No ejecutar nunca `makemigrations` ni `migrate` automáticamente desde el asistente.
+El usuario es el único responsable de ejecutar estos comandos manualmente en su terminal.
+Tras crear o modificar modelos en el código, debes indicar explícitamente al usuario: *"Por favor, ejecuta `python manage.py makemigrations` y `python manage.py migrate` en tu terminal para aplicar estos cambios."*

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+*.json
+!package.json
+db.sqlite3
+*.log
+firebase-adminsdk*.json
