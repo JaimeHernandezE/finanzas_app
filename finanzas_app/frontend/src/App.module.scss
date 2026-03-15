@@ -1,0 +1,62 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-6;
+  background-color: $color-bg;
+}
+
+.card {
+  width: 100%;
+  max-width: 480px;
+  background-color: $color-bg-white;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-lg;
+  padding: $space-8;
+}
+
+.header {
+  margin-bottom: $space-6;
+}
+
+.title {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-bottom: $space-1;
+}
+
+.subtitle {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $space-3;
+}
+
+.actions {
+  display: flex;
+  gap: $space-3;
+  margin-top: $space-2;
+}
+
+.success {
+  font-size: $font-size-base;
+  font-weight: $font-weight-medium;
+  color: $color-success;
+  margin-bottom: $space-4;
+  padding: $space-3;
+  background-color: $color-success-light;
+  border-radius: $radius-base;
+  text-align: center;
+}
