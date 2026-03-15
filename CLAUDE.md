@@ -28,11 +28,27 @@ finanzas_app/
 │   │   ├── settings.py         # All settings — reads from environment variables
 │   │   └── urls.py             # Root URL configuration
 │   ├── applications/           # Django apps (one per domain area)
-│   │   └── usuarios/           # User authentication app (only one implemented)
-│   │       ├── models.py       # Usuario extends AbstractUser
-│   │       ├── views.py        # Firebase login → JWT response
-│   │       ├── urls.py         # /api/usuarios/auth/firebase/
+│   │   ├── usuarios/           # Auth & multitenancy
+│   │   │   ├── models.py       # Familia, Usuario (AbstractUser + firebase_uid + rol)
+│   │   │   ├── views.py        # Firebase login → JWT response
+│   │   │   ├── urls.py         # /api/usuarios/auth/firebase/
+│   │   │   ├── admin.py
+│   │   │   └── migrations/
+│   │   ├── finanzas/           # Core transactional & financial engine
+│   │   │   ├── models.py       # Categoria, MetodoPago, Tarjeta, CuentaPersonal,
+│   │   │   │                   # Movimiento, Cuota, Presupuesto, IngresoComun
+│   │   │   ├── admin.py
+│   │   │   ├── urls.py         # /api/finanzas/
+│   │   │   └── migrations/
+│   │   ├── inversiones/        # Investment tracking
+│   │   │   ├── models.py       # Fondo, Aporte, RegistroValor
+│   │   │   ├── admin.py
+│   │   │   ├── urls.py         # /api/inversiones/
+│   │   │   └── migrations/
+│   │   └── viajes/             # Trip budgeting
+│   │       ├── models.py       # Viaje, PresupuestoViaje
 │   │       ├── admin.py
+│   │       ├── urls.py         # /api/viajes/
 │   │       └── migrations/
 │   ├── requirements.txt
 │   ├── Dockerfile
@@ -64,11 +80,16 @@ applications/<app_name>/
 └── migrations/
 ```
 
-**Planned apps** (not yet created):
-- `finanzas` — Categorías, MetodoPago, Movimiento, Cuota
-- `liquidaciones` — IngresoMensual
-- `inversiones` — Fondo, Aporte, RegistroValor
-- `viajes` — Viaje, PresupuestoViaje
+**Active apps and their models:**
+
+| App | Models | URL prefix |
+|---|---|---|
+| `usuarios` | `Familia`, `Usuario` | `/api/usuarios/` |
+| `finanzas` | `Categoria`, `MetodoPago`, `Tarjeta`, `CuentaPersonal`, `Movimiento`, `Cuota`, `Presupuesto`, `IngresoComun` | `/api/finanzas/` |
+| `inversiones` | `Fondo`, `Aporte`, `RegistroValor` | `/api/inversiones/` |
+| `viajes` | `Viaje`, `PresupuestoViaje` | `/api/viajes/` |
+
+**Cross-app references:** Use `'app_name.ModelName'` string notation for ForeignKeys that cross app boundaries (e.g., `'usuarios.Familia'`, `'viajes.Viaje'`, `'finanzas.Categoria'`). Use `settings.AUTH_USER_MODEL` instead of a direct string for User FKs.
 
 After creating a new app, register it in `INSTALLED_APPS` in `core/settings.py` and include its URLs in `core/urls.py`.
 

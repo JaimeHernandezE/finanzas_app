@@ -28,6 +28,9 @@ INSTALLED_APPS = [
 
     # Tus apps
     'applications.usuarios',
+    'applications.finanzas',
+    'applications.inversiones',
+    'applications.viajes',
 ]
 
 MIDDLEWARE = [
