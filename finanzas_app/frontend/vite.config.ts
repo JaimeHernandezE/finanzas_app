@@ -4,6 +4,13 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    host: '0.0.0.0',    // Escucha en todas las interfaces dentro del contenedor
+    port: 5173,
+    watch: {
+      usePolling: true,  // Necesario para detectar cambios en volúmenes Docker
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
