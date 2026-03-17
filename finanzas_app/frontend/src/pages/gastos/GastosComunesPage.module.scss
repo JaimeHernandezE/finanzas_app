@@ -1,0 +1,256 @@
+// =============================================================================
+// GastosComunesPage — estilos
+// Las clases de utilidad (botones, filtro, modal, etc.) se componen desde
+// CuentaPage.module.scss. Solo se definen aquí las clases específicas de
+// esta página o que difieren de CuentaPage.
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+// ── Utilidades compartidas (composes desde CuentaPage) ────────────────────────
+
+.btnPrimary    { composes: btnPrimary    from './CuentaPage.module.scss'; }
+.btnGhost      { composes: btnGhost      from './CuentaPage.module.scss'; }
+.btnDanger     { composes: btnDanger     from './CuentaPage.module.scss'; }
+
+.segmented     { composes: segmented     from './CuentaPage.module.scss'; }
+.segBtn        { composes: segBtn        from './CuentaPage.module.scss'; }
+.segBtnActive  { composes: segBtnActive  from './CuentaPage.module.scss'; }
+
+.filterBadge        { composes: filterBadge        from './CuentaPage.module.scss'; }
+.filterOverlay      { composes: filterOverlay      from './CuentaPage.module.scss'; }
+.filterOverlayVisible { composes: filterOverlayVisible from './CuentaPage.module.scss'; }
+.filterPanel        { composes: filterPanel        from './CuentaPage.module.scss'; }
+.filterPanelOpen    { composes: filterPanelOpen    from './CuentaPage.module.scss'; }
+.filterHeader       { composes: filterHeader       from './CuentaPage.module.scss'; }
+.filterClose        { composes: filterClose        from './CuentaPage.module.scss'; }
+.filterTitulo       { composes: filterTitulo       from './CuentaPage.module.scss'; }
+.filterBody         { composes: filterBody         from './CuentaPage.module.scss'; }
+.filterSection      { composes: filterSection      from './CuentaPage.module.scss'; }
+.filterSectionLabel { composes: filterSectionLabel from './CuentaPage.module.scss'; }
+.checkItem          { composes: checkItem          from './CuentaPage.module.scss'; }
+.filterFooter       { composes: filterFooter       from './CuentaPage.module.scss'; }
+
+.modalOverlay  { composes: modalOverlay  from './CuentaPage.module.scss'; }
+.modalCard     { composes: modalCard     from './CuentaPage.module.scss'; }
+.modalTitulo   { composes: modalTitulo   from './CuentaPage.module.scss'; }
+.modalTexto    { composes: modalTexto    from './CuentaPage.module.scss'; }
+.modalBtns     { composes: modalBtns     from './CuentaPage.module.scss'; }
+
+.emptyState    { composes: emptyState    from './CuentaPage.module.scss'; }
+.emptyIcon     { composes: emptyIcon     from './CuentaPage.module.scss'; }
+.emptyTitulo   { composes: emptyTitulo   from './CuentaPage.module.scss'; }
+.emptySubtitulo { composes: emptySubtitulo from './CuentaPage.module.scss'; }
+
+.actionBtn      { composes: actionBtn      from './CuentaPage.module.scss'; }
+.actionBtnDanger { composes: actionBtnDanger from './CuentaPage.module.scss'; }
+
+.grupoLabel    { composes: grupoLabel    from './CuentaPage.module.scss'; }
+.grupoSep      { composes: grupoSep      from './CuentaPage.module.scss'; }
+.grupoSubtotal { composes: grupoSubtotal from './CuentaPage.module.scss'; }
+
+.movCat        { composes: movCat        from './CuentaPage.module.scss'; }
+.movBadge      { composes: movBadge      from './CuentaPage.module.scss'; }
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+// Ocultar en móvil (el botón de la barra toma su lugar)
+.btnNuevoHeader {
+  @media (max-width: 640px) {
+    display: none;
+  }
+}
+
+// Solo visible en móvil
+.btnNuevoBar {
+  @media (min-width: 641px) {
+    display: none;
+  }
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Barra de filtros ──────────────────────────────────────────────────────────
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  @include input-base;
+  flex: 1;
+  min-width: 160px;
+  height: 34px;
+  padding: 0 $space-3;
+}
+
+// ── Listado ───────────────────────────────────────────────────────────────────
+
+.lista {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+}
+
+// ── Grupo por fecha ───────────────────────────────────────────────────────────
+
+.grupo {
+  // agrupador sin estilos propios
+}
+
+.grupoHeader {
+  position: sticky;
+  top: 0;
+  background: $color-bg-page;
+  padding: $space-2 $space-4;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  border-bottom: 1px solid #e8e8e4;
+}
+
+// ── Fila de movimiento ────────────────────────────────────────────────────────
+// Diferencia con CuentaPage: autor viene primero (columna fija 52px)
+
+.movRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+
+    .movActions {
+      opacity: 1;
+    }
+  }
+}
+
+// Autor — columna fija izquierda, primer nombre
+.movAutor {
+  width: 52px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  @include truncate;
+}
+
+.movInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.movDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.movMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+// ── Acciones (solo propias) ───────────────────────────────────────────────────
+
+.movActions {
+  display: flex;
+  gap: $space-1;
+  opacity: 0;
+  transition: opacity $transition-fast;
+  flex-shrink: 0;
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+}
