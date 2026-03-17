@@ -26,6 +26,10 @@ class Viaje(models.Model):
         blank=True,
         help_text="Color hexadecimal para la paleta temática del viaje. Ej: '#2E86AB'."
     )
+    archivado    = models.BooleanField(
+        default=False,
+        help_text="Si es True, el viaje se oculta del listado principal pero no se elimina."
+    )
 
     def __str__(self):
         return self.nombre
