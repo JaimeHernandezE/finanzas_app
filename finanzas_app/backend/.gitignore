@@ -9,3 +9,4 @@ venv/
 db.sqlite3
 *.log
 firebase-adminsdk*.json
+firebase-service-account.json

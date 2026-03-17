@@ -99,3 +99,7 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }
+
+# Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
+from firebase_admin_init import init_firebase
+init_firebase()
