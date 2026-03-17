@@ -10,6 +10,16 @@ export default defineConfig({
     watch: {
       usePolling: true,  // Necesario para detectar cambios en volúmenes Docker
     },
+    // Necesario para que el popup de Firebase (signInWithPopup) pueda usar window.closed
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+  },
+  // Mismas cabeceras en preview (build de producción local)
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
   },
   resolve: {
     alias: {
@@ -22,10 +32,11 @@ export default defineConfig({
         // Inyecta variables y mixins en todos los archivos .module.scss
         // sin necesidad de importarlos manualmente en cada uno.
         additionalData: (content: string, filepath: string) => {
-          if (filepath.includes('/src/styles/')) return content
+          if (filepath.includes('src/styles')) return content
           return `@use "variables" as *;\n@use "mixins" as *;\n${content}`
         },
-        loadPaths: [path.resolve(__dirname, 'src/styles')],
+        // Nota: Vite/Sass usa `includePaths` (no `loadPaths`) para resolver imports sin ruta.
+        includePaths: [path.resolve(__dirname, 'src/styles')],
       },
     },
   },

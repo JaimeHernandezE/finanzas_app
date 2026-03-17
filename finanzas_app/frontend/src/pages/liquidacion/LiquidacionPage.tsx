@@ -154,8 +154,7 @@ function PropBarRow({
         <div
           className={styles.barFill}
           style={
-            { '--target-width': `${ancho}%`, backgroundColor: color, animationDelay: `${delay}ms` }
-            as React.CSSProperties
+            { '--target-width': `${ancho}%`, backgroundColor: color, animationDelay: `${delay}ms` } as React.CSSProperties
           }
         />
       </div>
@@ -274,6 +273,7 @@ export default function LiquidacionPage() {
             valor={g.montoRegistrado}
             max={totalGastos}
             color={COLORES_MIEMBRO[i % COLORES_MIEMBRO.length]}
+            metaDerecha={`(registrados por ${g.nombre})`}
             delay={i * 60}
           />
         ))}

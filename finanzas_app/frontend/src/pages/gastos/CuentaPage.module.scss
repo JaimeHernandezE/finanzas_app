@@ -1,7 +1,10 @@
-// =============================================================================
-// CuentaPage — estilos
-// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
-// =============================================================================
+/* =============================================================================
+   CuentaPage — estilos
+   Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+   ============================================================================= */
+
+@use "variables" as *;
+@use "mixins" as *;
 
 @keyframes fadeIn {
   from { opacity: 0; transform: scale(0.97); }

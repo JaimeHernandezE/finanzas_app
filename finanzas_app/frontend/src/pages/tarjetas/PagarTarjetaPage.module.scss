@@ -1,70 +1,62 @@
-// =============================================================================
-// PagarTarjetaPage — estilos
-// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
-// =============================================================================
+/* =============================================================================
+   PagarTarjetaPage — estilos
+   Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+   ============================================================================= */
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
-// ── Página ────────────────────────────────────────────────────────────────────
+/* ── Página ──────────────────────────────────────────────────────────────────── */
 
 .page {
   padding: $space-6 $space-8;
-  max-width: 680px;
-  display: flex;
-  flex-direction: column;
-  gap: $space-4;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
 }
 
-// ── Encabezado ────────────────────────────────────────────────────────────────
+/* ── Encabezado ──────────────────────────────────────────────────────────────── */
 
 .header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: $space-4;
+  margin-bottom: $space-5;
   flex-wrap: wrap;
 }
 
 .headerLeft {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: $space-3;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  gap: $space-4;
+  flex-wrap: wrap;
 }
 
 .titulo {
   font-size: 22px;
   font-weight: $font-weight-bold;
   color: $color-text;
-  line-height: 1;
+  line-height: 1.1;
 }
 
 .tarjetaSelect {
-  font-family: $font-family;
-  font-size: $font-size-sm;
-  font-weight: $font-weight-semibold;
-  color: $color-text;
-  background: $color-bg-white;
-  border: 1px solid $color-border;
-  border-radius: $radius-base;
-  padding: $space-1 $space-3;
+  @include input-base;
+  min-width: 180px;
+  height: $input-height-base;
+  padding: 0 $space-3;
   cursor: pointer;
-  transition: border-color $transition-fast;
-
-  &:hover {
-    border-color: $color-border-strong;
-  }
-
-  &:focus {
-    outline: none;
-    border-color: $color-border-focus;
-    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
-  }
 }
 
-// ── Navegador de mes ──────────────────────────────────────────────────────────
+/* ── Navegador de mes ────────────────────────────────────────────────────────── */
 
 .mesNav {
   display: flex;
@@ -101,11 +93,11 @@
   font-size: $font-size-sm;
   font-weight: $font-weight-semibold;
   color: $color-text;
-  min-width: 120px;
+  min-width: 130px;
   text-align: center;
 }
 
-// ── Botones comunes ───────────────────────────────────────────────────────────
+/* ── Botones ─────────────────────────────────────────────────────────────────── */
 
 .btnPrimary {
   display: inline-flex;
@@ -122,17 +114,13 @@
   white-space: nowrap;
   transition: background $transition-fast;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: #333;
   }
 
   &:disabled {
-    opacity: 0.4;
+    opacity: 0.5;
     cursor: not-allowed;
-
-    &:hover {
-      background: #0f0f0f;
-    }
   }
 }
 
@@ -155,31 +143,26 @@
   }
 }
 
-.btnSmall {
-  font-size: $font-size-xs;
-  padding: $space-1 $space-2;
-}
-
-// ── Barra de filtros ──────────────────────────────────────────────────────────
+/* ── Barra de filtros ────────────────────────────────────────────────────────── */
 
 .filterBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: $space-3;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
 }
-
-// ── Segmented control (4 opciones) ───────────────────────────────────────────
 
 .segmented {
   display: flex;
   background: $color-bg-subtle;
   border-radius: $radius-base;
   padding: 2px;
+  flex-shrink: 0;
 }
 
 .segBtn {
-  padding: $space-1 $space-2;
+  padding: $space-1 $space-3;
   border: none;
   background: none;
   border-radius: calc($radius-base - 2px);
@@ -201,48 +184,51 @@
   box-shadow: $shadow-xs;
 }
 
-// ── Sección card ──────────────────────────────────────────────────────────────
-
-.seccion {
-  background: $color-bg-white;
-  border-radius: $radius-xl;
-  padding: $space-4 $space-5;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+.filterBarSpacer {
+  flex: 1;
 }
 
-.seccionHeaderRow {
+/* ── Cabeceras de sección ────────────────────────────────────────────────────── */
+
+.sectionHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: $space-3;
+  padding: 16px 0 8px;
+  gap: $space-3;
 }
 
-.seccionTitulo {
+.sectionTitle {
   font-size: 11px;
-  font-weight: $font-weight-semibold;
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
+  font-weight: $font-weight-bold;
   color: $color-text-muted;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
 }
 
-// ── Ítem de cuota ─────────────────────────────────────────────────────────────
+.sectionHeaderAction {
+  flex-shrink: 0;
+}
 
-.cuotaItem {
+/* ── Listado de cuotas ───────────────────────────────────────────────────────── */
+
+.listaCuotas {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+  margin-bottom: $space-6;
+}
+
+.cuotaRow {
   display: flex;
   align-items: center;
   gap: $space-3;
-  padding: $space-3 0;
+  padding: $space-3 $space-4;
   border-top: 1px solid #e8e8e4;
   transition: background $transition-fast;
-  margin: 0 (-$space-5);
-  padding-left: $space-5;
-  padding-right: $space-5;
 
-  &:first-of-type {
+  &:first-child {
     border-top: none;
-    margin-top: $space-2;
   }
 
   &:hover {
@@ -250,272 +236,157 @@
   }
 }
 
-.cuotaItemExcluida {
-  opacity: 0.6;
-}
-
-.cuotaCheck {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
+.cuotaCheckbox {
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #0f0f0f;
 
-  input[type='checkbox'] {
-    width: 16px;
-    height: 16px;
-    cursor: pointer;
-    accent-color: #0f0f0f;
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
+  &:disabled {
+    cursor: not-allowed;
   }
 }
 
-.cuotaInfo {
+.cuotaContent {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: $space-3;
+  flex-wrap: wrap;
 }
 
-.cuotaNombre {
+.cuotaDesc {
   font-size: $font-size-sm;
   font-weight: $font-weight-medium;
   color: $color-text;
-  @include truncate;
+  flex: 1;
+  min-width: 0;
+
+  &.excluida {
+    text-decoration: line-through;
+    opacity: 0.4;
+  }
 }
 
-.cuotaDetalle {
-  font-size: 12px;
+.cuotaMeta {
+  font-size: $font-size-xs;
   color: $color-text-muted;
+  flex-shrink: 0;
 }
 
 .cuotaMonto {
   font-size: $font-size-sm;
   font-weight: $font-weight-bold;
   color: $color-text;
-  white-space: nowrap;
   flex-shrink: 0;
+  text-align: right;
+
+  &.excluida {
+    text-decoration: line-through;
+    opacity: 0.4;
+  }
 }
 
-.tachado {
-  text-decoration: line-through;
-  opacity: 0.5;
-}
-
-// ── Badges de estado ──────────────────────────────────────────────────────────
-
-.estadoBadge {
+.badgeEstado {
   font-size: 10px;
-  font-weight: $font-weight-medium;
+  font-weight: $font-weight-semibold;
   padding: 2px 6px;
-  border-radius: $radius-full;
-  white-space: nowrap;
+  border-radius: $radius-sm;
+  letter-spacing: 0.03em;
   flex-shrink: 0;
 }
 
-.estadoPendiente {
+.badgePendiente {
   background: #fff8e1;
   color: #f59e0b;
 }
 
-.estadoFacturado {
+.badgeFacturado {
   background: #e8f4ff;
   color: #3b82f6;
 }
 
-.estadoPagado {
+.badgePagado {
   background: #f0fdf4;
   color: #22a06b;
 }
 
-// ── Estado vacío de cuotas ────────────────────────────────────────────────────
+/* ── Estado vacío cuotas ─────────────────────────────────────────────────────── */
 
 .emptyState {
   display: flex;
+  flex-direction: column;
   align-items: center;
+  padding: $space-16 $space-8;
   gap: $space-2;
-  padding: $space-6 0 $space-4;
-  justify-content: center;
-  color: $color-text-muted;
-  font-size: $font-size-sm;
 }
 
 .emptyIcon {
-  font-size: 18px;
+  font-size: 32px;
+  color: $color-text-muted;
+  line-height: 1;
 }
 
-// ── Cargos adicionales ────────────────────────────────────────────────────────
-
-.cargosVacio {
+.emptyTitulo {
   font-size: $font-size-sm;
   color: $color-text-muted;
-  padding: $space-3 0;
   text-align: center;
 }
 
-.cargoItem {
-  display: flex;
-  align-items: center;
-  gap: $space-3;
-  padding: $space-3 0;
-  border-top: 1px solid #e8e8e4;
-  margin: 0 (-$space-5);
-  padding-left: $space-5;
-  padding-right: $space-5;
+/* ── Cargos adicionales ──────────────────────────────────────────────────────── */
 
-  &:first-of-type {
-    margin-top: $space-2;
-  }
+.cargosSection {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+  margin-bottom: $space-6;
+  padding: 0 $space-4 $space-4;
 }
 
-.cargoInfo {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.cargoNombre {
-  font-size: $font-size-sm;
-  font-weight: $font-weight-medium;
-  color: $color-text;
-  @include truncate;
-}
-
-.cargoCat {
-  font-size: 12px;
-  color: $color-text-muted;
-}
-
-.cargoMonto {
-  font-size: $font-size-sm;
-  font-weight: $font-weight-bold;
-  color: #ff4d4d;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.actionBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: none;
-  border-radius: $radius-base;
-  cursor: pointer;
-  font-size: 14px;
-  color: $color-text-muted;
-  flex-shrink: 0;
-  transition: background $transition-fast, color $transition-fast;
-
-  &:hover {
-    background: #fff0f0;
-    color: #ff4d4d;
-  }
-}
-
-// ── Formulario inline de cargo ────────────────────────────────────────────────
-
-.cargoFormRow {
+.formCargoInline {
   display: flex;
   align-items: center;
   gap: $space-2;
-  padding: $space-3 0 $space-2;
-  animation: fadeIn 0.15s ease;
+  padding: $space-3 0;
+  border-bottom: 1px solid #e8e8e4;
+  animation: fadeIn 0.2s ease;
 }
 
-.cargoFormInput {
+.formCargoDesc {
   @include input-base;
   flex: 1;
-  height: 34px;
+  min-width: 0;
+  height: 36px;
   padding: 0 $space-3;
 }
 
-.cargoFormMonto {
+.formCargoMonto {
+  @include input-base;
+  width: 120px;
+  height: 36px;
+  padding: 0 $space-3;
+}
+
+.formCargoBtns {
   display: flex;
-  align-items: center;
-  border: 1px solid $color-border;
-  border-radius: $radius-base;
-  overflow: hidden;
-  height: 34px;
-  width: 110px;
-  flex-shrink: 0;
-  transition: border-color $transition-fast;
-
-  &:focus-within {
-    border-color: $color-border-focus;
-    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
-  }
+  gap: $space-1;
 }
 
-.cargoFormPrefix {
-  padding: 0 $space-2;
-  font-size: $font-size-sm;
-  color: $color-text-muted;
-  background: $color-bg-subtle;
-  border-right: 1px solid $color-border;
-  height: 100%;
-  display: flex;
-  align-items: center;
-}
-
-.cargoFormInputMonto {
-  flex: 1;
-  height: 100%;
-  border: none;
-  padding: 0 $space-2;
-  font-size: $font-size-sm;
-  font-family: $font-family;
-  color: $color-text;
-  background: transparent;
-  min-width: 0;
-
-  &:focus {
-    outline: none;
-  }
-}
-
-.cargoFormOk {
-  width: 32px;
-  height: 32px;
-  border: none;
-  border-radius: $radius-base;
-  background: #0f0f0f;
-  color: $sidebar-accent;
-  cursor: pointer;
-  font-size: 14px;
+.formCargoBtn {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background $transition-fast;
-  flex-shrink: 0;
-
-  &:hover {
-    background: #333;
-  }
-}
-
-.cargoFormCancel {
   width: 32px;
   height: 32px;
-  border: 1px solid #e8e8e4;
+  border: none;
   border-radius: $radius-base;
   background: none;
-  color: $color-text-muted;
   cursor: pointer;
-  font-size: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  font-size: $font-size-base;
+  color: $color-text-muted;
   transition: background $transition-fast;
-  flex-shrink: 0;
 
   &:hover {
     background: $color-bg-subtle;
@@ -523,86 +394,117 @@
   }
 }
 
-// ── Panel de totales ──────────────────────────────────────────────────────────
-
-.totalesPanel {
-  background: $color-bg-white;
-  border-radius: $radius-xl;
-  padding: $space-5 $space-6;
-  display: flex;
-  flex-direction: column;
-  gap: $space-2;
-  align-self: flex-end;
-  min-width: 280px;
-  width: 100%;
+.formCargoBtnConfirm {
+  color: $color-success;
+  &:hover { color: darken($color-success, 8%); }
 }
 
-.totalFila {
+.cargoRow {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+}
+
+.cargoDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+  min-width: 0;
+}
+
+.cargoCat {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  flex-shrink: 0;
+}
+
+.cargoMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: #ff4d4d;
+  flex-shrink: 0;
+}
+
+.cargoDelete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: $radius-base;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #fff0f0;
+    color: #ff4d4d;
+  }
+}
+
+/* ── Panel de totales ────────────────────────────────────────────────────────── */
+
+.totalesPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: $space-1;
+  margin-bottom: $space-5;
+}
+
+.totalRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $space-4;
+  min-width: 220px;
+  font-size: 13px;
 }
 
 .totalLabel {
-  font-size: 13px;
   color: $color-text-muted;
+  flex-shrink: 0;
 }
 
 .totalMonto {
-  font-size: 13px;
   font-weight: $font-weight-semibold;
   color: $color-text;
+  min-width: 80px;
+  text-align: right;
 }
 
-.totalMontoExcluido {
+.totalLabelExcluido {
   color: #ff4d4d;
 }
 
-.totalSep {
+.totalSeparator {
   border-top: 1.5px solid #e8e8e4;
-  margin: $space-1 0;
-}
-
-.totalFilaFinal {
-  margin-top: $space-1;
-}
-
-.totalLabelFinal {
-  font-size: $font-size-base;
-  font-weight: $font-weight-bold;
-  color: $color-text;
-}
-
-.totalMontoFinal {
-  font-size: $font-size-base;
-  font-weight: $font-weight-bold;
-  color: $color-text;
-}
-
-.btnPagar {
+  margin: $space-2 0;
   width: 100%;
-  margin-top: $space-3;
-  padding: $space-3;
-  border: none;
-  border-radius: $radius-base;
-  background: #0f0f0f;
-  color: #fff;
+  max-width: 260px;
+}
+
+.totalRowFinal {
+  font-size: 16px;
+  font-weight: $font-weight-bold;
+  color: #0f0f0f;
+}
+
+.btnRegistrar {
+  width: 100%;
+  max-width: 260px;
+  padding: $space-3 $space-4;
   font-size: $font-size-base;
   font-weight: $font-weight-semibold;
-  cursor: pointer;
-  transition: background $transition-fast;
-
-  &:hover:not(:disabled) {
-    background: #333;
-  }
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
 }
 
-// ── Modals ────────────────────────────────────────────────────────────────────
+/* ── Modales ─────────────────────────────────────────────────────────────────── */
 
 .modalOverlay {
   position: fixed;
@@ -619,38 +521,44 @@
   background: $color-bg-white;
   border-radius: 12px;
   padding: 28px;
-  max-width: 440px;
+  max-width: 380px;
   width: 100%;
   animation: fadeIn 0.2s ease;
   box-shadow: $shadow-lg;
-  display: flex;
-  flex-direction: column;
-  gap: $space-4;
 }
 
-.modalHeaderRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.modalCardWide {
+  max-width: 560px;
 }
 
 .modalTitulo {
   font-size: $font-size-base;
   font-weight: $font-weight-bold;
   color: $color-text;
+  margin-bottom: $space-3;
+}
+
+.modalTexto {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  line-height: $line-height-base;
+  margin-bottom: $space-4;
 }
 
 .modalClose {
+  position: absolute;
+  top: $space-3;
+  right: $space-3;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
-  background: none;
   border: none;
   border-radius: $radius-base;
+  background: none;
   cursor: pointer;
-  font-size: $font-size-sm;
+  font-size: $font-size-base;
   color: $color-text-muted;
   transition: background $transition-fast;
 
@@ -660,179 +568,64 @@
   }
 }
 
-.modalSub {
-  font-size: $font-size-sm;
-  color: $color-text-muted;
-  margin-top: -$space-2;
-}
-
-.modalDetalles {
-  display: flex;
-  flex-direction: column;
-  gap: $space-1;
-  font-size: $font-size-sm;
-  color: $color-text;
-}
-
-.modalExcluidas {
-  color: $color-text-muted;
-  font-style: italic;
-}
-
-.modalTotal {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: $space-3;
-  border-top: 1px solid $color-border;
-}
-
-.modalTotalMonto {
-  font-size: $font-size-lg;
-  font-weight: $font-weight-bold;
-  color: $color-text;
-}
-
 .modalBtns {
   display: flex;
   justify-content: flex-end;
   gap: $space-3;
+  margin-top: $space-5;
 }
 
-// ── Formulario del modal de nuevo gasto ───────────────────────────────────────
-
-.gastoForm {
-  display: flex;
-  flex-direction: column;
-  gap: $space-4;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: $space-1;
+.modalCardWithClose {
+  position: relative;
+  padding-top: $space-10;
 }
 
-.gastoField {
-  display: flex;
-  flex-direction: column;
-  gap: $space-1;
-}
+/* ── Pantalla de éxito ───────────────────────────────────────────────────────── */
 
-.gastoLabel {
-  @include field-label;
-}
-
-.gastoInput {
-  @include input-base;
-  height: $input-height-base;
-  padding: 0 $space-3;
-}
-
-.gastoSelect {
-  @include input-base;
-  height: $input-height-base;
-  padding: 0 $space-3;
-  cursor: pointer;
-}
-
-.gastoTextarea {
-  @include input-base;
-  padding: $space-2 $space-3;
-  resize: vertical;
-}
-
-.gastoRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: $space-3;
-}
-
-.gastoInputPrefix {
-  display: flex;
-  align-items: center;
-  border: 1px solid $color-border;
-  border-radius: $radius-base;
-  height: $input-height-base;
-  overflow: hidden;
-  transition: border-color $transition-fast, box-shadow $transition-fast;
-
-  &:focus-within {
-    border-color: $color-border-focus;
-    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
-  }
-
-  > span {
-    padding: 0 $space-2;
-    font-size: $font-size-sm;
-    color: $color-text-muted;
-    background: $color-bg-subtle;
-    border-right: 1px solid $color-border;
-    height: 100%;
-    display: flex;
-    align-items: center;
-  }
-
-  > input {
-    flex: 1;
-    height: 100%;
-    border: none;
-    padding: 0 $space-3;
-    font-size: $font-size-sm;
-    font-family: $font-family;
-    color: $color-text;
-    background: transparent;
-    min-width: 0;
-
-    &:focus {
-      outline: none;
-    }
-  }
-}
-
-// ── Pantalla de éxito ─────────────────────────────────────────────────────────
-
-.exitoWrap {
+.exitoScreen {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: $space-3;
   padding: $space-16 $space-8;
+  gap: $space-4;
   text-align: center;
 }
 
-.exitoIcono {
+.exitoIcon {
   width: 56px;
   height: 56px;
   border-radius: $radius-full;
-  background: $sidebar-accent;
+  background: #c8f060;
   color: #0f0f0f;
-  font-size: $font-size-xl;
-  font-weight: $font-weight-bold;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: $space-2;
+  font-size: 28px;
+  font-weight: $font-weight-bold;
+  line-height: 1;
 }
 
 .exitoTitulo {
-  font-size: $font-size-2xl;
+  font-size: $font-size-xl;
   font-weight: $font-weight-bold;
   color: $color-text;
 }
 
-.exitoSub {
+.exitoSubtitulo {
   font-size: $font-size-sm;
   color: $color-text-muted;
 }
 
 .exitoMonto {
-  font-size: $font-size-3xl;
+  font-size: $font-size-2xl;
   font-weight: $font-weight-bold;
   color: $color-text;
-  margin: $space-2 0;
 }
 
-.exitoBtns {
+.exitoActions {
   display: flex;
   gap: $space-3;
   margin-top: $space-4;
+  flex-wrap: wrap;
+  justify-content: center;
 }

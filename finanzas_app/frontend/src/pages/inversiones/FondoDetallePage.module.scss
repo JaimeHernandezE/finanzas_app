@@ -1,0 +1,301 @@
+// =============================================================================
+// FondoDetallePage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+$borde-inversiones: #e8e8e4;
+$ganancia-positiva: #22a06b;
+$ganancia-negativa: #ff4d4d;
+$valor-icon-bg: #e8f4ff;
+$valor-icon-color: #3b82f6;
+$aporte-icon-bg: #f0fdf4;
+$aporte-icon-color: #22a06b;
+
+.page {
+  padding: $space-8;
+  max-width: 1100px;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: 13px;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-2;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-3;
+}
+
+.metricasFila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-4;
+  font-size: 14px;
+  color: $color-text;
+  margin-bottom: $space-6;
+}
+
+.metricaGananciaPos {
+  color: $ganancia-positiva;
+}
+
+.metricaGananciaNeg {
+  color: $ganancia-negativa;
+}
+
+.accionesSection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  margin-bottom: $space-4;
+}
+
+.btnAccion {
+  padding: $space-2 $space-3;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  background: $color-bg-white;
+  border: 1px solid $borde-inversiones;
+  border-radius: $radius-base;
+  cursor: pointer;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+}
+
+.formInline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: $space-2;
+  padding: $space-4 0;
+  animation: slideDown 250ms ease both;
+}
+
+.formInlineLabel {
+  @include field-label;
+  margin-bottom: 0;
+}
+
+.formInlineInput,
+.formInlineInputNum {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  max-width: 180px;
+}
+
+.formInlineInputNum {
+  max-width: 160px;
+}
+
+.btnFormConfirm,
+.btnFormCancel {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text-muted;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.btnFormConfirm:hover {
+  color: $ganancia-positiva;
+}
+
+.btnFormCancel:hover {
+  color: $ganancia-negativa;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.historialSection {
+  margin-top: $space-6;
+}
+
+.historialTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.historialList {
+  background: $color-bg-white;
+  border: 1.5px solid $borde-inversiones;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.historialItem {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-3;
+  padding: $space-4;
+  border-top: 1px solid $borde-inversiones;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+
+    .btnEliminar {
+      opacity: 1;
+    }
+  }
+}
+
+.iconoWrap {
+  width: 32px;
+  height: 32px;
+  border-radius: $radius-base;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.iconoValor {
+  background: $valor-icon-bg;
+  color: $valor-icon-color;
+}
+
+.iconoAporte {
+  background: $aporte-icon-bg;
+  color: $aporte-icon-color;
+  font-weight: $font-weight-bold;
+}
+
+.historialContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.historialFecha {
+  font-size: 12px;
+  color: $color-text-muted;
+  margin-bottom: 2px;
+}
+
+.historialLabel {
+  font-size: 14px;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+}
+
+.historialNota {
+  font-size: 12px;
+  color: $color-text-muted;
+  margin-top: $space-1;
+}
+
+.historialMonto {
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  text-align: right;
+}
+
+.historialMontoAporte {
+  color: $ganancia-positiva;
+}
+
+.historialRight {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.btnEliminar {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: $color-text-muted;
+  opacity: 0;
+  transition: opacity $transition-fast, color $transition-fast;
+
+  &:hover {
+    color: $ganancia-negativa;
+  }
+}
+
+.historialItem:hover .btnEliminar {
+  opacity: 1;
+}
+
+.emptyState {
+  text-align: center;
+  padding: $space-12 $space-6;
+  background: $color-bg-white;
+  border: 1.5px solid $borde-inversiones;
+  border-radius: 12px;
+}
+
+.emptyIcon {
+  font-size: 48px;
+  color: $color-text-muted;
+  margin-bottom: $space-4;
+  line-height: 1;
+}
+
+.emptyText {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin-bottom: $space-2;
+}
+
+.emptyLink {
+  font-size: $font-size-sm;
+  color: $color-primary;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary-hover;
+  }
+}
+
+.notFound {
+  padding: $space-8;
+  text-align: center;
+  color: $color-text-muted;
+}

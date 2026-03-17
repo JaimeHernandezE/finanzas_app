@@ -9,6 +9,8 @@ backend/
 ├── core/                 # Configuración Django (settings, urls, wsgi)
 ├── applications/         # Apps del dominio
 │   └── usuarios/        # Autenticación (Usuario, Firebase → JWT)
+├── tests/               # Tests pytest (conftest, test_categorias, test_metodos_pago, test_tarjetas)
+├── pytest.ini            # Configuración pytest (DJANGO_SETTINGS_MODULE, patrones)
 ├── manage.py
 ├── requirements.txt
 ├── Dockerfile
@@ -23,6 +25,7 @@ backend/
 | **Despliegue y Docker** | [docs/DEPLOYMENT.md](../DEPLOYMENT.md) |
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
+| **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
 
 ## Comandos útiles (dentro del contenedor)
 

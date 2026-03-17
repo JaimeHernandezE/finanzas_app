@@ -1,11 +1,11 @@
-# Despliegue y Docker — Backend
+# Despliegue y Docker — Backend y Frontend
 
-Este documento describe cómo desplegar y operar el backend (Django + PostgreSQL) con Docker Compose. Es la referencia para entornos locales y, con las variaciones indicadas, para un servidor.
+Este documento describe cómo desplegar y operar el backend (Django + PostgreSQL) y el frontend (Vite + React) con Docker Compose. Es la referencia para entornos locales y, con las variaciones indicadas, para un servidor.
 
 ## Requisitos
 
 - [Docker](https://docs.docker.com/get-docker/) y [Docker Compose](https://docs.docker.com/compose/install/) (o Docker con Compose V2).
-- Ningún otro proceso usando el puerto **5432** (PostgreSQL) ni **8000** (Django) en local.
+- Ningún otro proceso usando el puerto **5432** (PostgreSQL), **8000** (Django) ni **5173** (Vite) en local.
 
 ## Servicios
 
@@ -13,6 +13,7 @@ Este documento describe cómo desplegar y operar el backend (Django + PostgreSQL
 |----------|----------------|--------|-------------|
 | **db** | `postgres:15-alpine` | 5432 | Base de datos PostgreSQL. Volumen persistente `postgres_data`. |
 | **web** | Build desde `backend/Dockerfile` | 8000 | Django + DRF. Origen: `backend/`. |
+| **frontend** | `node:20-alpine` | 5173 | Vite + React. Origen: `frontend/`. Hot reload activo (Vite con `usePolling` para volúmenes Docker). |
 
 Variables de entorno del servicio **web** (por defecto en `docker-compose.yml`):
 
@@ -54,6 +55,23 @@ docker-compose down
 docker-compose down -v
 ```
 
+### Reiniciar contenedores
+
+```bash
+# Reiniciar todos los servicios
+docker-compose restart
+
+# Reiniciar solo un servicio
+docker-compose restart web
+docker-compose restart frontend
+docker-compose restart db
+
+# Reiniciar varios servicios
+docker-compose restart web frontend
+```
+
+Tras `restart`, los contenedores se levantan de nuevo sin reconstruir imágenes. Si cambiaste código del backend (Python) o del frontend (React/SCSS), el **backend** recarga solo gracias a `runserver`; el **frontend** recarga en el navegador con Vite (hot reload). Si cambiaste `requirements.txt`, Dockerfile o `package.json`, usa `docker-compose up -d --build <servicio>` en lugar de solo `restart`.
+
 ### Logs
 
 ```bash
@@ -65,6 +83,9 @@ docker-compose logs -f web
 
 # Solo el servicio db
 docker-compose logs -f db
+
+# Solo el servicio frontend (Vite)
+docker-compose logs -f frontend
 ```
 
 ### Ejecutar comandos dentro del contenedor Django
@@ -84,10 +105,14 @@ docker-compose exec web python manage.py createsuperuser
 docker-compose exec web python manage.py check
 ```
 
-### Reconstruir solo el servicio web (tras cambiar código o Dockerfile)
+### Reconstruir un servicio (tras cambiar Dockerfile o dependencias)
 
 ```bash
+# Solo backend (p. ej. tras cambiar requirements.txt o Dockerfile)
 docker-compose up -d --build web
+
+# Solo frontend (p. ej. tras cambiar package.json)
+docker-compose up -d --build frontend
 ```
 
 ### Ver estado de los servicios
@@ -110,8 +135,18 @@ docker-compose ps
 3. **Tras cambiar modelos**: ejecutar tú mismo `makemigrations` y `migrate` (ver regla en `.cursor/rules/django-migrations.mdc`).
 4. **Tras cambiar `requirements.txt` o Dockerfile**: `docker-compose up -d --build web`.
 
+## Hot reload (frontend)
+
+El frontend en Docker ya tiene **hot reload** configurado:
+
+- En `frontend/vite.config.ts` está `server.watch.usePolling: true`, necesario para que Vite detecte cambios en archivos montados por volumen dentro del contenedor.
+- Al editar archivos en `frontend/src` (TS, TSX, SCSS, etc.), Vite recompila y el navegador se actualiza solo (HMR). No hace falta reiniciar el contenedor `frontend` para ver cambios.
+
+Si en tu entorno los cambios no se reflejan, reinicia el servicio: `docker-compose restart frontend`.
+
 ## URLs útiles (local)
 
+- **Frontend (React):** **http://localhost:5173**
 - API base: **http://localhost:8000**
 - Admin Django: **http://localhost:8000/admin/**
 - Login con Firebase (POST): **http://localhost:8000/api/usuarios/auth/firebase/**

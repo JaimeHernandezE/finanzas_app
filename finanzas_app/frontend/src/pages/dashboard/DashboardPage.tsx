@@ -124,8 +124,7 @@ function CategoriaBar({
         <div
           className={styles.barFill}
           style={
-            { '--target-width': `${pct}%`, backgroundColor: color, animationDelay: `${delay}ms` }
-            as React.CSSProperties
+            { '--target-width': `${pct}%`, backgroundColor: color, animationDelay: `${delay}ms` } as React.CSSProperties
           }
         />
       </div>

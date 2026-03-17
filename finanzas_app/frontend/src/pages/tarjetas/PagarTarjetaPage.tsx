@@ -1,5 +1,7 @@
-import { useState, useMemo, useId } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Button, Input, Select, Textarea } from '@/components/ui'
+import type { SelectOption } from '@/components/ui'
 import styles from './PagarTarjetaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7,47 +9,60 @@ import styles from './PagarTarjetaPage.module.scss'
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Tarjeta {
-  id:     string
+  id: string
   nombre: string
-  banco:  string
+  banco: string
 }
 
 interface Cuota {
-  id:           number
+  id: number
   movimientoId: number
-  descripcion:  string
-  numeroCuota:  number
-  totalCuotas:  number
-  monto:        number
-  estado:       'PENDIENTE' | 'FACTURADO' | 'PAGADO'
-  incluir:      boolean
+  descripcion: string
+  numeroCuota: number
+  totalCuotas: number
+  monto: number
+  estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
+  incluir: boolean
 }
 
 interface CargoAdicional {
-  id:          number
+  id: number
   descripcion: string
-  monto:       number
+  monto: number
 }
+
+type FiltroEstado = 'Pendiente' | 'Facturado' | 'Pagado' | 'Todos'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Datos mock  // TODO: reemplazar por fetch al backend
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MOCK_TARJETAS: Tarjeta[] = [
-  { id: '1', nombre: 'Visa BCI',             banco: 'BCI'       },
+  { id: '1', nombre: 'Visa BCI', banco: 'BCI' },
   { id: '2', nombre: 'Mastercard Santander', banco: 'Santander' },
 ]
 
 const MOCK_CUOTAS_INIT: Cuota[] = [
-  { id: 1, movimientoId: 10, descripcion: 'Supermercado Lider', numeroCuota: 1, totalCuotas: 3, monto: 29133,  estado: 'FACTURADO', incluir: true  },
-  { id: 2, movimientoId: 11, descripcion: 'Netflix',            numeroCuota: 1, totalCuotas: 1, monto: 10990,  estado: 'PENDIENTE', incluir: true  },
-  { id: 3, movimientoId: 12, descripcion: 'Televisor Samsung',  numeroCuota: 2, totalCuotas: 6, monto: 42000,  estado: 'PENDIENTE', incluir: false },
-  { id: 4, movimientoId: 13, descripcion: 'Zapatos',            numeroCuota: 1, totalCuotas: 2, monto: 24990,  estado: 'PAGADO',    incluir: true  },
+  { id: 1, movimientoId: 10, descripcion: 'Supermercado Lider', numeroCuota: 1, totalCuotas: 3, monto: 29133, estado: 'FACTURADO', incluir: true },
+  { id: 2, movimientoId: 11, descripcion: 'Netflix', numeroCuota: 1, totalCuotas: 1, monto: 10990, estado: 'PENDIENTE', incluir: true },
+  { id: 3, movimientoId: 12, descripcion: 'Televisor Samsung', numeroCuota: 2, totalCuotas: 6, monto: 42000, estado: 'PENDIENTE', incluir: false },
+  { id: 4, movimientoId: 13, descripcion: 'Zapatos', numeroCuota: 1, totalCuotas: 2, monto: 24990, estado: 'PAGADO', incluir: true },
 ]
 
-const MOCK_CATEGORIAS = [
-  'Alimentación', 'Transporte', 'Tecnología', 'Ropa', 'Salud',
-  'Educación', 'Entretención', 'Servicios', 'Honorarios', 'Sueldo',
+const CATEGORIAS_EGRESO: SelectOption[] = [
+  { value: 'alimentacion', label: 'Alimentación' },
+  { value: 'transporte', label: 'Transporte' },
+  { value: 'vivienda', label: 'Vivienda' },
+  { value: 'salud', label: 'Salud' },
+  { value: 'entretenimiento', label: 'Entretenimiento' },
+  { value: 'ropa', label: 'Ropa' },
+  { value: 'educacion', label: 'Educación' },
+  { value: 'otros', label: 'Otros' },
+]
+
+const CUENTAS: SelectOption[] = [
+  { value: '1', label: 'Personal' },
+  { value: '2', label: 'Arquitecto' },
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -62,415 +77,338 @@ const MESES = [
 const clp = (n: number) =>
   n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
-const ESTADO_BADGE: Record<Cuota['estado'], { label: string; cls: string }> = {
-  PENDIENTE: { label: 'Pendiente', cls: styles.estadoPendiente },
-  FACTURADO: { label: 'Facturado', cls: styles.estadoFacturado },
-  PAGADO:    { label: 'Pagado',    cls: styles.estadoPagado    },
-}
-
-type FiltroEstado = 'TODOS' | 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
-
-const FILTRO_OPTS: { value: FiltroEstado; label: string }[] = [
-  { value: 'PENDIENTE', label: 'Pendiente' },
-  { value: 'FACTURADO', label: 'Facturado' },
-  { value: 'PAGADO',    label: 'Pagado'    },
-  { value: 'TODOS',     label: 'Todos'     },
-]
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: item de cuota
+// Subcomponentes
 // ─────────────────────────────────────────────────────────────────────────────
 
-function CuotaItem({
-  cuota, onToggle,
+function SegmentedControl({
+  value,
+  onChange,
 }: {
-  cuota:    Cuota
-  onToggle: (id: number) => void
+  value: FiltroEstado
+  onChange: (v: FiltroEstado) => void
 }) {
-  const badge   = ESTADO_BADGE[cuota.estado]
-  const pagada  = cuota.estado === 'PAGADO'
-  const excluida = !cuota.incluir
-
+  const opts: { value: FiltroEstado; label: string }[] = [
+    { value: 'Pendiente', label: 'Pendiente' },
+    { value: 'Facturado', label: 'Facturado' },
+    { value: 'Pagado', label: 'Pagado' },
+    { value: 'Todos', label: 'Todos' },
+  ]
   return (
-    <div className={`${styles.cuotaItem} ${excluida ? styles.cuotaItemExcluida : ''}`}>
-      <label className={styles.cuotaCheck}>
-        <input
-          type="checkbox"
-          checked={cuota.incluir}
-          disabled={pagada}
-          onChange={() => onToggle(cuota.id)}
-        />
-      </label>
-
-      <div className={styles.cuotaInfo}>
-        <span className={`${styles.cuotaNombre} ${excluida ? styles.tachado : ''}`}>
-          {cuota.descripcion}
-        </span>
-        <span className={styles.cuotaDetalle}>
-          cuota {cuota.numeroCuota} / {cuota.totalCuotas}
-        </span>
-      </div>
-
-      <span className={`${styles.cuotaMonto} ${excluida ? styles.tachado : ''}`}>
-        {clp(cuota.monto)}
-      </span>
-
-      <span className={`${styles.estadoBadge} ${badge.cls}`}>{badge.label}</span>
+    <div className={styles.segmented}>
+      {opts.map(o => (
+        <button
+          key={o.value}
+          type="button"
+          className={`${styles.segBtn} ${value === o.value ? styles.segBtnActive : ''}`}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: cargo adicional
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CargoItem({
-  cargo, onEliminar,
+function CuotaRow({
+  cuota,
+  onToggleIncluir,
 }: {
-  cargo:      CargoAdicional
-  onEliminar: (id: number) => void
+  cuota: Cuota
+  onToggleIncluir: (id: number) => void
+}) {
+  const excluida = !cuota.incluir
+  const deshabilitado = cuota.estado === 'PAGADO'
+  const badgeClass =
+    cuota.estado === 'PENDIENTE' ? styles.badgePendiente
+    : cuota.estado === 'FACTURADO' ? styles.badgeFacturado
+    : styles.badgePagado
+
+  return (
+    <div className={styles.cuotaRow}>
+      <input
+        type="checkbox"
+        className={styles.cuotaCheckbox}
+        checked={cuota.incluir}
+        disabled={deshabilitado}
+        onChange={() => onToggleIncluir(cuota.id)}
+        aria-label={`Incluir ${cuota.descripcion} en el pago`}
+      />
+      <div className={styles.cuotaContent}>
+        <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
+          {cuota.descripcion}
+        </span>
+        <span className={styles.cuotaMeta}>
+          cuota {cuota.numeroCuota} / {cuota.totalCuotas}
+        </span>
+        <span className={`${styles.cuotaMonto} ${excluida ? styles.excluida : ''}`}>
+          {clp(cuota.monto)}
+        </span>
+        <span className={`${styles.badgeEstado} ${badgeClass}`}>
+          {cuota.estado}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function EmptyStateCuotas() {
+  return (
+    <div className={styles.emptyState}>
+      <span className={styles.emptyIcon}>○</span>
+      <p className={styles.emptyTitulo}>Sin cuotas para este período</p>
+    </div>
+  )
+}
+
+function FormCargoInline({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: (descripcion: string, monto: number) => void
+  onCancel: () => void
+}) {
+  const [desc, setDesc] = useState('')
+  const [montoStr, setMontoStr] = useState('')
+
+  const handleConfirm = () => {
+    const m = parseInt(montoStr.replace(/\D/g, ''), 10)
+    if (!desc.trim() || isNaN(m) || m <= 0) return
+    onConfirm(desc.trim(), m)
+    setDesc('')
+    setMontoStr('')
+  }
+
+  return (
+    <div className={styles.formCargoInline}>
+      <input
+        type="text"
+        className={styles.formCargoDesc}
+        placeholder="Ej: Interés marzo"
+        value={desc}
+        onChange={e => setDesc(e.target.value)}
+        aria-label="Descripción del cargo"
+      />
+      <input
+        type="text"
+        className={styles.formCargoMonto}
+        placeholder="$ 0"
+        value={montoStr}
+        onChange={e => setMontoStr(e.target.value)}
+        aria-label="Monto del cargo"
+      />
+      <div className={styles.formCargoBtns}>
+        <button
+          type="button"
+          className={`${styles.formCargoBtn} ${styles.formCargoBtnConfirm}`}
+          onClick={handleConfirm}
+          aria-label="Confirmar"
+        >
+          ✓
+        </button>
+        <button
+          type="button"
+          className={styles.formCargoBtn}
+          onClick={onCancel}
+          aria-label="Cancelar"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TotalesPanel({
+  incluido,
+  excluido,
+  cargos,
+  total,
+  onRegistrar,
+}: {
+  incluido: number
+  excluido: number
+  cargos: number
+  total: number
+  onRegistrar: () => void
 }) {
   return (
-    <div className={styles.cargoItem}>
-      <div className={styles.cargoInfo}>
-        <span className={styles.cargoNombre}>{cargo.descripcion}</span>
-        <span className={styles.cargoCat}>Intereses TC</span>
+    <div className={styles.totalesPanel}>
+      <div className={styles.totalRow}>
+        <span className={styles.totalLabel}>Incluido</span>
+        <span className={styles.totalMonto}>{clp(incluido)}</span>
       </div>
-      <span className={styles.cargoMonto}>{clp(cargo.monto)}</span>
+      <div className={styles.totalRow}>
+        <span className={`${styles.totalLabel} ${styles.totalLabelExcluido}`}>Excluido</span>
+        <span className={styles.totalMonto}>{clp(excluido)}</span>
+      </div>
+      <div className={styles.totalRow}>
+        <span className={styles.totalLabel}>Cargos</span>
+        <span className={styles.totalMonto}>{clp(cargos)}</span>
+      </div>
+      <div className={styles.totalSeparator} />
+      <div className={`${styles.totalRow} ${styles.totalRowFinal}`}>
+        <span className={styles.totalLabel}>Total a pagar</span>
+        <span className={styles.totalMonto}>{clp(total)}</span>
+      </div>
       <button
-        className={styles.actionBtn}
-        onClick={() => onEliminar(cargo.id)}
-        title="Eliminar cargo"
+        type="button"
+        className={`${styles.btnPrimary} ${styles.btnRegistrar}`}
+        disabled={total === 0}
+        onClick={onRegistrar}
       >
-        🗑
+        Registrar pago
       </button>
     </div>
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: formulario inline de cargo
-// ─────────────────────────────────────────────────────────────────────────────
-
-function CargoForm({
-  onConfirmar, onCancelar,
-}: {
-  onConfirmar: (descripcion: string, monto: number) => void
-  onCancelar:  () => void
-}) {
-  const [desc,  setDesc]  = useState('')
-  const [monto, setMonto] = useState('')
-
-  const confirmar = () => {
-    const n = parseFloat(monto.replace(/\./g, '').replace(',', '.'))
-    if (!desc.trim() || isNaN(n) || n <= 0) return
-    onConfirmar(desc.trim(), Math.round(n))
-  }
-
-  return (
-    <div className={styles.cargoFormRow}>
-      <input
-        className={styles.cargoFormInput}
-        type="text"
-        placeholder="Ej: Interés marzo"
-        value={desc}
-        onChange={e => setDesc(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && confirmar()}
-        autoFocus
-      />
-      <div className={styles.cargoFormMonto}>
-        <span className={styles.cargoFormPrefix}>$</span>
-        <input
-          className={styles.cargoFormInputMonto}
-          type="number"
-          placeholder="0"
-          value={monto}
-          onChange={e => setMonto(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && confirmar()}
-          min={0}
-        />
-      </div>
-      <button className={styles.cargoFormOk}   onClick={confirmar}>✓</button>
-      <button className={styles.cargoFormCancel} onClick={onCancelar}>✕</button>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: modal confirmar pago
-// ─────────────────────────────────────────────────────────────────────────────
-
-function ModalConfirmarPago({
-  tarjeta, mes, anio,
-  numIncluidas, numExcluidas,
-  total,
-  onCancelar, onConfirmar,
-}: {
-  tarjeta:      Tarjeta
-  mes:          number
-  anio:         number
-  numIncluidas: number
-  numExcluidas: number
-  total:        number
-  onCancelar:   () => void
-  onConfirmar:  () => void
-}) {
-  return (
-    <div className={styles.modalOverlay} onClick={onCancelar}>
-      <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
-        <h2 className={styles.modalTitulo}>Registrar pago</h2>
-
-        <p className={styles.modalSub}>
-          {tarjeta.nombre} — {MESES[mes]} {anio}
-        </p>
-
-        <div className={styles.modalDetalles}>
-          <span>{numIncluidas} cuota{numIncluidas !== 1 ? 's' : ''} incluida{numIncluidas !== 1 ? 's' : ''}</span>
-          {numExcluidas > 0 && (
-            <span className={styles.modalExcluidas}>
-              {numExcluidas} cuota{numExcluidas !== 1 ? 's' : ''} pasa{numExcluidas !== 1 ? 'n' : ''} al mes siguiente
-            </span>
-          )}
-        </div>
-
-        <div className={styles.modalTotal}>
-          <span>Total a pagar</span>
-          <span className={styles.modalTotalMonto}>{clp(total)}</span>
-        </div>
-
-        <div className={styles.modalBtns}>
-          <button className={styles.btnGhost}   onClick={onCancelar}>Cancelar</button>
-          <button className={styles.btnPrimary}  onClick={onConfirmar}>Confirmar</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: pantalla de éxito
-// ─────────────────────────────────────────────────────────────────────────────
-
-function PantallaExito({
-  tarjeta, mes, anio, total,
-  onVerOtroMes, onDashboard,
-}: {
-  tarjeta:       Tarjeta
-  mes:           number
-  anio:          number
-  total:         number
-  onVerOtroMes:  () => void
-  onDashboard:   () => void
-}) {
-  return (
-    <div className={styles.exitoWrap}>
-      <div className={styles.exitoIcono}>✓</div>
-      <h2 className={styles.exitoTitulo}>Pago registrado</h2>
-      <p className={styles.exitoSub}>{tarjeta.nombre} — {MESES[mes]} {anio}</p>
-      <p className={styles.exitoMonto}>{clp(total)}</p>
-      <div className={styles.exitoBtns}>
-        <button className={styles.btnGhost}   onClick={onVerOtroMes}>Ver otro mes</button>
-        <button className={styles.btnPrimary} onClick={onDashboard}>Ir al dashboard</button>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-componente: modal nuevo gasto (método bloqueado a CREDITO)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface GastoForm {
-  tipo:        'INGRESO' | 'EGRESO'
-  ambito:      'PERSONAL' | 'COMUN'
-  descripcion: string
-  categoria:   string
-  fecha:       string
-  monto:       string
-  numCuotas:   string
-  comentario:  string
-}
-
-const GASTO_FORM_DEFAULT: GastoForm = {
-  tipo:        'EGRESO',
-  ambito:      'PERSONAL',
-  descripcion: '',
-  categoria:   '',
-  fecha:       new Date().toISOString().slice(0, 10),
-  monto:       '',
-  numCuotas:   '1',
-  comentario:  '',
-}
+type TipoGasto = 'EGRESO' | 'INGRESO'
+type AmbitoGasto = 'PERSONAL' | 'COMUN'
 
 function ModalNuevoGasto({
-  tarjeta,
-  onCerrar,
-  onConfirmar,
+  tarjetaNombre,
+  onClose,
+  onGuardar,
 }: {
-  tarjeta:     Tarjeta
-  onCerrar:    () => void
-  onConfirmar: (cuota: Cuota) => void
+  tarjetaNombre: string
+  onClose: () => void
+  onGuardar: (cuotas: Cuota[]) => void
 }) {
-  const [form, setForm] = useState<GastoForm>(GASTO_FORM_DEFAULT)
-  const id = useId()
+  const [tipo, setTipo] = useState<TipoGasto>('EGRESO')
+  const [ambito, setAmbito] = useState<AmbitoGasto>('PERSONAL')
+  const [monto, setMonto] = useState('')
+  const [numCuotas, setNumCuotas] = useState('1')
+  const [errors, setErrors] = useState<{ monto?: string; categoria?: string; numCuotas?: string }>({})
 
-  const set = (field: keyof GastoForm, value: string) =>
-    setForm(prev => ({ ...prev, [field]: value }))
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const data = new FormData(e.currentTarget)
+    const descripcion = (data.get('comentario') as string)?.trim() || 'Nuevo gasto'
+    const next: typeof errors = {}
+    if (!monto || parseInt(monto, 10) <= 0) next.monto = 'El monto es obligatorio.'
+    if (!data.get('categoria')) next.categoria = 'Selecciona una categoría.'
+    const n = parseInt(numCuotas, 10)
+    if (!numCuotas || isNaN(n) || n < 1) next.numCuotas = 'Ingresa el número de cuotas.'
+    setErrors(next)
+    if (Object.keys(next).length > 0) return
 
-  const confirmar = () => {
-    const montoN = parseFloat(form.monto.replace(/\./g, '').replace(',', '.'))
-    const cuotasN = Math.max(1, parseInt(form.numCuotas) || 1)
-    if (!form.descripcion.trim() || isNaN(montoN) || montoN <= 0) return
-
-    onConfirmar({
-      id:           Date.now(),
-      movimientoId: Date.now(),
-      descripcion:  form.descripcion.trim(),
-      numeroCuota:  1,
-      totalCuotas:  cuotasN,
-      monto:        Math.round(montoN / cuotasN),
-      estado:       'PENDIENTE',
-      incluir:      true,
-    })
-    // TODO: conectar al backend
+    const montoTotal = parseInt(String(monto).replace(/\D/g, ''), 10) || 0
+    const totalCuotas = Math.max(1, n)
+    const montoPorCuota = Math.ceil(montoTotal / totalCuotas)
+    const baseId = Date.now()
+    const nuevasCuotas: Cuota[] = []
+    for (let i = 0; i < totalCuotas; i++) {
+      nuevasCuotas.push({
+        id: baseId + i,
+        movimientoId: 0,
+        descripcion: totalCuotas > 1 ? `${descripcion} (cuota ${i + 1}/${totalCuotas})` : descripcion,
+        numeroCuota: i + 1,
+        totalCuotas,
+        monto: montoPorCuota,
+        estado: 'PENDIENTE',
+        incluir: true,
+      })
+    }
+    onGuardar(nuevasCuotas)
+    onClose()
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onCerrar}>
-      <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
-
-        <div className={styles.modalHeaderRow}>
-          <h2 className={styles.modalTitulo}>Nuevo gasto — {tarjeta.nombre}</h2>
-          <button className={styles.modalClose} onClick={onCerrar}>✕</button>
-        </div>
-
-        <div className={styles.gastoForm}>
-
-          {/* Tipo */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel}>Tipo</label>
-            <div className={styles.segmented}>
-              {(['EGRESO', 'INGRESO'] as const).map(v => (
-                <button
-                  key={v}
-                  className={`${styles.segBtn} ${form.tipo === v ? styles.segBtnActive : ''}`}
-                  onClick={() => set('tipo', v)}
-                  type="button"
-                >
-                  {v === 'EGRESO' ? 'Egreso' : 'Ingreso'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Ámbito */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel}>Ámbito</label>
-            <div className={styles.segmented}>
-              {(['PERSONAL', 'COMUN'] as const).map(v => (
-                <button
-                  key={v}
-                  className={`${styles.segBtn} ${form.ambito === v ? styles.segBtnActive : ''}`}
-                  onClick={() => set('ambito', v)}
-                  type="button"
-                >
-                  {v === 'PERSONAL' ? 'Personal' : 'Común'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Descripción */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel} htmlFor={`${id}-desc`}>Descripción</label>
-            <input
-              id={`${id}-desc`}
-              className={styles.gastoInput}
-              type="text"
-              placeholder="Ej: Zapatillas"
-              value={form.descripcion}
-              onChange={e => set('descripcion', e.target.value)}
-            />
-          </div>
-
-          {/* Categoría */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel} htmlFor={`${id}-cat`}>Categoría</label>
-            <select
-              id={`${id}-cat`}
-              className={styles.gastoSelect}
-              value={form.categoria}
-              onChange={e => set('categoria', e.target.value)}
-            >
-              <option value="">Seleccionar...</option>
-              {MOCK_CATEGORIAS.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Fecha y Monto en fila */}
-          <div className={styles.gastoRow}>
-            <div className={styles.gastoField}>
-              <label className={styles.gastoLabel} htmlFor={`${id}-fecha`}>Fecha</label>
-              <input
-                id={`${id}-fecha`}
-                className={styles.gastoInput}
-                type="date"
-                value={form.fecha}
-                onChange={e => set('fecha', e.target.value)}
-              />
-            </div>
-            <div className={styles.gastoField}>
-              <label className={styles.gastoLabel} htmlFor={`${id}-monto`}>Monto total</label>
-              <div className={styles.gastoInputPrefix}>
-                <span>$</span>
-                <input
-                  id={`${id}-monto`}
-                  type="number"
-                  placeholder="0"
-                  value={form.monto}
-                  onChange={e => set('monto', e.target.value)}
-                  min={0}
-                />
+    <div className={styles.modalOverlay} onClick={onClose}>
+      <div
+        className={`${styles.modalCard} ${styles.modalCardWide} ${styles.modalCardWithClose}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className={styles.modalClose}
+          onClick={onClose}
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+        <h2 className={styles.modalTitulo}>Nuevo gasto</h2>
+        <p className={styles.modalTexto}>
+          Método: Crédito — Tarjeta: {tarjetaNombre}
+        </p>
+        <form onSubmit={handleSubmit} noValidate>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <div>
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151' }}>Tipo</span>
+                <div style={{ display: 'flex', marginTop: 4 }}>
+                  <button type="button" onClick={() => setTipo('EGRESO')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: tipo === 'EGRESO' ? '#dc2626' : undefined, color: tipo === 'EGRESO' ? '#fff' : undefined }}>
+                    Egreso
+                  </button>
+                  <button type="button" onClick={() => setTipo('INGRESO')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: tipo === 'INGRESO' ? '#16a34a' : undefined, color: tipo === 'INGRESO' ? '#fff' : undefined }}>
+                    Ingreso
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151' }}>Ámbito</span>
+                <div style={{ display: 'flex', marginTop: 4 }}>
+                  <button type="button" onClick={() => setAmbito('PERSONAL')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: ambito === 'PERSONAL' ? '#0d6461' : undefined, color: ambito === 'PERSONAL' ? '#fff' : undefined }}>
+                    Personal
+                  </button>
+                  <button type="button" onClick={() => setAmbito('COMUN')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: ambito === 'COMUN' ? '#0d6461' : undefined, color: ambito === 'COMUN' ? '#fff' : undefined }}>
+                    Común
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* Cuotas */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel} htmlFor={`${id}-cuotas`}>Número de cuotas</label>
-            <input
-              id={`${id}-cuotas`}
-              className={styles.gastoInput}
+            {ambito === 'PERSONAL' && (
+              <Select name="cuenta" label="Cuenta" options={CUENTAS} placeholder="Selecciona cuenta…" />
+            )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Select
+                name="categoria"
+                label="Categoría"
+                options={CATEGORIAS_EGRESO}
+                placeholder="Selecciona…"
+                error={errors.categoria}
+                required
+              />
+              <Input
+                name="fecha"
+                label="Fecha"
+                type="date"
+                defaultValue={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+            <Input
+              name="monto"
+              label="Monto"
               type="number"
-              min={1}
-              max={48}
-              value={form.numCuotas}
-              onChange={e => set('numCuotas', e.target.value)}
+              min="1"
+              placeholder="0"
+              value={monto}
+              onChange={e => setMonto(e.target.value)}
+              error={errors.monto}
+              required
             />
-          </div>
-
-          {/* Comentario */}
-          <div className={styles.gastoField}>
-            <label className={styles.gastoLabel} htmlFor={`${id}-com`}>Comentario (opcional)</label>
-            <textarea
-              id={`${id}-com`}
-              className={styles.gastoTextarea}
-              placeholder="Notas adicionales..."
-              rows={2}
-              value={form.comentario}
-              onChange={e => set('comentario', e.target.value)}
+            <Input
+              name="numCuotas"
+              label="N° cuotas"
+              type="number"
+              min="1"
+              max="48"
+              placeholder="Ej: 12"
+              value={numCuotas}
+              onChange={e => setNumCuotas(e.target.value)}
+              error={errors.numCuotas}
+              required
             />
+            <Textarea name="comentario" label="Descripción / Comentario" placeholder="Ej: Supermercado Lider…" rows={2} />
           </div>
-
-        </div>
-
-        <div className={styles.modalBtns}>
-          <button className={styles.btnGhost}   onClick={onCerrar}>Cancelar</button>
-          <button className={styles.btnPrimary} onClick={confirmar}>Agregar gasto</button>
-        </div>
-
+          <div className={styles.modalBtns}>
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit">Guardar movimiento</Button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -483,15 +421,20 @@ function ModalNuevoGasto({
 export default function PagarTarjetaPage() {
   const navigate = useNavigate()
 
-  // Tarjeta y mes
-  const [tarjetaId, setTarjetaId] = useState(MOCK_TARJETAS[0].id)
   const hoy = new Date()
-  const [mes,  setMes]  = useState(hoy.getMonth())
+  const [tarjetaSeleccionada, setTarjetaSeleccionada] = useState(MOCK_TARJETAS[0]?.id ?? '1')
+  const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('Todos')
+  const [cuotas, setCuotas] = useState<Cuota[]>(MOCK_CUOTAS_INIT)
+  const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
+  const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
+  const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
+  const [exitoPostPago, setExitoPostPago] = useState(false)
+  const [totalPagado, setTotalPagado] = useState(0)
+  const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
+
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
-
-  const tarjeta = MOCK_TARJETAS.find(t => t.id === tarjetaId)!
-
   const irAnterior = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
     else setMes(m => m - 1)
@@ -502,239 +445,264 @@ export default function PagarTarjetaPage() {
     else setMes(m => m + 1)
   }
 
-  // Cuotas y filtro
-  const [cuotas,       setCuotas]       = useState<Cuota[]>(MOCK_CUOTAS_INIT)
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('TODOS')
+  // Filtrado por estado (mock: todas las cuotas son del mes/tarjeta seleccionados)
+  const cuotasFiltradas = cuotas.filter(c => {
+    if (filtroEstado === 'Todos') return true
+    if (filtroEstado === 'Pendiente') return c.estado === 'PENDIENTE'
+    if (filtroEstado === 'Facturado') return c.estado === 'FACTURADO'
+    if (filtroEstado === 'Pagado') return c.estado === 'PAGADO'
+    return true
+  })
 
-  const cuotasFiltradas = useMemo(() =>
-    filtroEstado === 'TODOS' ? cuotas : cuotas.filter(c => c.estado === filtroEstado),
-  [cuotas, filtroEstado])
-
-  const toggleIncluir = (id: number) =>
-    setCuotas(prev => prev.map(c =>
-      c.id === id && c.estado !== 'PAGADO' ? { ...c, incluir: !c.incluir } : c,
-    ))
-
-  // Cargos adicionales
-  const [cargos,           setCargos]           = useState<CargoAdicional[]>([])
-  const [mostrarFormCargo, setMostrarFormCargo] = useState(false)
-
-  const agregarCargo = (descripcion: string, monto: number) => {
-    setCargos(prev => [...prev, { id: Date.now(), descripcion, monto }])
-    setMostrarFormCargo(false)
-  }
-
-  const eliminarCargo = (id: number) =>
-    setCargos(prev => prev.filter(c => c.id !== id))
-
-  // Cálculos de totales
   const incluido = cuotas
     .filter(c => c.incluir && c.estado !== 'PAGADO')
     .reduce((s, c) => s + c.monto, 0)
-  const excluido = cuotas
-    .filter(c => !c.incluir)
-    .reduce((s, c) => s + c.monto, 0)
-  const cargosTotal = cargos.reduce((s, c) => s + c.monto, 0)
-  const total       = incluido + cargosTotal
+  const excluido = cuotas.filter(c => !c.incluir).reduce((s, c) => s + c.monto, 0)
+  const cargos = cargosAdicionales.reduce((s, c) => s + c.monto, 0)
+  const total = incluido + cargos
 
-  const numIncluidas = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO').length
-  const numExcluidas = cuotas.filter(c => !c.incluir).length
+  const toggleIncluir = (id: number) => {
+    setCuotas(prev =>
+      prev.map(c => (c.id === id ? { ...c, incluir: !c.incluir } : c))
+    )
+  }
 
-  // Modals y pantalla de éxito
-  const [modalPagoAbierto,  setModalPagoAbierto]  = useState(false)
-  const [modalGastoAbierto, setModalGastoAbierto] = useState(false)
-  const [pagoExitoso,       setPagoExitoso]       = useState(false)
-  const [totalPagado,       setTotalPagado]       = useState(0)
+  const agregarCargo = (descripcion: string, monto: number) => {
+    setCargosAdicionales(prev => [
+      ...prev,
+      { id: Date.now(), descripcion, monto },
+    ])
+    setFormularioCargoVisible(false)
+  }
 
-  const confirmarPago = () => {
+  const eliminarCargo = (id: number) => {
+    setCargosAdicionales(prev => prev.filter(c => c.id !== id))
+  }
+
+  const handleConfirmarPago = () => {
     setTotalPagado(total)
-    // Marcar cuotas incluidas como PAGADO
-    setCuotas(prev => prev.map(c =>
-      c.incluir && c.estado !== 'PAGADO' ? { ...c, estado: 'PAGADO' as const } : c,
-    ))
-    // Limpiar cargos
-    setCargos([])
-    setModalPagoAbierto(false)
-    setPagoExitoso(true)
+    setCuotas(prev =>
+      prev.map(c =>
+        c.incluir && c.estado !== 'PAGADO' ? { ...c, estado: 'PAGADO' as const } : c
+      )
+    )
+    setCargosAdicionales([])
+    setModalConfirmarPago(false)
+    setExitoPostPago(true)
     // TODO: conectar al backend
   }
 
-  const verOtroMes = () => {
-    setPagoExitoso(false)
-    setCuotas(MOCK_CUOTAS_INIT)
-    // Avanzar al mes siguiente
-    if (mes === 11) { setMes(0); setAnio(a => a + 1) }
-    else setMes(m => m + 1)
-  }
+  const tarjeta = MOCK_TARJETAS.find(t => t.id === tarjetaSeleccionada)
+  const cuotasIncluidasCount = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO').length
+  const cuotasExcluidasCount = cuotas.filter(c => !c.incluir).length
 
-  const agregarNuevoGasto = (cuota: Cuota) => {
-    setCuotas(prev => [...prev, cuota])
-    setModalGastoAbierto(false)
-  }
-
-  // ── Pantalla de éxito ──
-  if (pagoExitoso) {
+  // ── Pantalla de éxito post-pago ─────────────────────────────────────────────
+  if (exitoPostPago) {
     return (
       <div className={styles.page}>
-        <PantallaExito
-          tarjeta={tarjeta}
-          mes={mes}
-          anio={anio}
-          total={totalPagado}
-          onVerOtroMes={verOtroMes}
-          onDashboard={() => navigate('/')}
-        />
+        <div className={styles.exitoScreen}>
+          <div className={styles.exitoIcon}>✓</div>
+          <h2 className={styles.exitoTitulo}>Pago registrado</h2>
+          <p className={styles.exitoSubtitulo}>
+            {tarjeta?.nombre} — {MESES[mes]} {anio}
+          </p>
+          <p className={styles.exitoMonto}>{clp(totalPagado)}</p>
+          <div className={styles.exitoActions}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setExitoPostPago(false)
+                if (mes === 11) { setMes(0); setAnio(a => a + 1) }
+                else setMes(m => m + 1)
+              }}
+            >
+              Ver otro mes
+            </Button>
+            <Button variant="primary" onClick={() => navigate('/')}>
+              Ir al dashboard
+            </Button>
+          </div>
+        </div>
       </div>
     )
   }
 
+  // ── Vista principal ────────────────────────────────────────────────────────
   return (
     <div className={styles.page}>
-
-      {/* ── Encabezado ── */}
+      {/* Sección 1 — Encabezado */}
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <h1 className={styles.titulo}>Pagar tarjeta</h1>
-          <select
-            className={styles.tarjetaSelect}
-            value={tarjetaId}
-            onChange={e => setTarjetaId(e.target.value)}
-          >
-            {MOCK_TARJETAS.map(t => (
-              <option key={t.id} value={t.id}>{t.nombre}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className={styles.mesNav}>
-          <button className={styles.mesBtn} onClick={irAnterior} aria-label="Mes anterior">‹</button>
-          <span className={styles.mesLabel}>{MESES[mes]} {anio}</span>
-          <button className={styles.mesBtn} onClick={irSiguiente} disabled={esActual} aria-label="Mes siguiente">›</button>
+          <div className={styles.headerTop}>
+            <h1 className={styles.titulo}>Pagar tarjeta</h1>
+            <select
+              className={styles.tarjetaSelect}
+              value={tarjetaSeleccionada}
+              onChange={e => setTarjetaSeleccionada(e.target.value)}
+              aria-label="Seleccionar tarjeta"
+            >
+              {MOCK_TARJETAS.map(t => (
+                <option key={t.id} value={t.id}>{t.nombre}</option>
+              ))}
+            </select>
+          </div>
+          <div className={styles.mesNav}>
+            <button
+              type="button"
+              className={styles.mesBtn}
+              onClick={irAnterior}
+              aria-label="Mes anterior"
+            >
+              ‹
+            </button>
+            <span className={styles.mesLabel}>{MESES[mes]} {anio}</span>
+            <button
+              type="button"
+              className={styles.mesBtn}
+              onClick={irSiguiente}
+              disabled={esActual}
+              aria-label="Mes siguiente"
+            >
+              ›
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ── Barra de filtros ── */}
+      {/* Sección 2 — Barra de filtros */}
       <div className={styles.filterBar}>
-        <div className={styles.segmented}>
-          {FILTRO_OPTS.map(o => (
-            <button
-              key={o.value}
-              className={`${styles.segBtn} ${filtroEstado === o.value ? styles.segBtnActive : ''}`}
-              onClick={() => setFiltroEstado(o.value)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-
+        <SegmentedControl value={filtroEstado} onChange={setFiltroEstado} />
+        <div className={styles.filterBarSpacer} />
         <button
+          type="button"
           className={styles.btnPrimary}
-          onClick={() => setModalGastoAbierto(true)}
+          onClick={() => setModalNuevoGasto(true)}
         >
           + Gasto
         </button>
       </div>
 
-      {/* ── Cuotas del mes ── */}
-      <div className={styles.seccion}>
-        <p className={styles.seccionTitulo}>Cuotas del mes</p>
-
+      {/* Sección 3 — Listado de cuotas */}
+      <div className={styles.sectionHeader}>
+        <span className={styles.sectionTitle}>CUOTAS DEL MES</span>
+      </div>
+      <div className={styles.listaCuotas}>
         {cuotasFiltradas.length === 0 ? (
-          <div className={styles.emptyState}>
-            <span className={styles.emptyIcon}>○</span>
-            <p>Sin cuotas para este período</p>
-          </div>
+          <EmptyStateCuotas />
         ) : (
-          cuotasFiltradas.map(c => (
-            <CuotaItem key={c.id} cuota={c} onToggle={toggleIncluir} />
+          cuotasFiltradas.map(cuota => (
+            <CuotaRow
+              key={cuota.id}
+              cuota={cuota}
+              onToggleIncluir={toggleIncluir}
+            />
           ))
         )}
       </div>
 
-      {/* ── Cargos adicionales ── */}
-      <div className={styles.seccion}>
-        <div className={styles.seccionHeaderRow}>
-          <p className={styles.seccionTitulo}>Cargos adicionales</p>
-          {!mostrarFormCargo && (
-            <button
-              className={`${styles.btnGhost} ${styles.btnSmall}`}
-              onClick={() => setMostrarFormCargo(true)}
-            >
-              + Agregar
-            </button>
-          )}
+      {/* Sección 4 — Cargos adicionales */}
+      <div className={styles.cargosSection}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>CARGOS ADICIONALES</span>
+          <div className={styles.sectionHeaderAction}>
+            {!formularioCargoVisible ? (
+              <button
+                type="button"
+                className={styles.btnGhost}
+                onClick={() => setFormularioCargoVisible(true)}
+              >
+                + Agregar
+              </button>
+            ) : null}
+          </div>
         </div>
-
-        {mostrarFormCargo && (
-          <CargoForm
-            onConfirmar={agregarCargo}
-            onCancelar={() => setMostrarFormCargo(false)}
+        {formularioCargoVisible && (
+          <FormCargoInline
+            onConfirm={agregarCargo}
+            onCancel={() => setFormularioCargoVisible(false)}
           />
         )}
-
-        {cargos.length === 0 && !mostrarFormCargo ? (
-          <p className={styles.cargosVacio}>Sin cargos adicionales este mes.</p>
-        ) : (
-          cargos.map(c => (
-            <CargoItem key={c.id} cargo={c} onEliminar={eliminarCargo} />
-          ))
-        )}
+        {cargosAdicionales.map(cargo => (
+          <div key={cargo.id} className={styles.cargoRow}>
+            <span className={styles.cargoDesc}>{cargo.descripcion}</span>
+            <span className={styles.cargoCat}>Intereses TC</span>
+            <span className={styles.cargoMonto}>{clp(cargo.monto)}</span>
+            <button
+              type="button"
+              className={styles.cargoDelete}
+              onClick={() => eliminarCargo(cargo.id)}
+              aria-label="Eliminar cargo"
+            >
+              🗑
+            </button>
+          </div>
+        ))}
       </div>
 
-      {/* ── Panel de totales ── */}
-      <div className={styles.totalesPanel}>
-        <div className={styles.totalFila}>
-          <span className={styles.totalLabel}>Incluido</span>
-          <span className={styles.totalMonto}>{clp(incluido)}</span>
-        </div>
-        <div className={styles.totalFila}>
-          <span className={styles.totalLabel}>Excluido</span>
-          <span className={`${styles.totalMonto} ${styles.totalMontoExcluido}`}>{clp(excluido)}</span>
-        </div>
-        <div className={styles.totalFila}>
-          <span className={styles.totalLabel}>Cargos</span>
-          <span className={styles.totalMonto}>{clp(cargosTotal)}</span>
-        </div>
+      {/* Sección 5 — Totales y botón Registrar pago */}
+      <TotalesPanel
+        incluido={incluido}
+        excluido={excluido}
+        cargos={cargos}
+        total={total}
+        onRegistrar={() => setModalConfirmarPago(true)}
+      />
 
-        <div className={styles.totalSep} />
-
-        <div className={`${styles.totalFila} ${styles.totalFilaFinal}`}>
-          <span className={styles.totalLabelFinal}>Total a pagar</span>
-          <span className={styles.totalMontoFinal}>{clp(total)}</span>
-        </div>
-
-        <button
-          className={styles.btnPagar}
-          disabled={total === 0}
-          onClick={() => setModalPagoAbierto(true)}
+      {/* Modal de confirmación de pago */}
+      {modalConfirmarPago && (
+        <div
+          className={styles.modalOverlay}
+          onClick={() => setModalConfirmarPago(false)}
         >
-          Registrar pago
-        </button>
-      </div>
-
-      {/* ── Modal confirmar pago ── */}
-      {modalPagoAbierto && (
-        <ModalConfirmarPago
-          tarjeta={tarjeta}
-          mes={mes}
-          anio={anio}
-          numIncluidas={numIncluidas}
-          numExcluidas={numExcluidas}
-          total={total}
-          onCancelar={() => setModalPagoAbierto(false)}
-          onConfirmar={confirmarPago}
-        />
+          <div
+            className={styles.modalCard}
+            onClick={e => e.stopPropagation()}
+          >
+            <h2 className={styles.modalTitulo}>Registrar pago</h2>
+            <p className={styles.modalTexto}>
+              {tarjeta?.nombre} — {MESES[mes]} {anio}
+              <br />
+              {cuotasIncluidasCount} cuota(s) incluidas
+              {cuotasExcluidasCount > 0 && (
+                <>
+                  <br />
+                  {cuotasExcluidasCount} cuota(s) pasa(n) al mes siguiente
+                </>
+              )}
+              <br />
+              <strong>Total a pagar {clp(total)}</strong>
+            </p>
+            <div className={styles.modalBtns}>
+              <button
+                type="button"
+                className={styles.btnGhost}
+                onClick={() => setModalConfirmarPago(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                onClick={handleConfirmarPago}
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* ── Modal nuevo gasto ── */}
-      {modalGastoAbierto && (
+      {/* Modal de nuevo gasto — Sección 6 */}
+      {modalNuevoGasto && (
         <ModalNuevoGasto
-          tarjeta={tarjeta}
-          onCerrar={() => setModalGastoAbierto(false)}
-          onConfirmar={agregarNuevoGasto}
+          tarjetaNombre={tarjeta?.nombre ?? ''}
+          onClose={() => setModalNuevoGasto(false)}
+          onGuardar={nuevasCuotas => {
+            setCuotas(prev => [...prev, ...nuevasCuotas])
+            setModalNuevoGasto(false)
+          }}
         />
       )}
-
     </div>
   )
 }

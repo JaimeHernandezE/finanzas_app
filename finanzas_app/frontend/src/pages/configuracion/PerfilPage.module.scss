@@ -1,0 +1,183 @@
+// =============================================================================
+// PerfilPage — perfil de usuario
+// =============================================================================
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.muted {
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-3;
+
+  &:hover {
+    color: $color-text;
+    text-decoration: underline;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-6;
+}
+
+.section {
+  margin-bottom: $space-8;
+}
+
+.groupHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.avatarWrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: $space-3;
+}
+
+.avatarImg {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatarInicial {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #c8f060;
+  color: #0f0f0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: $font-weight-bold;
+}
+
+.nombre {
+  font-size: 18px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  text-align: center;
+  margin: 0 0 $space-1;
+}
+
+.email {
+  font-size: 13px;
+  color: $color-text-muted;
+  text-align: center;
+  margin: 0 0 $space-2;
+}
+
+.badgeRol {
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+  background: #f0f0ec;
+  color: $color-text-secondary;
+}
+
+.rowEdit {
+  margin-bottom: $space-4;
+}
+
+.labelInline {
+  display: block;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+  margin-bottom: $space-1;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+}
+
+.input {
+  @include input-base;
+  flex: 1;
+  min-width: 200px;
+  max-width: 400px;
+  padding: $input-padding-y $input-padding-x;
+  height: $input-height-base;
+}
+
+.btnGuardar {
+  display: inline-flex;
+  align-items: center;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.btnLogout {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  padding: $space-2 $space-4;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  color: #ff4d4d;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
