@@ -22,10 +22,13 @@ export default defineConfig({
         // Inyecta variables y mixins en todos los archivos .module.scss
         // sin necesidad de importarlos manualmente en cada uno.
         additionalData: (content: string, filepath: string) => {
-          if (filepath.includes('/src/styles/')) return content
-          return `@use "variables" as *;\n@use "mixins" as *;\n${content}`
+          if (filepath.includes('src/styles')) return content
+          const stylesDir = path.resolve(__dirname, 'src/styles')
+          const rel = path.relative(path.dirname(filepath), stylesDir).replace(/\\/g, '/')
+          const prefix = rel ? `${rel}/` : ''
+          return `@use "${prefix}variables" as *;\n@use "${prefix}mixins" as *;\n${content}`
         },
-        loadPaths: [path.resolve(__dirname, 'src/styles')],
+        loadPaths: [path.resolve(__dirname, 'src/styles').replace(/\\/g, '/')],
       },
     },
   },
