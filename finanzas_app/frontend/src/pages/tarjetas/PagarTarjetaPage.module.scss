@@ -1,0 +1,838 @@
+// =============================================================================
+// PagarTarjetaPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 680px;
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1;
+}
+
+.tarjetaSelect {
+  font-family: $font-family;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  background: $color-bg-white;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  padding: $space-1 $space-3;
+  cursor: pointer;
+  transition: border-color $transition-fast;
+
+  &:hover {
+    border-color: $color-border-strong;
+  }
+
+  &:focus {
+    outline: none;
+    border-color: $color-border-focus;
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+  }
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 120px;
+  text-align: center;
+}
+
+// ── Botones comunes ───────────────────────────────────────────────────────────
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+
+    &:hover {
+      background: #0f0f0f;
+    }
+  }
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnSmall {
+  font-size: $font-size-xs;
+  padding: $space-1 $space-2;
+}
+
+// ── Barra de filtros ──────────────────────────────────────────────────────────
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-3;
+}
+
+// ── Segmented control (4 opciones) ───────────────────────────────────────────
+
+.segmented {
+  display: flex;
+  background: $color-bg-subtle;
+  border-radius: $radius-base;
+  padding: 2px;
+}
+
+.segBtn {
+  padding: $space-1 $space-2;
+  border: none;
+  background: none;
+  border-radius: calc($radius-base - 2px);
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  cursor: pointer;
+  transition: background $transition-fast, color $transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.segBtnActive {
+  background: #fff;
+  color: $color-text;
+  box-shadow: $shadow-xs;
+}
+
+// ── Sección card ──────────────────────────────────────────────────────────────
+
+.seccion {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-4 $space-5;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.seccionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-3;
+}
+
+.seccionTitulo {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+}
+
+// ── Ítem de cuota ─────────────────────────────────────────────────────────────
+
+.cuotaItem {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+  margin: 0 (-$space-5);
+  padding-left: $space-5;
+  padding-right: $space-5;
+
+  &:first-of-type {
+    border-top: none;
+    margin-top: $space-2;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+  }
+}
+
+.cuotaItemExcluida {
+  opacity: 0.6;
+}
+
+.cuotaCheck {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #0f0f0f;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
+}
+
+.cuotaInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cuotaNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.cuotaDetalle {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.cuotaMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.tachado {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+// ── Badges de estado ──────────────────────────────────────────────────────────
+
+.estadoBadge {
+  font-size: 10px;
+  font-weight: $font-weight-medium;
+  padding: 2px 6px;
+  border-radius: $radius-full;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.estadoPendiente {
+  background: #fff8e1;
+  color: #f59e0b;
+}
+
+.estadoFacturado {
+  background: #e8f4ff;
+  color: #3b82f6;
+}
+
+.estadoPagado {
+  background: #f0fdf4;
+  color: #22a06b;
+}
+
+// ── Estado vacío de cuotas ────────────────────────────────────────────────────
+
+.emptyState {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-6 0 $space-4;
+  justify-content: center;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+.emptyIcon {
+  font-size: 18px;
+}
+
+// ── Cargos adicionales ────────────────────────────────────────────────────────
+
+.cargosVacio {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  padding: $space-3 0;
+  text-align: center;
+}
+
+.cargoItem {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+  margin: 0 (-$space-5);
+  padding-left: $space-5;
+  padding-right: $space-5;
+
+  &:first-of-type {
+    margin-top: $space-2;
+  }
+}
+
+.cargoInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cargoNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.cargoCat {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.cargoMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: #ff4d4d;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: 14px;
+  color: $color-text-muted;
+  flex-shrink: 0;
+  transition: background $transition-fast, color $transition-fast;
+
+  &:hover {
+    background: #fff0f0;
+    color: #ff4d4d;
+  }
+}
+
+// ── Formulario inline de cargo ────────────────────────────────────────────────
+
+.cargoFormRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 0 $space-2;
+  animation: fadeIn 0.15s ease;
+}
+
+.cargoFormInput {
+  @include input-base;
+  flex: 1;
+  height: 34px;
+  padding: 0 $space-3;
+}
+
+.cargoFormMonto {
+  display: flex;
+  align-items: center;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  overflow: hidden;
+  height: 34px;
+  width: 110px;
+  flex-shrink: 0;
+  transition: border-color $transition-fast;
+
+  &:focus-within {
+    border-color: $color-border-focus;
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+  }
+}
+
+.cargoFormPrefix {
+  padding: 0 $space-2;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  background: $color-bg-subtle;
+  border-right: 1px solid $color-border;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.cargoFormInputMonto {
+  flex: 1;
+  height: 100%;
+  border: none;
+  padding: 0 $space-2;
+  font-size: $font-size-sm;
+  font-family: $font-family;
+  color: $color-text;
+  background: transparent;
+  min-width: 0;
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.cargoFormOk {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: $sidebar-accent;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background $transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    background: #333;
+  }
+}
+
+.cargoFormCancel {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: none;
+  color: $color-text-muted;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background $transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+// ── Panel de totales ──────────────────────────────────────────────────────────
+
+.totalesPanel {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  align-self: flex-end;
+  min-width: 280px;
+  width: 100%;
+}
+
+.totalFila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.totalLabel {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.totalMonto {
+  font-size: 13px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.totalMontoExcluido {
+  color: #ff4d4d;
+}
+
+.totalSep {
+  border-top: 1.5px solid #e8e8e4;
+  margin: $space-1 0;
+}
+
+.totalFilaFinal {
+  margin-top: $space-1;
+}
+
+.totalLabelFinal {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.totalMontoFinal {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.btnPagar {
+  width: 100%;
+  margin-top: $space-3;
+  padding: $space-3;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-4;
+}
+
+.modalCard {
+  background: $color-bg-white;
+  border-radius: 12px;
+  padding: 28px;
+  max-width: 440px;
+  width: 100%;
+  animation: fadeIn 0.2s ease;
+  box-shadow: $shadow-lg;
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+.modalHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modalTitulo {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.modalClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.modalSub {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin-top: -$space-2;
+}
+
+.modalDetalles {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+  font-size: $font-size-sm;
+  color: $color-text;
+}
+
+.modalExcluidas {
+  color: $color-text-muted;
+  font-style: italic;
+}
+
+.modalTotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: $space-3;
+  border-top: 1px solid $color-border;
+}
+
+.modalTotalMonto {
+  font-size: $font-size-lg;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.modalBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: $space-3;
+}
+
+// ── Formulario del modal de nuevo gasto ───────────────────────────────────────
+
+.gastoForm {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: $space-1;
+}
+
+.gastoField {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.gastoLabel {
+  @include field-label;
+}
+
+.gastoInput {
+  @include input-base;
+  height: $input-height-base;
+  padding: 0 $space-3;
+}
+
+.gastoSelect {
+  @include input-base;
+  height: $input-height-base;
+  padding: 0 $space-3;
+  cursor: pointer;
+}
+
+.gastoTextarea {
+  @include input-base;
+  padding: $space-2 $space-3;
+  resize: vertical;
+}
+
+.gastoRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $space-3;
+}
+
+.gastoInputPrefix {
+  display: flex;
+  align-items: center;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  height: $input-height-base;
+  overflow: hidden;
+  transition: border-color $transition-fast, box-shadow $transition-fast;
+
+  &:focus-within {
+    border-color: $color-border-focus;
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+  }
+
+  > span {
+    padding: 0 $space-2;
+    font-size: $font-size-sm;
+    color: $color-text-muted;
+    background: $color-bg-subtle;
+    border-right: 1px solid $color-border;
+    height: 100%;
+    display: flex;
+    align-items: center;
+  }
+
+  > input {
+    flex: 1;
+    height: 100%;
+    border: none;
+    padding: 0 $space-3;
+    font-size: $font-size-sm;
+    font-family: $font-family;
+    color: $color-text;
+    background: transparent;
+    min-width: 0;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}
+
+// ── Pantalla de éxito ─────────────────────────────────────────────────────────
+
+.exitoWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $space-3;
+  padding: $space-16 $space-8;
+  text-align: center;
+}
+
+.exitoIcono {
+  width: 56px;
+  height: 56px;
+  border-radius: $radius-full;
+  background: $sidebar-accent;
+  color: #0f0f0f;
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: $space-2;
+}
+
+.exitoTitulo {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.exitoSub {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.exitoMonto {
+  font-size: $font-size-3xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin: $space-2 0;
+}
+
+.exitoBtns {
+  display: flex;
+  gap: $space-3;
+  margin-top: $space-4;
+}
