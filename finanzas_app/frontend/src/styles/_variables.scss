@@ -95,4 +95,16 @@ $input-font-size:    $font-size-sm;
 
 // --- Layout ---
 $container-max-width: 1280px;
-$sidebar-width:       240px;
+$sidebar-width:       220px;
+$sidebar-width-collapsed: 60px;
+
+// --- Sidebar ---
+$sidebar-bg:          #0f0f0f;
+$sidebar-accent:      #c8f060;  // lima — acento activo
+$sidebar-text:        rgba(255, 255, 255, 0.65);
+$sidebar-text-hover:  rgba(255, 255, 255, 0.90);
+$sidebar-item-hover:  rgba(255, 255, 255, 0.06);
+$sidebar-item-active: rgba(200, 240, 96, 0.12);
+
+// --- Page background ---
+$color-bg-page:       #f7f7f5;
