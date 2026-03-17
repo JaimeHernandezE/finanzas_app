@@ -1,0 +1,100 @@
+// =============================================================================
+// ConfiguracionPage — índice de configuración
+// =============================================================================
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-6;
+}
+
+.section {
+  margin-bottom: $space-8;
+}
+
+.groupHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  overflow: hidden;
+}
+
+.itemLink {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-4;
+  text-decoration: none;
+  color: inherit;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+  }
+}
+
+.itemIcon {
+  font-size: $font-size-base;
+  flex-shrink: 0;
+}
+
+.itemLabel {
+  font-size: 14px;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+  min-width: 0;
+}
+
+.itemResumen {
+  font-size: 13px;
+  color: $color-text-muted;
+  flex-shrink: 0;
+}
+
+.itemChevron {
+  font-size: $font-size-lg;
+  color: $color-text-muted;
+  flex-shrink: 0;
+}

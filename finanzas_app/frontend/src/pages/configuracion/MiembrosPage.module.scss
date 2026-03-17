@@ -1,0 +1,278 @@
+// =============================================================================
+// MiembrosPage — miembros de la familia e invitaciones
+// =============================================================================
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-3;
+
+  &:hover {
+    color: $color-text;
+    text-decoration: underline;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-6;
+}
+
+.section {
+  margin-bottom: $space-8;
+}
+
+.groupHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.block {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  overflow: hidden;
+}
+
+.fila {
+  display: flex;
+  align-items: center;
+  gap: $space-4;
+  padding: $space-4;
+  border-top: 1px solid #e8e8e4;
+
+  &:first-child {
+    border-top: none;
+  }
+}
+
+.filaAvatar {
+  flex-shrink: 0;
+}
+
+.avatarImg {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatarInicial {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #c8f060;
+  color: #0f0f0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: $font-weight-bold;
+}
+
+.filaMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.filaTop {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+  margin-bottom: $space-1;
+}
+
+.filaNombre {
+  font-size: 14px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.badgeRol {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+
+  &.rolADMIN {
+    background: #0f0f0f;
+    color: #fff;
+  }
+
+  &.rolMIEMBRO {
+    background: #f0f0ec;
+    color: $color-text-muted;
+  }
+
+  &.rolLECTURA {
+    background: #fff0f0;
+    color: #ff4d4d;
+  }
+}
+
+.tuBadge {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.btnEdit {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.filaEmail {
+  font-size: 13px;
+  color: $color-text-muted;
+  margin: 0;
+}
+
+.filaEditRol {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.selectRol {
+  @include input-base;
+  min-width: 140px;
+  padding: $space-2 $space-3;
+  height: 36px;
+}
+
+.btnOk,
+.btnCancel {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.invitarRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+}
+
+.inputEmail {
+  @include input-base;
+  min-width: 220px;
+  max-width: 320px;
+  padding: $space-2 $space-3;
+  height: 36px;
+}
+
+.btnEnviar {
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+
+  &:hover {
+    background: #333;
+  }
+}
+
+.msgError {
+  margin-top: $space-2;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+}
+
+.msgExito {
+  margin-top: $space-2;
+  font-size: $font-size-sm;
+  color: #22a06b;
+}
+
+.filaInvitacion {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+
+  &:first-child {
+    border-top: none;
+  }
+}
+
+.invEmail {
+  font-size: 14px;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+}
+
+.invFecha {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.btnDelete {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}

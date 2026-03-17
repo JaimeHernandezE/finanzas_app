@@ -1,0 +1,335 @@
+// =============================================================================
+// CuentasPage — cuentas personales y tutorías
+// =============================================================================
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-3;
+
+  &:hover {
+    color: $color-text;
+    text-decoration: underline;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-6;
+}
+
+.section {
+  margin-bottom: $space-8;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: $space-2;
+  margin-bottom: $space-3;
+}
+
+.groupHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+}
+
+.block {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  overflow: hidden;
+}
+
+.fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  flex-wrap: wrap;
+
+  &:first-child {
+    border-top: none;
+  }
+}
+
+.filaMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: $space-2;
+  flex-wrap: wrap;
+}
+
+.filaNombre {
+  font-size: 14px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.filaDesc,
+.filaDuenio {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.filaActions {
+  display: flex;
+  align-items: center;
+  gap: $space-1;
+}
+
+.btnEdit,
+.btnDelete {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.filaEdicion {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  flex-wrap: wrap;
+}
+
+.inputNombre {
+  @include input-base;
+  min-width: 120px;
+  max-width: 200px;
+  padding: $space-2 $space-3;
+  height: 36px;
+}
+
+.inputDesc {
+  @include input-base;
+  flex: 1;
+  min-width: 160px;
+  padding: $space-2 $space-3;
+  height: 36px;
+}
+
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  cursor: pointer;
+
+  input {
+    width: auto;
+  }
+}
+
+.btnOk,
+.btnCancel {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnQuitarTutoria {
+  margin-left: auto;
+  padding: $space-1 $space-2;
+  border: none;
+  background: none;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.confirmText {
+  flex: 1;
+  font-size: $font-size-sm;
+  color: $color-text;
+}
+
+.btnConfirmSi {
+  padding: $space-1 $space-3;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  color: #ff4d4d;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
+
+.btnConfirmNo {
+  padding: $space-1 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnAgregar {
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.addTutoriaRow {
+  margin-top: $space-3;
+}
+
+.btnAgregarTutoria {
+  padding: $space-2 $space-3;
+  border: none;
+  background: none;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.addTutoria {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-top: $space-3;
+  flex-wrap: wrap;
+}
+
+.inputEmail {
+  @include input-base;
+  min-width: 200px;
+  max-width: 280px;
+  padding: $space-2 $space-3;
+  height: 36px;
+}
+
+.btnBuscar {
+  padding: $space-2 $space-4;
+  border: 1px solid #0f0f0f;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+
+  &:hover {
+    background: #333;
+  }
+}
+
+.tutoriaResult {
+  margin-top: $space-3;
+  padding: $space-4;
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+
+  .checkLabel {
+    display: block;
+    margin-bottom: $space-2;
+  }
+}
+
+.tutoriaTitulo {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  margin: 0 0 $space-2;
+}
+
+.btnConfirmar {
+  margin-top: $space-2;
+  padding: $space-2 $space-4;
+  border: 1px solid #0f0f0f;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: #333;
+  }
+}
+
+.msgError {
+  margin-top: $space-2;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+}
