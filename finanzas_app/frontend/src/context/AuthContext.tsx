@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   onAuthStateChanged,
-  signInWithRedirect,
+  signInWithPopup,
   getRedirectResult,
   signOut,
   type User as FirebaseUser
@@ -117,13 +117,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function login() {
     setError(null)
+    setLoading(true)
     try {
-      await signInWithRedirect(auth, provider)
+      const result = await signInWithPopup(auth, provider)
+      await verificarConBackend(result.user)
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : ''
-      if (code !== 'auth/popup-closed-by-user') {
+      if (code === 'auth/popup-closed-by-user') {
+        setError(null)
+      } else {
         setError('Error al iniciar sesión. Intenta nuevamente.')
       }
+      setLoading(false)
     }
   }
 
