@@ -45,5 +45,15 @@ class Usuario(AbstractUser):
     )
     rol = models.CharField(max_length=10, choices=ROL_CHOICES, default='MIEMBRO')
 
+    def cuentas_visibles(self):
+        """
+        Retorna todas las CuentaPersonal que este usuario puede ver y operar:
+        las propias más las que tutela de otros usuarios.
+        """
+        from applications.finanzas.models import CuentaPersonal
+        propias    = CuentaPersonal.objects.filter(usuario=self)
+        tuteladas  = CuentaPersonal.objects.filter(tutores__tutor=self)
+        return (propias | tuteladas).distinct()
+
     def __str__(self):
         return self.get_full_name() or self.username

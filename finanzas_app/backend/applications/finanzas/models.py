@@ -110,6 +110,44 @@ class CuentaPersonal(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.usuario})"
 
+    @property
+    def tiene_tutores(self) -> bool:
+        """Retorna True si algún usuario externo tutela esta cuenta."""
+        return self.tutores.exists()
+
+
+class TutorCuenta(models.Model):
+    """
+    Relación de tutoría entre un usuario y la cuenta personal de otro.
+    Permite que un adulto (tutor) vea y registre movimientos en la cuenta
+    de un tercero (ej: cuenta de un hijo) sin ser el dueño de esa cuenta.
+
+    La visibilidad en el sidebar se construye combinando:
+      - Cuentas propias: CuentaPersonal.objects.filter(usuario=request.user)
+      - Cuentas tuteladas: CuentaPersonal.objects.filter(tutores__tutor=request.user)
+    """
+    tutor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='tutelas',
+        help_text="Usuario que ejerce la tutoría. Ve y puede operar esta cuenta."
+    )
+    cuenta = models.ForeignKey(
+        CuentaPersonal,
+        on_delete=models.CASCADE,
+        related_name='tutores',
+        help_text="Cuenta personal tutelada. Pertenece a otro usuario."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [['tutor', 'cuenta']]
+        verbose_name = "tutoría de cuenta"
+        verbose_name_plural = "tutorías de cuentas"
+
+    def __str__(self):
+        return f"{self.tutor} tutela → {self.cuenta}"
+
 
 class Movimiento(models.Model):
     """
