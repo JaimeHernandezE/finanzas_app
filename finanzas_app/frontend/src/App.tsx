@@ -17,6 +17,7 @@ import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
 import CuentaPage from '@/pages/gastos/CuentaPage'
 import GastosComunesPage from '@/pages/gastos/GastosComunesPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
+import PagarTarjetaPage from '@/pages/tarjetas/PagarTarjetaPage'
 import LiquidacionPage from '@/pages/liquidacion/LiquidacionPage'
 import PresupuestoPage from '@/pages/presupuesto/PresupuestoPage'
 import InversionesPage from '@/pages/inversiones/InversionesPage'
@@ -46,6 +47,7 @@ export default function App() {
 
           <Route path="tarjetas">
             <Route index element={<TarjetasPage />} />
+            <Route path="pagar" element={<PagarTarjetaPage />} />
           </Route>
 
           <Route path="liquidacion" element={<LiquidacionPage />} />

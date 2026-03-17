@@ -1,0 +1,631 @@
+/* =============================================================================
+   PagarTarjetaPage — estilos
+   Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+   ============================================================================= */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* ── Página ──────────────────────────────────────────────────────────────────── */
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+/* ── Encabezado ──────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  gap: $space-4;
+  flex-wrap: wrap;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.tarjetaSelect {
+  @include input-base;
+  min-width: 180px;
+  height: $input-height-base;
+  padding: 0 $space-3;
+  cursor: pointer;
+}
+
+/* ── Navegador de mes ────────────────────────────────────────────────────────── */
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+/* ── Botones ─────────────────────────────────────────────────────────────────── */
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+/* ── Barra de filtros ────────────────────────────────────────────────────────── */
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: flex;
+  background: $color-bg-subtle;
+  border-radius: $radius-base;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.segBtn {
+  padding: $space-1 $space-3;
+  border: none;
+  background: none;
+  border-radius: calc($radius-base - 2px);
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  cursor: pointer;
+  transition: background $transition-fast, color $transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.segBtnActive {
+  background: #fff;
+  color: $color-text;
+  box-shadow: $shadow-xs;
+}
+
+.filterBarSpacer {
+  flex: 1;
+}
+
+/* ── Cabeceras de sección ────────────────────────────────────────────────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 8px;
+  gap: $space-3;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: $font-weight-bold;
+  color: $color-text-muted;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.sectionHeaderAction {
+  flex-shrink: 0;
+}
+
+/* ── Listado de cuotas ───────────────────────────────────────────────────────── */
+
+.listaCuotas {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+  margin-bottom: $space-6;
+}
+
+.cuotaRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+  }
+}
+
+.cuotaCheckbox {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: #0f0f0f;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.cuotaContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  flex-wrap: wrap;
+}
+
+.cuotaDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+  min-width: 0;
+
+  &.excluida {
+    text-decoration: line-through;
+    opacity: 0.4;
+  }
+}
+
+.cuotaMeta {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  flex-shrink: 0;
+}
+
+.cuotaMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  flex-shrink: 0;
+  text-align: right;
+
+  &.excluida {
+    text-decoration: line-through;
+    opacity: 0.4;
+  }
+}
+
+.badgeEstado {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  padding: 2px 6px;
+  border-radius: $radius-sm;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+.badgePendiente {
+  background: #fff8e1;
+  color: #f59e0b;
+}
+
+.badgeFacturado {
+  background: #e8f4ff;
+  color: #3b82f6;
+}
+
+.badgePagado {
+  background: #f0fdf4;
+  color: #22a06b;
+}
+
+/* ── Estado vacío cuotas ─────────────────────────────────────────────────────── */
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $space-16 $space-8;
+  gap: $space-2;
+}
+
+.emptyIcon {
+  font-size: 32px;
+  color: $color-text-muted;
+  line-height: 1;
+}
+
+.emptyTitulo {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-align: center;
+}
+
+/* ── Cargos adicionales ──────────────────────────────────────────────────────── */
+
+.cargosSection {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+  margin-bottom: $space-6;
+  padding: 0 $space-4 $space-4;
+}
+
+.formCargoInline {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 0;
+  border-bottom: 1px solid #e8e8e4;
+  animation: fadeIn 0.2s ease;
+}
+
+.formCargoDesc {
+  @include input-base;
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 $space-3;
+}
+
+.formCargoMonto {
+  @include input-base;
+  width: 120px;
+  height: 36px;
+  padding: 0 $space-3;
+}
+
+.formCargoBtns {
+  display: flex;
+  gap: $space-1;
+}
+
+.formCargoBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: $radius-base;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.formCargoBtnConfirm {
+  color: $color-success;
+  &:hover { color: darken($color-success, 8%); }
+}
+
+.cargoRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+}
+
+.cargoDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+  min-width: 0;
+}
+
+.cargoCat {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  flex-shrink: 0;
+}
+
+.cargoMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: #ff4d4d;
+  flex-shrink: 0;
+}
+
+.cargoDelete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: $radius-base;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #fff0f0;
+    color: #ff4d4d;
+  }
+}
+
+/* ── Panel de totales ────────────────────────────────────────────────────────── */
+
+.totalesPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: $space-1;
+  margin-bottom: $space-5;
+}
+
+.totalRow {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: $space-4;
+  min-width: 220px;
+  font-size: 13px;
+}
+
+.totalLabel {
+  color: $color-text-muted;
+  flex-shrink: 0;
+}
+
+.totalMonto {
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 80px;
+  text-align: right;
+}
+
+.totalLabelExcluido {
+  color: #ff4d4d;
+}
+
+.totalSeparator {
+  border-top: 1.5px solid #e8e8e4;
+  margin: $space-2 0;
+  width: 100%;
+  max-width: 260px;
+}
+
+.totalRowFinal {
+  font-size: 16px;
+  font-weight: $font-weight-bold;
+  color: #0f0f0f;
+}
+
+.btnRegistrar {
+  width: 100%;
+  max-width: 260px;
+  padding: $space-3 $space-4;
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+}
+
+/* ── Modales ─────────────────────────────────────────────────────────────────── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-4;
+}
+
+.modalCard {
+  background: $color-bg-white;
+  border-radius: 12px;
+  padding: 28px;
+  max-width: 380px;
+  width: 100%;
+  animation: fadeIn 0.2s ease;
+  box-shadow: $shadow-lg;
+}
+
+.modalCardWide {
+  max-width: 560px;
+}
+
+.modalTitulo {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-bottom: $space-3;
+}
+
+.modalTexto {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  line-height: $line-height-base;
+  margin-bottom: $space-4;
+}
+
+.modalClose {
+  position: absolute;
+  top: $space-3;
+  right: $space-3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: $radius-base;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.modalBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: $space-3;
+  margin-top: $space-5;
+}
+
+.modalCardWithClose {
+  position: relative;
+  padding-top: $space-10;
+}
+
+/* ── Pantalla de éxito ───────────────────────────────────────────────────────── */
+
+.exitoScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $space-16 $space-8;
+  gap: $space-4;
+  text-align: center;
+}
+
+.exitoIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: $radius-full;
+  background: #c8f060;
+  color: #0f0f0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: $font-weight-bold;
+  line-height: 1;
+}
+
+.exitoTitulo {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.exitoSubtitulo {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.exitoMonto {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.exitoActions {
+  display: flex;
+  gap: $space-3;
+  margin-top: $space-4;
+  flex-wrap: wrap;
+  justify-content: center;
+}
