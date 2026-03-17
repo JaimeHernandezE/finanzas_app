@@ -51,6 +51,7 @@ Fixtures compartidos:
 | `tests/test_tarjetas.py` | Listado (propias, no ajenas, 401), creación (ok, sin nombre), edición y eliminación (propias, 404 ajenas). |
 | `tests/test_signal_cuotas.py` | Signal de generación de cuotas: N cuotas al crear movimiento con crédito, numeración, suma = monto total, diferencia de centavos en primera cuota, meses consecutivos, estado PENDIENTE e incluir=True, no cuotas para efectivo, no duplicados en edición, monto_cuota manual. |
 | `tests/test_movimientos.py` | Listado (familia, otra familia, filtros ambito/tipo/mes/búsqueda, 401), creación (efectivo, crédito con cuotas, validación tarjeta/num_cuotas), edición y eliminación (solo autor, cascada de cuotas), endpoints de cuotas (listado, filtros, incluir=False mueve mes, aislamiento por familia). |
+| `tests/test_sueldos_liquidacion.py` | Ingresos comunes: listado (familia, filtro mes/año, otra familia, 401), creación (ok, múltiples mismo mes), edición y eliminación (solo autor, 403 ajeno). Liquidación: estructura (periodo, ingresos, gastos_comunes), ingresos y gastos agrupados por usuario, suma múltiples ingresos, sin gastos personales, mes vacío, 400 sin params, otra familia, 401. |
 
 ## Cómo ejecutar los tests
 
@@ -75,6 +76,9 @@ docker-compose exec web pytest tests/test_categorias.py tests/test_metodos_pago.
 # Tests de movimientos y cuotas (signal + endpoints)
 docker-compose exec web pytest tests/test_signal_cuotas.py tests/test_movimientos.py -v
 
+# Tests de ingresos comunes y liquidación
+docker-compose exec web pytest tests/test_sueldos_liquidacion.py -v
+
 # Cobertura del módulo finanzas
 docker-compose exec web pytest tests/ --cov=applications.finanzas --cov-report=term-missing
 ```
@@ -96,8 +100,10 @@ docker-compose exec web pytest tests/ --cov=applications.finanzas --cov-report=t
 | **Movimientos — creación** | 4 | Crea efectivo y crédito (genera cuotas); 400 sin tarjeta o sin num_cuotas. |
 | **Movimientos — edición/eliminación** | 5 | Edita/elimina solo autor; eliminación en cascada de cuotas; 403 ajeno. |
 | **Cuotas — endpoint** | 5 | Lista por familia; filtros tarjeta/mes/estado; incluir=False mueve mes; no ve otra familia. |
+| **Ingresos comunes** | 10 | Lista por familia; filtro mes/año; no ve otra familia; crea ok y múltiples mismo mes; edita/elimina solo autor; 403 ajeno; 401 sin token. |
+| **Liquidación** | 9 | Estructura periodo/ingresos/gastos_comunes; ingresos y gastos agrupados por usuario; suma múltiples ingresos; no incluye gastos personales; mes sin datos; 400 sin mes/anio; no ve otra familia; 401 sin token. |
 
-**Total: 58 tests** (26 catálogos + 32 movimientos y cuotas).
+**Total: 77 tests** (26 catálogos + 32 movimientos y cuotas + 19 sueldos y liquidación).
 
 ## Nota técnica
 

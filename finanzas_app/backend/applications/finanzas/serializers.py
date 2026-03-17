@@ -1,7 +1,7 @@
 # applications/finanzas/serializers.py
 
 from rest_framework import serializers
-from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota
+from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota, IngresoComun
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -82,3 +82,14 @@ class MovimientoListSerializer(serializers.ModelSerializer):
             'tarjeta', 'tarjeta_nombre',
             'autor_nombre', 'oculto',
         ]
+
+
+class IngresoComunSerializer(serializers.ModelSerializer):
+    autor_nombre = serializers.CharField(
+        source='usuario.first_name', read_only=True
+    )
+
+    class Meta:
+        model = IngresoComun
+        fields = ['id', 'mes', 'monto', 'origen', 'usuario', 'autor_nombre']
+        read_only_fields = ['usuario', 'familia']

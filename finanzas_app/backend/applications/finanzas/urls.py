@@ -22,4 +22,11 @@ urlpatterns = [
     # Cuotas
     path('cuotas/', views.cuotas, name='cuotas'),
     path('cuotas/<int:pk>/', views.cuota_detalle, name='cuota-detalle'),
+
+    # Ingresos comunes (sueldos)
+    path('ingresos-comunes/', views.ingresos_comunes, name='ingresos-comunes'),
+    path('ingresos-comunes/<int:pk>/', views.ingreso_comun_detalle, name='ingreso-comun-detalle'),
+
+    # Liquidación
+    path('liquidacion/', views.liquidacion, name='liquidacion'),
 ]

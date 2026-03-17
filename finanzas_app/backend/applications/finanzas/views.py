@@ -1,6 +1,6 @@
 # applications/finanzas/views.py
 
-from django.db.models import Q
+from django.db.models import Q, Sum
 from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 import applications.utils as utils_auth
-from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota
+from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota, IngresoComun
 from .serializers import (
     CategoriaSerializer,
     MetodoPagoSerializer,
@@ -16,6 +16,7 @@ from .serializers import (
     MovimientoSerializer,
     MovimientoListSerializer,
     CuotaSerializer,
+    IngresoComunSerializer,
 )
 
 
@@ -389,3 +390,168 @@ def cuota_detalle(request, pk):
         serializer.save()
         return Response(serializer.data)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── INGRESOS COMUNES (SUELDOS) ──────────────────────────────────────────────────
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def ingresos_comunes(request):
+    """
+    GET  → Lista ingresos comunes de la familia.
+           Filtros opcionales:
+           ?mes=3&anio=2026  filtra por mes y año
+           ?usuario=1        filtra por usuario (para ver solo los propios)
+
+    POST → Crea un ingreso común para el usuario autenticado.
+           Body: { "mes": "2026-03-01", "monto": "1800000.00", "origen": "Sueldo" }
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    if request.method == 'GET':
+        qs = IngresoComun.objects.filter(
+            familia=usuario.familia
+        ).select_related('usuario').order_by('-mes', 'usuario__first_name')
+
+        mes = request.GET.get('mes')
+        anio = request.GET.get('anio')
+        uid = request.GET.get('usuario')
+
+        if mes and anio:
+            qs = qs.filter(mes__month=mes, mes__year=anio)
+        if uid:
+            qs = qs.filter(usuario_id=uid)
+
+        return Response(IngresoComunSerializer(qs, many=True).data)
+
+    if request.method == 'POST':
+        serializer = IngresoComunSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(
+                usuario=usuario,
+                familia=usuario.familia,
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PUT', 'DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def ingreso_comun_detalle(request, pk):
+    """
+    PUT    → Edita un ingreso común (solo el autor)
+    DELETE → Elimina un ingreso común (solo el autor)
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    try:
+        ingreso = IngresoComun.objects.get(pk=pk, familia=usuario.familia)
+    except IngresoComun.DoesNotExist:
+        return Response(
+            {'error': 'Ingreso no encontrado.'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    if ingreso.usuario != usuario:
+        return Response(
+            {'error': 'Solo puedes modificar tus propios ingresos.'},
+            status=status.HTTP_403_FORBIDDEN
+        )
+
+    if request.method == 'DELETE':
+        ingreso.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    if request.method == 'PUT':
+        serializer = IngresoComunSerializer(ingreso, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── LIQUIDACIÓN ────────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def liquidacion(request):
+    """
+    Retorna los datos crudos necesarios para que el frontend
+    calcule la liquidación mensual on-the-fly.
+
+    Query params obligatorios: ?mes=3&anio=2026
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    mes = request.GET.get('mes')
+    anio = request.GET.get('anio')
+
+    if not mes or not anio:
+        return Response(
+            {'error': 'Los parámetros mes y anio son obligatorios.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    mes = int(mes)
+    anio = int(anio)
+
+    ingresos_qs = IngresoComun.objects.filter(
+        familia=usuario.familia,
+        mes__month=mes,
+        mes__year=anio,
+    ).values(
+        'usuario__id',
+        'usuario__first_name',
+    ).annotate(
+        total=Sum('monto')
+    ).order_by('usuario__first_name')
+
+    ingresos = [
+        {
+            'usuario_id': i['usuario__id'],
+            'nombre': i['usuario__first_name'],
+            'total': str(i['total']),
+        }
+        for i in ingresos_qs
+    ]
+
+    gastos_qs = Movimiento.objects.filter(
+        familia=usuario.familia,
+        ambito='COMUN',
+        tipo='EGRESO',
+        fecha__month=mes,
+        fecha__year=anio,
+        oculto=False,
+    ).values(
+        'usuario__id',
+        'usuario__first_name',
+    ).annotate(
+        total=Sum('monto')
+    ).order_by('usuario__first_name')
+
+    gastos_comunes = [
+        {
+            'usuario_id': g['usuario__id'],
+            'nombre': g['usuario__first_name'],
+            'total': str(g['total']),
+        }
+        for g in gastos_qs
+    ]
+
+    return Response({
+        'periodo': {
+            'mes': mes,
+            'anio': anio,
+        },
+        'ingresos': ingresos,
+        'gastos_comunes': gastos_comunes,
+    })
