@@ -154,8 +154,7 @@ function PropBarRow({
         <div
           className={styles.barFill}
           style={
-            { '--target-width': `${ancho}%`, backgroundColor: color, animationDelay: `${delay}ms` }
-            as React.CSSProperties
+            { '--target-width': `${ancho}%`, backgroundColor: color, animationDelay: `${delay}ms` } as React.CSSProperties
           }
         />
       </div>

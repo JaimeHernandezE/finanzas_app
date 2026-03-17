@@ -1,60 +1,15 @@
 // =============================================================================
 // GastosComunesPage — estilos
-// Las clases de utilidad (botones, filtro, modal, etc.) se componen desde
-// CuentaPage.module.scss. Solo se definen aquí las clases específicas de
-// esta página o que difieren de CuentaPage.
+// Reutiliza estilos base de CuentaPage y sobreescribe lo necesario aquí.
 // Variables y mixins inyectados automáticamente vía vite.config (additionalData)
 // =============================================================================
+
+@use './CuentaPage.module.scss' as *;
 
 @keyframes fadeIn {
   from { opacity: 0; transform: scale(0.97); }
   to   { opacity: 1; transform: scale(1); }
 }
-
-// ── Utilidades compartidas (composes desde CuentaPage) ────────────────────────
-
-.btnPrimary    { composes: btnPrimary    from './CuentaPage.module.scss'; }
-.btnGhost      { composes: btnGhost      from './CuentaPage.module.scss'; }
-.btnDanger     { composes: btnDanger     from './CuentaPage.module.scss'; }
-
-.segmented     { composes: segmented     from './CuentaPage.module.scss'; }
-.segBtn        { composes: segBtn        from './CuentaPage.module.scss'; }
-.segBtnActive  { composes: segBtnActive  from './CuentaPage.module.scss'; }
-
-.filterBadge        { composes: filterBadge        from './CuentaPage.module.scss'; }
-.filterOverlay      { composes: filterOverlay      from './CuentaPage.module.scss'; }
-.filterOverlayVisible { composes: filterOverlayVisible from './CuentaPage.module.scss'; }
-.filterPanel        { composes: filterPanel        from './CuentaPage.module.scss'; }
-.filterPanelOpen    { composes: filterPanelOpen    from './CuentaPage.module.scss'; }
-.filterHeader       { composes: filterHeader       from './CuentaPage.module.scss'; }
-.filterClose        { composes: filterClose        from './CuentaPage.module.scss'; }
-.filterTitulo       { composes: filterTitulo       from './CuentaPage.module.scss'; }
-.filterBody         { composes: filterBody         from './CuentaPage.module.scss'; }
-.filterSection      { composes: filterSection      from './CuentaPage.module.scss'; }
-.filterSectionLabel { composes: filterSectionLabel from './CuentaPage.module.scss'; }
-.checkItem          { composes: checkItem          from './CuentaPage.module.scss'; }
-.filterFooter       { composes: filterFooter       from './CuentaPage.module.scss'; }
-
-.modalOverlay  { composes: modalOverlay  from './CuentaPage.module.scss'; }
-.modalCard     { composes: modalCard     from './CuentaPage.module.scss'; }
-.modalTitulo   { composes: modalTitulo   from './CuentaPage.module.scss'; }
-.modalTexto    { composes: modalTexto    from './CuentaPage.module.scss'; }
-.modalBtns     { composes: modalBtns     from './CuentaPage.module.scss'; }
-
-.emptyState    { composes: emptyState    from './CuentaPage.module.scss'; }
-.emptyIcon     { composes: emptyIcon     from './CuentaPage.module.scss'; }
-.emptyTitulo   { composes: emptyTitulo   from './CuentaPage.module.scss'; }
-.emptySubtitulo { composes: emptySubtitulo from './CuentaPage.module.scss'; }
-
-.actionBtn      { composes: actionBtn      from './CuentaPage.module.scss'; }
-.actionBtnDanger { composes: actionBtnDanger from './CuentaPage.module.scss'; }
-
-.grupoLabel    { composes: grupoLabel    from './CuentaPage.module.scss'; }
-.grupoSep      { composes: grupoSep      from './CuentaPage.module.scss'; }
-.grupoSubtotal { composes: grupoSubtotal from './CuentaPage.module.scss'; }
-
-.movCat        { composes: movCat        from './CuentaPage.module.scss'; }
-.movBadge      { composes: movBadge      from './CuentaPage.module.scss'; }
 
 // ── Página ────────────────────────────────────────────────────────────────────
 
