@@ -1,0 +1,318 @@
+// =============================================================================
+// LiquidacionPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@keyframes barraEntra {
+  from { width: 0; }
+  to   { width: var(--target-width); }
+}
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  margin-bottom: $space-1;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+// ── Tabs de período ───────────────────────────────────────────────────────────
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid $color-border;
+  gap: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 $space-4;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  font-weight: $font-weight-medium;
+  transition: color $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.tabActivo {
+  color: $color-text;
+  font-weight: $font-weight-bold;
+  border-bottom-color: #0f0f0f;
+}
+
+.tabArrow {
+  font-size: 11px;
+  color: $color-text-muted;
+}
+
+.tabMes {
+  white-space: nowrap;
+}
+
+.tabBadge {
+  font-size: 11px;
+  font-weight: $font-weight-medium;
+  padding: 2px $space-2;
+  border-radius: $radius-full;
+  white-space: nowrap;
+}
+
+.tabBadgeLiquidado {
+  background: #f0f0ec;
+  color: $color-text-muted;
+}
+
+.tabBadgeProyectado {
+  background: #fff8e1;
+  color: #f59e0b;
+}
+
+// ── Nota proyectado ───────────────────────────────────────────────────────────
+
+.notaProyectado {
+  font-size: 12px;
+  color: $color-text-muted;
+  font-style: italic;
+  margin-top: -$space-2;
+}
+
+// ── Sección card ──────────────────────────────────────────────────────────────
+
+.seccion {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.seccionTitulo {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-1;
+}
+
+// ── Aviso sueldos anteriores ──────────────────────────────────────────────────
+
+.avisoSueldos {
+  background: #fff8e1;
+  border: 1px solid #f59e0b;
+  border-radius: $radius-base;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #92400e;
+}
+
+.avisoLink {
+  color: #b45309;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+// ── Filas de barra proporcional ───────────────────────────────────────────────
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+}
+
+.barNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  background: #f0f0ec;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  width: var(--target-width);
+  animation: barraEntra 500ms ease-out both;
+}
+
+.barValor {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  min-width: 96px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.barMeta {
+  font-size: 13px;
+  color: $color-text-muted;
+  min-width: 48px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+// ── Fila de total ─────────────────────────────────────────────────────────────
+
+.filaTotal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid $color-border;
+  padding-top: $space-3;
+  margin-top: $space-1;
+}
+
+.filaTotalLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.filaTotalMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+// ── Prorrateo ─────────────────────────────────────────────────────────────────
+
+.prorrateoFila {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  flex-wrap: wrap;
+}
+
+.prorrateoNombre {
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 60px;
+}
+
+.prorrateoCalc {
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.prorrateoOp {
+  color: $color-text-muted;
+  padding: 0 2px;
+}
+
+.prorrateoMonto {
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-left: $space-1;
+}
+
+// ── Compensación por miembro ──────────────────────────────────────────────────
+
+.compFila {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  flex-wrap: wrap;
+}
+
+.compNombre {
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 60px;
+}
+
+.compDetalle {
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+}
+
+.compSep {
+  padding: 0 $space-1;
+  color: $color-border-strong;
+}
+
+.compResultado {
+  font-weight: $font-weight-semibold;
+  white-space: nowrap;
+}
+
+// ── Card resultado final ──────────────────────────────────────────────────────
+
+.resultCard {
+  background: #0f0f0f;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-top: $space-2;
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+}
+
+.resultTexto {
+  font-size: $font-size-base;
+  color: #fff;
+  line-height: $line-height-snug;
+
+  strong {
+    font-weight: $font-weight-bold;
+  }
+}
+
+.resultMonto {
+  color: $sidebar-accent;
+  font-weight: $font-weight-bold;
+}
+
+.resultProyeccion {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.resultCardOk {
+  background: #f0fdf4;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-top: $space-2;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: #22a06b;
+}

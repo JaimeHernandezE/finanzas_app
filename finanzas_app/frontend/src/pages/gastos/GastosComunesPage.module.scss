@@ -1,0 +1,211 @@
+// =============================================================================
+// GastosComunesPage — estilos
+// Reutiliza estilos base de CuentaPage y sobreescribe lo necesario aquí.
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@use './CuentaPage.module.scss' as *;
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+// Ocultar en móvil (el botón de la barra toma su lugar)
+.btnNuevoHeader {
+  @media (max-width: 640px) {
+    display: none;
+  }
+}
+
+// Solo visible en móvil
+.btnNuevoBar {
+  @media (min-width: 641px) {
+    display: none;
+  }
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Barra de filtros ──────────────────────────────────────────────────────────
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.searchInput {
+  @include input-base;
+  flex: 1;
+  min-width: 160px;
+  height: 34px;
+  padding: 0 $space-3;
+}
+
+// ── Listado ───────────────────────────────────────────────────────────────────
+
+.lista {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+}
+
+// ── Grupo por fecha ───────────────────────────────────────────────────────────
+
+.grupo {
+  // agrupador sin estilos propios
+}
+
+.grupoHeader {
+  position: sticky;
+  top: 0;
+  background: $color-bg-page;
+  padding: $space-2 $space-4;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  border-bottom: 1px solid #e8e8e4;
+}
+
+// ── Fila de movimiento ────────────────────────────────────────────────────────
+// Diferencia con CuentaPage: autor viene primero (columna fija 52px)
+
+.movRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+
+    .movActions {
+      opacity: 1;
+    }
+  }
+}
+
+// Autor — columna fija izquierda, primer nombre
+.movAutor {
+  width: 52px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  @include truncate;
+}
+
+.movInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.movDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.movMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+// ── Acciones (solo propias) ───────────────────────────────────────────────────
+
+.movActions {
+  display: flex;
+  gap: $space-1;
+  opacity: 0;
+  transition: opacity $transition-fast;
+  flex-shrink: 0;
+
+  @media (hover: none) {
+    opacity: 1;
+  }
+}

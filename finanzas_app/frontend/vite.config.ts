@@ -22,10 +22,11 @@ export default defineConfig({
         // Inyecta variables y mixins en todos los archivos .module.scss
         // sin necesidad de importarlos manualmente en cada uno.
         additionalData: (content: string, filepath: string) => {
-          if (filepath.includes('/src/styles/')) return content
+          if (filepath.includes('src/styles')) return content
           return `@use "variables" as *;\n@use "mixins" as *;\n${content}`
         },
-        loadPaths: [path.resolve(__dirname, 'src/styles')],
+        // Nota: Vite/Sass usa `includePaths` (no `loadPaths`) para resolver imports sin ruta.
+        includePaths: [path.resolve(__dirname, 'src/styles')],
       },
     },
   },
