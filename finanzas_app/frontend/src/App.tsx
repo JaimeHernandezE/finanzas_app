@@ -14,6 +14,7 @@ function Placeholder({ title }: { title: string }) {
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MovimientosPage from '@/pages/gastos/MovimientosPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
+import CuentaPage from '@/pages/gastos/CuentaPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
 import LiquidacionPage from '@/pages/liquidacion/LiquidacionPage'
 import PresupuestoPage from '@/pages/presupuesto/PresupuestoPage'
@@ -34,7 +35,7 @@ export default function App() {
           <Route path="gastos">
             <Route index element={<MovimientosPage />} />
             <Route path="comunes"    element={<Placeholder title="Gastos comunes" />} />
-            <Route path="cuenta/:id" element={<Placeholder title="Cuenta personal" />} />
+            <Route path="cuenta/:id" element={<CuentaPage />} />
             <Route path="nuevo"      element={<MovimientoFormPage />} />
             <Route path=":id"        element={<MovimientoFormPage />} />
             <Route path=":id/editar" element={<Placeholder title="Editar movimiento" />} />
