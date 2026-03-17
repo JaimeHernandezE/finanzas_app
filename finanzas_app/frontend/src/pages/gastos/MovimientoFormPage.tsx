@@ -83,28 +83,41 @@ export default function MovimientoFormPage() {
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
+    if (!metodoPagoId) {
+      setErrors({ general: 'No hay método de pago configurado para ' + metodo + '. Crea uno en Configuración.' })
+      return
+    }
+
     setLoading(true)
     setErrors({})
     try {
       const categoriaId = data.get('categoria')
-      const cuentaVal = data.get('cuenta')
-      await movimientosApi.createMovimiento({
+      const payload: Record<string, unknown> = {
         fecha: (data.get('fecha') as string) || new Date().toISOString().split('T')[0],
         tipo,
         ambito,
-        categoria: categoriaId ? Number(categoriaId) : undefined,
-        cuenta: cuentaVal ? Number(cuentaVal) : null,
+        categoria: Number(categoriaId),
+        cuenta: null,
         monto: String(monto),
         comentario: (data.get('comentario') as string) || '',
-        metodo_pago: metodoPagoId ?? undefined,
+        metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
         monto_cuota: metodo === 'CREDITO' && montoCuota ? montoCuota : null,
-      })
+      }
+      await movimientosApi.createMovimiento(payload)
       setResult({ monto, numCuotas, tipo })
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { error?: string } } }
-      setErrors({ general: ax.response?.data?.error ?? 'Error al guardar.' })
+      const ax = err as { response?: { data?: Record<string, string[] | string> } }
+      const data = ax.response?.data
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const msgs = Object.entries(data).map(([k, v]) =>
+          Array.isArray(v) ? v.join(' ') : String(v)
+        )
+        setErrors({ general: msgs.join(' ') || 'Error al guardar.' })
+      } else {
+        setErrors({ general: 'Error al guardar.' })
+      }
     } finally {
       setLoading(false)
     }
