@@ -1,6 +1,6 @@
 # applications/viajes/views.py
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
@@ -10,6 +10,7 @@ from .serializers import ViajeSerializer, ViajeDetalleSerializer, PresupuestoVia
 
 
 @api_view(['GET', 'POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def viajes(request):
     """
@@ -37,6 +38,7 @@ def viajes(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def viaje_detalle(request, pk):
     usuario, error = utils_auth.get_usuario_autenticado(request)
@@ -68,6 +70,7 @@ def viaje_detalle(request, pk):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def activar_viaje(request, pk):
     """
@@ -95,6 +98,7 @@ def activar_viaje(request, pk):
 
 
 @api_view(['GET', 'POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def presupuestos_viaje(request, pk):
     usuario, error = utils_auth.get_usuario_autenticado(request)
@@ -120,6 +124,7 @@ def presupuestos_viaje(request, pk):
 
 
 @api_view(['PUT', 'DELETE'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def presupuesto_detalle(request, pk):
     usuario, error = utils_auth.get_usuario_autenticado(request)

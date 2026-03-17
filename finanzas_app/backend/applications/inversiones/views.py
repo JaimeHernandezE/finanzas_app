@@ -1,6 +1,6 @@
 # applications/inversiones/views.py
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
@@ -33,6 +33,7 @@ def calcular_metricas(fondo):
 
 
 @api_view(['GET', 'POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def fondos(request):
     """
@@ -68,6 +69,7 @@ def fondos(request):
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def fondo_detalle(request, pk):
     """
@@ -110,6 +112,7 @@ def fondo_detalle(request, pk):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def agregar_aporte(request, pk):
     """POST → Agrega un aporte de capital al fondo."""
@@ -129,6 +132,7 @@ def agregar_aporte(request, pk):
 
 
 @api_view(['DELETE'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def eliminar_aporte(request, pk):
     """DELETE → Elimina un aporte."""
@@ -145,6 +149,7 @@ def eliminar_aporte(request, pk):
 
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def agregar_valor(request, pk):
     """POST → Registra el valor actual del fondo."""
@@ -164,6 +169,7 @@ def agregar_valor(request, pk):
 
 
 @api_view(['DELETE'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def eliminar_valor(request, pk):
     """DELETE → Elimina un registro de valor."""
