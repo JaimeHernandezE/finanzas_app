@@ -19,6 +19,7 @@ import GastosComunesPage from '@/pages/gastos/GastosComunesPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
 import PagarTarjetaPage from '@/pages/tarjetas/PagarTarjetaPage'
 import LiquidacionPage from '@/pages/liquidacion/LiquidacionPage'
+import SueldosPage from '@/pages/sueldos/SueldosPage'
 import PresupuestoPage from '@/pages/presupuesto/PresupuestoPage'
 import InversionesPage from '@/pages/inversiones/InversionesPage'
 import FondoDetallePage from '@/pages/inversiones/FondoDetallePage'
@@ -43,7 +44,7 @@ export default function App() {
             <Route path=":id/editar" element={<Placeholder title="Editar movimiento" />} />
           </Route>
 
-          <Route path="sueldos" element={<Placeholder title="Sueldos" />} />
+          <Route path="sueldos" element={<SueldosPage />} />
 
           <Route path="tarjetas">
             <Route index element={<TarjetasPage />} />

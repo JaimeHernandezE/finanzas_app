@@ -1,0 +1,401 @@
+// =============================================================================
+// SueldosPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@keyframes barraEntra {
+  from { width: 0; }
+  to   { width: var(--target-width); }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    overflow: hidden;
+  }
+  to {
+    opacity: 1;
+    max-height: 120px;
+  }
+}
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: $space-3;
+  margin-bottom: $space-1;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+  line-height: 1;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Sección ────────────────────────────────────────────────────────────────────
+
+.seccion {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.seccionCabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 8px;
+}
+
+.seccionTitulo {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin: 0;
+}
+
+.seccionCabeceraRight {
+  flex-shrink: 0;
+}
+
+// ── Resumen del mes: barras ─────────────────────────────────────────────────────
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+}
+
+.barNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  background: #f0f0ec;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  width: var(--target-width);
+  animation: barraEntra 500ms ease-out both;
+}
+
+.barTotal {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  min-width: 110px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.barPct {
+  font-size: 12px;
+  color: $color-text-muted;
+  min-width: 48px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.filaTotalFamiliar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #e8e8e4;
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.filaTotalLabel {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.filaTotalMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.resumenVacio {
+  font-size: 13px;
+  color: $color-text-muted;
+  text-align: center;
+  padding: 16px 0;
+  margin: 0;
+}
+
+// ── Mis ingresos: botón agregar ─────────────────────────────────────────────────
+
+.btnAgregar {
+  background: none;
+  border: none;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-primary;
+  cursor: pointer;
+  padding: $space-1 $space-2;
+  border-radius: $radius-base;
+  transition: background $transition-fast, color $transition-fast;
+
+  &:hover {
+    background: $color-primary-light;
+    color: $color-primary-active;
+  }
+}
+
+// ── Formulario inline (nuevo / edición) ────────────────────────────────────────
+
+.formInline {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+  animation: slideDown 0.2s ease-out both;
+  padding: $space-2 0;
+}
+
+.inputOrigen {
+  flex: 1;
+  min-width: 140px;
+  @include input-base;
+  height: $input-height-sm;
+  padding: $space-1 $space-2;
+}
+
+.inputMontoWrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  background: $color-bg-white;
+  height: $input-height-sm;
+  padding: 0 $space-2;
+  min-width: 100px;
+
+  &:focus-within {
+    border-color: $color-border-focus;
+    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
+  }
+}
+
+.prefijoClp {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin-right: $space-1;
+}
+
+.inputMonto {
+  flex: 1;
+  border: none;
+  background: none;
+  font-size: $input-font-size;
+  color: $color-text;
+  min-width: 60px;
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.btnIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+// ── Estado vacío mis ingresos ───────────────────────────────────────────────────
+
+.misIngresosVacio {
+  padding: $space-3 0;
+
+  p {
+    margin: 0 0 $space-2;
+    font-size: 13px;
+    color: $color-text-muted;
+  }
+}
+
+.linkAbrirForm {
+  background: none;
+  border: none;
+  font-size: $font-size-sm;
+  color: $color-primary;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: $color-primary-hover;
+  }
+}
+
+// ── Lista de ingresos (con acciones) ─────────────────────────────────────────────
+
+.listaIngresos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.filaIngreso {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+  }
+
+  .formInline {
+    width: 100%;
+    padding: 0;
+    animation: none;
+  }
+}
+
+.filaOrigen {
+  font-size: 14px;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  flex: 1;
+  min-width: 0;
+}
+
+.filaMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: #22a06b;
+  min-width: 100px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+// ── Lista solo lectura (otros miembros) ─────────────────────────────────────────
+
+.listaIngresosSoloLectura {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.filaSoloLectura {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-top: 1px solid #e8e8e4;
+
+  &:first-child {
+    border-top: none;
+  }
+}
+
+.otroVacio {
+  font-size: 13px;
+  color: $color-text-muted;
+  padding: 12px 0;
+  margin: 0;
+}
