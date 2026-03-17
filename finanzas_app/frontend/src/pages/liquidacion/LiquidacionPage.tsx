@@ -1,63 +1,30 @@
 import { useState, useMemo } from 'react'
+import { useApi } from '@/hooks/useApi'
+import { finanzasApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './LiquidacionPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API: ingresos/gastos_comunes con usuario_id, nombre, total string)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface IngresoMiembro {
   usuarioId: string
-  nombre:    string
-  monto:     number
+  nombre: string
+  monto: number
 }
 
 interface GastoMiembro {
-  usuarioId:        string
-  nombre:           string
-  montoRegistrado:  number
+  usuarioId: string
+  nombre: string
+  montoRegistrado: number
 }
 
 interface PeriodoData {
-  ingresos:                 IngresoMiembro[]
-  gastos:                   GastoMiembro[]
+  ingresos: IngresoMiembro[]
+  gastos: GastoMiembro[]
   usandoSueldosAnteriores?: boolean
-  mesAnterior?:             string
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const USUARIO_ACTUAL = { id: 'jaime', nombre: 'Jaime' }
-
-const MOCK_PERIODOS = [
-  { mes: 1, anio: 2026, tipo: 'LIQUIDADO'  as const },
-  { mes: 2, anio: 2026, tipo: 'PROYECTADO' as const },
-]
-
-const MOCK_FEBRERO: PeriodoData = {
-  ingresos: [
-    { usuarioId: 'jaime', nombre: 'Jaime', monto: 1800000 },
-    { usuarioId: 'glori', nombre: 'Glori', monto: 1000000 },
-  ],
-  gastos: [
-    { usuarioId: 'jaime', nombre: 'Jaime', montoRegistrado: 320000 },
-    { usuarioId: 'glori', nombre: 'Glori', montoRegistrado: 180000 },
-  ],
-}
-
-const MOCK_MARZO: PeriodoData = {
-  usandoSueldosAnteriores: true,
-  mesAnterior: 'febrero',
-  ingresos: [
-    { usuarioId: 'jaime', nombre: 'Jaime', monto: 1800000 },
-    { usuarioId: 'glori', nombre: 'Glori', monto: 1000000 },
-  ],
-  gastos: [
-    { usuarioId: 'jaime', nombre: 'Jaime', montoRegistrado: 145000 },
-    { usuarioId: 'glori', nombre: 'Glori', montoRegistrado: 62300  },
-  ],
+  mesAnterior?: string
 }
 
 const COLORES_MIEMBRO = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860']
@@ -178,10 +145,32 @@ function FilaTotal({ label, monto }: { label: string; monto: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LiquidacionPage() {
-  const [periodoActivo, setPeriodoActivo] = useState<'LIQUIDADO' | 'PROYECTADO'>('LIQUIDADO')
+  const hoy = new Date()
+  const [mes, setMes] = useState(hoy.getMonth())
+  const [anio, setAnio] = useState(hoy.getFullYear())
 
-  const periodoLiquidado  = MOCK_PERIODOS.find(p => p.tipo === 'LIQUIDADO')!
-  const periodoProyectado = MOCK_PERIODOS.find(p => p.tipo === 'PROYECTADO')!
+  const { data: liquidacionData, loading, error } = useApi(
+    () => finanzasApi.getLiquidacion(mes + 1, anio),
+    [mes, anio],
+  )
+
+  const data: PeriodoData | null = useMemo(() => {
+    if (!liquidacionData) return null
+    const ing = (liquidacionData as { ingresos?: { usuario_id: number; nombre: string; total: string }[] }).ingresos ?? []
+    const gas = (liquidacionData as { gastos_comunes?: { usuario_id: number; nombre: string; total: string }[] }).gastos_comunes ?? []
+    return {
+      ingresos: ing.map(i => ({
+        usuarioId: String(i.usuario_id),
+        nombre: i.nombre,
+        monto: Number(i.total) || 0,
+      })),
+      gastos: gas.map(g => ({
+        usuarioId: String(g.usuario_id),
+        nombre: g.nombre,
+        montoRegistrado: Number(g.total) || 0,
+      })),
+    }
+  }, [liquidacionData])
 
   const {
     totalIngresos,
@@ -190,12 +179,14 @@ export default function LiquidacionPage() {
     deberíaPagar,
     compensaciones,
     transferencias,
-  } = useMemo(() => {
-    const data = periodoActivo === 'LIQUIDADO' ? MOCK_FEBRERO : MOCK_MARZO
-    return calcular(data)
-  }, [periodoActivo])
+  } = useMemo(() => (data ? calcular(data) : {
+    totalIngresos: 0, proporciones: [], totalGastos: 0,
+    deberíaPagar: [], compensaciones: [], transferencias: [],
+  }), [data])
 
-  const data = periodoActivo === 'LIQUIDADO' ? MOCK_FEBRERO : MOCK_MARZO
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
+  if (!data) return null
 
   return (
     <div className={styles.page}>
@@ -203,49 +194,25 @@ export default function LiquidacionPage() {
       {/* ── Encabezado ── */}
       <div className={styles.header}>
         <h1 className={styles.titulo}>Liquidación</h1>
+        <div className={styles.mesNav} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button type="button" onClick={() => mes === 0 ? (setMes(11), setAnio(a => a - 1)) : setMes(m => m - 1)}>‹</button>
+          <span>{MESES[mes]} {anio}</span>
+          <button
+            type="button"
+            disabled={mes === new Date().getMonth() && anio === new Date().getFullYear()}
+            onClick={() => mes === 11 ? (setMes(0), setAnio(a => a + 1)) : setMes(m => m + 1)}
+          >
+            ›
+          </button>
+        </div>
       </div>
-
-      {/* ── Tabs de período ── */}
-      <div className={styles.tabs}>
-        <button
-          className={`${styles.tab} ${periodoActivo === 'LIQUIDADO' ? styles.tabActivo : ''}`}
-          onClick={() => setPeriodoActivo('LIQUIDADO')}
-        >
-          <span className={styles.tabArrow}>◀</span>
-          <span className={styles.tabMes}>
-            {MESES[periodoLiquidado.mes]} {periodoLiquidado.anio}
-          </span>
-          <span className={`${styles.tabBadge} ${styles.tabBadgeLiquidado}`}>
-            Liquidado
-          </span>
-        </button>
-
-        <button
-          className={`${styles.tab} ${periodoActivo === 'PROYECTADO' ? styles.tabActivo : ''}`}
-          onClick={() => setPeriodoActivo('PROYECTADO')}
-        >
-          <span className={styles.tabMes}>
-            {MESES[periodoProyectado.mes]} {periodoProyectado.anio}
-          </span>
-          <span className={`${styles.tabBadge} ${styles.tabBadgeProyectado}`}>
-            Proyectado
-          </span>
-          <span className={styles.tabArrow}>▶</span>
-        </button>
-      </div>
-
-      {periodoActivo === 'PROYECTADO' && (
-        <p className={styles.notaProyectado}>
-          ℹ Los cálculos se actualizan en tiempo real según los gastos del mes en curso.
-        </p>
-      )}
 
       {/* ── Sueldos declarados ── */}
       <SeccionCard titulo="Sueldos declarados">
-        {periodoActivo === 'PROYECTADO' && data.usandoSueldosAnteriores && (
+        {data.usandoSueldosAnteriores && (
           <div className={styles.avisoSueldos}>
             ⚠ Usando sueldos de {data.mesAnterior}. Declara los de{' '}
-            {MESES[periodoProyectado.mes]} en <a href="/sueldos" className={styles.avisoLink}>Sueldos</a>.
+            {MESES[mes]} en <a href="/sueldos" className={styles.avisoLink}>Sueldos</a>.
           </div>
         )}
 
@@ -336,7 +303,7 @@ export default function LiquidacionPage() {
               <span className={styles.resultMonto}>{clp(transferencias[0].monto)}</span>{' '}
               a <strong>{transferencias[0].a}</strong>
             </p>
-            {periodoActivo === 'PROYECTADO' && (
+            {(mes === new Date().getMonth() && anio === new Date().getFullYear()) && (
               <p className={styles.resultProyeccion}>
                 Proyección basada en {clp(totalGastos)} de gastos registrados hasta hoy
               </p>

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { useViaje } from '@/context/ViajeContext'
-import { MOCK_PRESUPUESTOS, type Viaje } from './mockViajes'
+import { useViajeDetalle } from '@/hooks/useViajes'
+import { useCategorias } from '@/hooks/useCatalogos'
+import { viajesApi } from '@/api'
 import styles from './ViajeFormPage.module.scss'
 
 // -----------------------------------------------------------------------------
@@ -25,12 +26,6 @@ interface PresupuestoItem {
   montoPresupuestado: number
 }
 
-const CATEGORIAS_DISPONIBLES: { id: string; nombre: string }[] =
-  MOCK_PRESUPUESTOS.map((p) => ({
-    id: p.categoriaId,
-    nombre: p.categoriaNombre,
-  }))
-
 // -----------------------------------------------------------------------------
 // Página
 // -----------------------------------------------------------------------------
@@ -38,8 +33,15 @@ const CATEGORIAS_DISPONIBLES: { id: string; nombre: string }[] =
 export default function ViajeFormPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { viajes, setViajes } = useViaje()
   const esEdicion = Boolean(id)
+
+  const { data: viajeData } = useViajeDetalle(esEdicion && id ? Number(id) : 0)
+  const { data: categoriasData } = useCategorias()
+  const categoriasApi = (categoriasData ?? []) as { id: number; nombre: string }[]
+  const CATEGORIAS_DISPONIBLES = useMemo(
+    () => categoriasApi.map((c) => ({ id: String(c.id), nombre: c.nombre })),
+    [categoriasApi],
+  )
 
   const [nombre, setNombre] = useState('')
   const [fechaInicio, setFechaInicio] = useState('')
@@ -49,35 +51,33 @@ export default function ViajeFormPage() {
   const [showAddRow, setShowAddRow] = useState(false)
   const [addCategoriaId, setAddCategoriaId] = useState('')
   const [addMonto, setAddMonto] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const viaje = useMemo(
-    () => (id ? viajes.find((v) => v.id === id) : null),
-    [id, viajes]
-  )
+  const viajeApi = viajeData as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; presupuestos?: { id: number; categoria: number; categoria_nombre: string; monto_planificado: string }[] } | null | undefined
 
   useEffect(() => {
-    if (viaje) {
-      setNombre(viaje.nombre)
-      setFechaInicio(viaje.fechaInicio)
-      setFechaFin(viaje.fechaFin)
-      const idx = COLORES_TEMA.indexOf(viaje.colorTema)
+    if (viajeApi) {
+      setNombre(viajeApi.nombre)
+      setFechaInicio(viajeApi.fecha_inicio)
+      setFechaFin(viajeApi.fecha_fin)
+      const idx = COLORES_TEMA.indexOf(viajeApi.color_tema || '')
       setColorSeleccionado(idx >= 0 ? idx : 0)
       setPresupuestoItems(
-        MOCK_PRESUPUESTOS.map((p) => ({
-          categoriaId: p.categoriaId,
-          categoriaNombre: p.categoriaNombre,
-          montoPresupuestado: p.montoPresupuestado,
+        (viajeApi.presupuestos ?? []).map((p) => ({
+          categoriaId: String(p.categoria),
+          categoriaNombre: p.categoria_nombre,
+          montoPresupuestado: Number(p.monto_planificado) || 0,
         }))
       )
     }
-  }, [viaje])
+  }, [viajeApi])
 
   const categoriasNoAgregadas = useMemo(
     () =>
       CATEGORIAS_DISPONIBLES.filter(
         (c) => !presupuestoItems.some((p) => p.categoriaId === c.id)
       ),
-    [presupuestoItems]
+    [CATEGORIAS_DISPONIBLES, presupuestoItems]
   )
 
   const puedeGuardar =
@@ -110,44 +110,48 @@ export default function ViajeFormPage() {
     )
   }
 
-  const handleGuardar = () => {
+  const handleGuardar = async () => {
     if (!puedeGuardar) return
+    setSaving(true)
     const colorHex = COLORES_TEMA[colorSeleccionado] ?? COLORES_TEMA[0]
-    if (esEdicion && id) {
-      setViajes((prev) =>
-        prev.map((v) =>
-          v.id === id
-            ? {
-                ...v,
-                nombre: nombre.trim(),
-                fechaInicio,
-                fechaFin,
-                colorTema: colorHex,
-              }
-            : v
-        )
-      )
-      navigate(`/viajes/${id}`)
-    } else {
-      const nuevoViaje: Viaje = {
-        id: String(Date.now()),
-        nombre: nombre.trim(),
-        fechaInicio,
-        fechaFin,
-        colorTema: colorHex,
-        esActivo: false,
-        archivado: false,
+    try {
+      if (esEdicion && id) {
+        await viajesApi.updateViaje(Number(id), {
+          nombre: nombre.trim(),
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          color_tema: colorHex,
+        })
+        for (const p of presupuestoItems) {
+          const existing = (viajeApi?.presupuestos ?? []).find((x) => String(x.categoria) === p.categoriaId)
+          if (existing) {
+            await viajesApi.updatePresupuesto(existing.id, { monto_planificado: String(p.montoPresupuestado) })
+          } else {
+            await viajesApi.createPresupuesto(Number(id), { categoria: Number(p.categoriaId), monto_planificado: String(p.montoPresupuestado) })
+          }
+        }
+        navigate(`/viajes/${id}`)
+      } else {
+        const res = await viajesApi.createViaje({
+          nombre: nombre.trim(),
+          fecha_inicio: fechaInicio,
+          fecha_fin: fechaFin,
+          color_tema: colorHex,
+        })
+        const nuevoId = (res.data as { id: number }).id
+        for (const p of presupuestoItems) {
+          await viajesApi.createPresupuesto(nuevoId, { categoria: Number(p.categoriaId), monto_planificado: String(p.montoPresupuestado) })
+        }
+        navigate(`/viajes/${nuevoId}`)
       }
-      setViajes((prev) => [...prev, nuevoViaje])
-      navigate('/viajes')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const handleArchivar = () => {
+  const handleArchivar = async () => {
     if (!esEdicion || !id) return
-    setViajes((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, archivado: true } : v))
-    )
+    await viajesApi.archivarViaje(Number(id))
     navigate('/viajes')
   }
 

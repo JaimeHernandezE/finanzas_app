@@ -1,9 +1,12 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { useCategorias } from '@/hooks/useCatalogos'
+import { catalogosApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './CategoriasPage.module.scss'
 
 // -----------------------------------------------------------------------------
-// Tipos y mock — TODO: reemplazar por fetch al backend
+// Tipos (API: id, nombre, tipo, es_inversion, familia, usuario)
 // -----------------------------------------------------------------------------
 
 interface Categoria {
@@ -14,18 +17,19 @@ interface Categoria {
   ambito: 'GLOBAL' | 'FAMILIAR' | 'PERSONAL'
 }
 
-const MOCK_CATEGORIAS: Categoria[] = [
-  { id: '1', nombre: 'Alimentación', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '2', nombre: 'Transporte', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '3', nombre: 'Servicios', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '4', nombre: 'Salud', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '5', nombre: 'Educación', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '6', nombre: 'Entretención', tipo: 'EGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '7', nombre: 'Sueldo', tipo: 'INGRESO', esInversion: false, ambito: 'GLOBAL' },
-  { id: '8', nombre: 'Gastos Casa', tipo: 'EGRESO', esInversion: false, ambito: 'FAMILIAR' },
-  { id: '9', nombre: 'Honorarios', tipo: 'INGRESO', esInversion: false, ambito: 'PERSONAL' },
-  { id: '10', nombre: 'Fondo Mutuo', tipo: 'EGRESO', esInversion: true, ambito: 'PERSONAL' },
-]
+function mapApiToCategoria(c: { id: number; nombre: string; tipo: string; es_inversion?: boolean; familia?: number | null; usuario?: number | null }): Categoria {
+  const ambito: Categoria['ambito'] =
+    !c.familia && !c.usuario ? 'GLOBAL'
+    : c.familia && !c.usuario ? 'FAMILIAR'
+    : 'PERSONAL'
+  return {
+    id: String(c.id),
+    nombre: c.nombre,
+    tipo: c.tipo as 'INGRESO' | 'EGRESO',
+    esInversion: !!c.es_inversion,
+    ambito,
+  }
+}
 
 type AmbitoEditable = 'FAMILIAR' | 'PERSONAL'
 
@@ -65,7 +69,12 @@ function SegmentedControl({
 // -----------------------------------------------------------------------------
 
 export default function CategoriasPage() {
-  const [categorias, setCategorias] = useState<Categoria[]>(MOCK_CATEGORIAS)
+  const { data: categoriasRaw, loading, error, refetch } = useCategorias()
+  const categorias = useMemo(
+    () => ((categoriasRaw ?? []) as { id: number; nombre: string; tipo: string; es_inversion?: boolean; familia?: number | null; usuario?: number | null }[]).map(mapApiToCategoria),
+    [categoriasRaw],
+  )
+
   const [filtroTipo, setFiltroTipo] = useState<'INGRESO' | 'EGRESO'>('EGRESO')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -76,6 +85,9 @@ export default function CategoriasPage() {
   const [addNombre, setAddNombre] = useState('')
   const [addTipo, setAddTipo] = useState<'INGRESO' | 'EGRESO'>('EGRESO')
   const [addEsInversion, setAddEsInversion] = useState(false)
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   const filtradas = useMemo(
     () => categorias.filter((c) => c.tipo === filtroTipo),
@@ -98,16 +110,11 @@ export default function CategoriasPage() {
     setEditingId(null)
   }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId) return
-    setCategorias((prev) =>
-      prev.map((c) =>
-        c.id === editingId
-          ? { ...c, nombre: editNombre, tipo: editTipo, esInversion: editEsInversion }
-          : c
-      )
-    )
+    await catalogosApi.updateCategoria(Number(editingId), { nombre: editNombre, tipo: editTipo })
     setEditingId(null)
+    refetch()
   }
 
   const startDelete = (id: string) => {
@@ -116,9 +123,10 @@ export default function CategoriasPage() {
     setAddingInGroup(null)
   }
 
-  const confirmDelete = (id: string) => {
-    setCategorias((prev) => prev.filter((c) => c.id !== id))
+  const confirmDelete = async (id: string) => {
+    await catalogosApi.deleteCategoria(Number(id))
     setDeletingId(null)
+    refetch()
   }
 
   const cancelDelete = () => setDeletingId(null)
@@ -134,17 +142,16 @@ export default function CategoriasPage() {
 
   const cancelAdd = () => setAddingInGroup(null)
 
-  const saveAdd = () => {
+  const saveAdd = async () => {
     if (!addingInGroup || !addNombre.trim()) return
-    const nueva: Categoria = {
-      id: `n-${Date.now()}`,
+    await catalogosApi.createCategoria({
       nombre: addNombre.trim(),
       tipo: addTipo,
-      esInversion: addEsInversion,
       ambito: addingInGroup,
-    }
-    setCategorias((prev) => [...prev, nueva])
+      es_inversion: addEsInversion,
+    })
     setAddingInGroup(null)
+    refetch()
   }
 
   const renderFila = (c: Categoria) => {

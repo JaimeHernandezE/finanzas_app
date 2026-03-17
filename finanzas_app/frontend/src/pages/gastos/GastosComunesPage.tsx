@@ -1,21 +1,24 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useMovimientos } from '@/hooks/useMovimientos'
+import { useCategorias } from '@/hooks/useCatalogos'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './GastosComunesPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API snake_case)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface MovimientoComun {
-  id:          number
-  fecha:       string
-  descripcion: string
-  categoria:   string
-  monto:       number
-  tipo:        'INGRESO' | 'EGRESO'
-  metodo:      'EFECTIVO' | 'DEBITO' | 'CREDITO'
-  autor:       string
-  autorId:     string
+  id: number
+  fecha: string
+  comentario: string
+  categoria_nombre: string
+  monto: number
+  tipo: 'INGRESO' | 'EGRESO'
+  metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+  autor_nombre: string
+  usuario?: number
 }
 
 interface GrupoFecha {
@@ -24,27 +27,7 @@ interface GrupoFecha {
   movimientos:  MovimientoComun[]
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-const USUARIO_ACTUAL = { id: 'jaime', nombre: 'Jaime' }
-
-const MOCK_MOVIMIENTOS_INIT: MovimientoComun[] = [
-  { id: 1, fecha: '2026-03-17', descripcion: 'Supermercado Lider',  categoria: 'Alimentación', monto: 87400,  tipo: 'EGRESO', metodo: 'DEBITO',   autor: 'Jaime', autorId: 'jaime' },
-  { id: 2, fecha: '2026-03-17', descripcion: 'Farmacia Cruz Verde', categoria: 'Salud',        monto: 15600,  tipo: 'EGRESO', metodo: 'EFECTIVO', autor: 'Glori', autorId: 'glori' },
-  { id: 3, fecha: '2026-03-15', descripcion: 'Agua + Luz',          categoria: 'Servicios',    monto: 62300,  tipo: 'EGRESO', metodo: 'EFECTIVO', autor: 'Jaime', autorId: 'jaime' },
-  { id: 4, fecha: '2026-03-13', descripcion: 'Feria semanal',       categoria: 'Alimentación', monto: 28000,  tipo: 'EGRESO', metodo: 'EFECTIVO', autor: 'Glori', autorId: 'glori' },
-  { id: 5, fecha: '2026-03-10', descripcion: 'Gas',                 categoria: 'Servicios',    monto: 18500,  tipo: 'EGRESO', metodo: 'EFECTIVO', autor: 'Jaime', autorId: 'jaime' },
-  { id: 6, fecha: '2026-03-08', descripcion: 'Matrícula U',         categoria: 'Educación',    monto: 320000, tipo: 'EGRESO', metodo: 'CREDITO',  autor: 'Glori', autorId: 'glori' },
-]
-
-const MOCK_CATEGORIAS = [
-  'Alimentación', 'Transporte', 'Servicios', 'Salud',
-  'Educación', 'Entretención',
-]
-
-const METODOS_PAGO: { value: MovimientoComun['metodo']; label: string }[] = [
+const METODOS_PAGO: { value: MovimientoComun['metodo_pago_tipo']; label: string }[] = [
   { value: 'EFECTIVO', label: 'Efectivo' },
   { value: 'DEBITO',   label: 'Débito'   },
   { value: 'CREDITO',  label: 'Crédito'  },
@@ -93,7 +76,7 @@ function groupByDate(movimientos: MovimientoComun[]): GrupoFecha[] {
     }))
 }
 
-const METODO_BADGE: Record<MovimientoComun['metodo'], { label: string; bg: string; color: string }> = {
+const METODO_BADGE: Record<MovimientoComun['metodo_pago_tipo'], { label: string; bg: string; color: string }> = {
   EFECTIVO: { label: 'EF', bg: '#f0f0ec', color: '#6b7280' },
   DEBITO:   { label: 'TD', bg: '#e8f4ff', color: '#3b82f6' },
   CREDITO:  { label: 'TC', bg: '#fff0f0', color: '#ff4d4d' },
@@ -132,6 +115,7 @@ function SegmentedControl({
 
 function FilterSidebar({
   abierto,
+  categorias,
   filtrosCategorias,
   filtrosMetodos,
   onToggleCategoria,
@@ -140,6 +124,7 @@ function FilterSidebar({
   onLimpiar,
 }: {
   abierto:           boolean
+  categorias:        { id: number; nombre: string }[]
   filtrosCategorias: string[]
   filtrosMetodos:    string[]
   onToggleCategoria: (cat: string) => void
@@ -162,14 +147,14 @@ function FilterSidebar({
         <div className={styles.filterBody}>
           <div className={styles.filterSection}>
             <p className={styles.filterSectionLabel}>Categoría</p>
-            {MOCK_CATEGORIAS.map(cat => (
-              <label key={cat} className={styles.checkItem}>
+            {categorias.map(cat => (
+              <label key={cat.id} className={styles.checkItem}>
                 <input
                   type="checkbox"
-                  checked={filtrosCategorias.includes(cat)}
-                  onChange={() => onToggleCategoria(cat)}
+                  checked={filtrosCategorias.includes(cat.nombre)}
+                  onChange={() => onToggleCategoria(cat.nombre)}
                 />
-                {cat}
+                {cat.nombre}
               </label>
             ))}
           </div>
@@ -203,15 +188,16 @@ function FilterSidebar({
 }
 
 function MovimientoRow({
-  mov, onEdit, onDelete,
+  mov, usuarioId, onEdit, onDelete,
 }: {
-  mov:      MovimientoComun
-  onEdit:   (id: number) => void
-  onDelete: (mov: MovimientoComun) => void
+  mov:       MovimientoComun
+  usuarioId: number | null
+  onEdit:    (id: number) => void
+  onDelete:  (mov: MovimientoComun) => void
 }) {
-  const badge     = METODO_BADGE[mov.metodo]
+  const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
-  const esPropio  = mov.autorId === USUARIO_ACTUAL.id
+  const esPropio  = usuarioId == null || mov.usuario === usuarioId
 
   return (
     <div className={styles.movRow}>
@@ -219,12 +205,12 @@ function MovimientoRow({
         className={styles.movAutor}
         style={{ color: esPropio ? '#0f0f0f' : undefined }}
       >
-        {mov.autor.split(' ')[0]}
+        {(mov.autor_nombre || '').split(' ')[0] || '—'}
       </span>
 
       <div className={styles.movInfo}>
-        <span className={styles.movDesc}>{mov.descripcion}</span>
-        <span className={styles.movCat}>{mov.categoria}</span>
+        <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+        <span className={styles.movCat}>{mov.categoria_nombre}</span>
       </div>
 
       <span
@@ -264,11 +250,12 @@ function MovimientoRow({
 }
 
 function DateGroup({
-  grupo, onEdit, onDelete,
+  grupo, usuarioId, onEdit, onDelete,
 }: {
-  grupo:    GrupoFecha
-  onEdit:   (id: number) => void
-  onDelete: (mov: MovimientoComun) => void
+  grupo:     GrupoFecha
+  usuarioId: number | null
+  onEdit:    (id: number) => void
+  onDelete:  (mov: MovimientoComun) => void
 }) {
   const subtotal = grupo.movimientos.reduce(
     (acc, m) => acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto), 0,
@@ -285,6 +272,7 @@ function DateGroup({
         <MovimientoRow
           key={m.id}
           mov={m}
+          usuarioId={usuarioId}
           onEdit={onEdit}
           onDelete={onDelete}
         />
@@ -322,7 +310,7 @@ function DeleteModal({
       <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
         <h2 className={styles.modalTitulo}>Eliminar movimiento</h2>
         <p className={styles.modalTexto}>
-          ¿Eliminar <strong>"{mov.descripcion}"</strong> por{' '}
+          ¿Eliminar <strong>"{mov.comentario || '—'}"</strong> por{' '}
           <strong>{clp(mov.monto)}</strong>?
           <br />
           Esta acción no se puede deshacer.
@@ -342,14 +330,28 @@ function DeleteModal({
 
 export default function GastosComunesPage() {
   const navigate = useNavigate()
-
-  // Movimientos (TODO: fetch al backend)
-  const [movimientos, setMovimientos] = useState<MovimientoComun[]>(MOCK_MOVIMIENTOS_INIT)
-
-  // Navegador de mes
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [filtroTipo,        setFiltroTipo]        = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
+  const [busqueda,          setBusqueda]          = useState('')
+  const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
+  const [filtrosMetodos,    setFiltrosMetodos]    = useState<string[]>([])
+  const [sidebarAbierto,    setSidebarAbierto]    = useState(false)
+  const [movimientoAEliminar, setMovimientoAEliminar] = useState<MovimientoComun | null>(null)
+
+  const { data: categoriasData } = useCategorias()
+  const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
+
+  const { movimientos, loading, error, refetch, eliminar } = useMovimientos({
+    ambito: 'COMUN',
+    mes: mes + 1,
+    anio,
+    tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
+    q: busqueda || undefined,
+  })
+  const movimientosTyped = (movimientos ?? []) as MovimientoComun[]
+
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const irAnterior = () => {
@@ -361,13 +363,6 @@ export default function GastosComunesPage() {
     if (mes === 11) { setMes(0); setAnio(a => a + 1) }
     else setMes(m => m + 1)
   }
-
-  // Filtros
-  const [filtroTipo,        setFiltroTipo]        = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
-  const [busqueda,          setBusqueda]          = useState('')
-  const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
-  const [filtrosMetodos,    setFiltrosMetodos]    = useState<string[]>([])
-  const [sidebarAbierto,    setSidebarAbierto]    = useState(false)
 
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
 
@@ -387,34 +382,30 @@ export default function GastosComunesPage() {
     setSidebarAbierto(false)
   }
 
-  // Modal de eliminación
-  const [movimientoAEliminar, setMovimientoAEliminar] = useState<MovimientoComun | null>(null)
-
-  const confirmarEliminar = () => {
+  const confirmarEliminar = async () => {
     if (!movimientoAEliminar) return
-    setMovimientos(prev => prev.filter(m => m.id !== movimientoAEliminar.id))
+    await eliminar(movimientoAEliminar.id)
     setMovimientoAEliminar(null)
-    // TODO: llamar al backend para eliminar
   }
 
   const irNuevo  = () => navigate('/gastos/nuevo?ambito=COMUN')
   const irEditar = (id: number) => navigate(`/gastos/${id}/editar`)
 
-  // Movimientos filtrados
   const movimientosFiltrados = useMemo(() => {
-    return movimientos.filter(m => {
-      const [y, mo] = m.fecha.split('-').map(Number)
-      if (mo - 1 !== mes || y !== anio) return false
-      if (filtroTipo !== 'TODOS' && m.tipo !== filtroTipo) return false
-      if (busqueda && !m.descripcion.toLowerCase().includes(busqueda.toLowerCase())) return false
-      if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria)) return false
-      if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo)) return false
+    return movimientosTyped.filter(m => {
+      if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria_nombre)) return false
+      if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo_pago_tipo)) return false
       return true
     })
-  }, [movimientos, mes, anio, filtroTipo, busqueda, filtrosCategorias, filtrosMetodos])
+  }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
+
+  const usuarioId = null
 
   const grupos    = groupByDate(movimientosFiltrados)
   const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.length > 0
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>
@@ -471,6 +462,7 @@ export default function GastosComunesPage() {
             <DateGroup
               key={grupo.fecha}
               grupo={grupo}
+              usuarioId={usuarioId}
               onEdit={irEditar}
               onDelete={setMovimientoAEliminar}
             />
@@ -481,6 +473,7 @@ export default function GastosComunesPage() {
       {/* ── Sidebar de filtros ── */}
       <FilterSidebar
         abierto={sidebarAbierto}
+        categorias={categorias}
         filtrosCategorias={filtrosCategorias}
         filtrosMetodos={filtrosMetodos}
         onToggleCategoria={toggleCategoria}

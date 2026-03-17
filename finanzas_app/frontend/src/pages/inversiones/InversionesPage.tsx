@@ -1,7 +1,17 @@
 import { Link } from 'react-router-dom'
 import { useMemo } from 'react'
+import { useFondos } from '@/hooks/useInversiones'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './InversionesPage.module.scss'
-import { MOCK_FONDOS } from './data'
+
+interface FondoApi {
+  id: number
+  nombre: string
+  descripcion: string
+  capital_total: number
+  valor_actual: number
+  es_compartido?: boolean
+}
 
 const clp = (n: number) =>
   n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
@@ -60,12 +70,14 @@ function FondoCard({
   fondo,
   index,
 }: {
-  fondo: (typeof MOCK_FONDOS)[0]
+  fondo: FondoApi
   index: number
 }) {
-  const ganancia = fondo.valorActual - fondo.capitalTotal
+  const capitalTotal = Number(fondo.capital_total)
+  const valorActual = Number(fondo.valor_actual)
+  const ganancia = valorActual - capitalTotal
   const rentabilidad =
-    fondo.capitalTotal > 0 ? (ganancia / fondo.capitalTotal) * 100 : 0
+    capitalTotal > 0 ? (ganancia / capitalTotal) * 100 : 0
   const esPositivo = ganancia >= 0
 
   return (
@@ -77,22 +89,22 @@ function FondoCard({
       <div className={styles.fondoCardHeader}>
         <span className={styles.fondoCardNombre}>{fondo.nombre}</span>
         <span className={styles.badgeAmbito}>
-          {fondo.esCompartido ? 'Familiar' : 'Personal'}
+          {fondo.es_compartido ? 'Familiar' : 'Personal'}
         </span>
       </div>
-      <p className={styles.fondoCardDescripcion}>{fondo.descripcion}</p>
+      <p className={styles.fondoCardDescripcion}>{fondo.descripcion || '—'}</p>
       <div className={styles.fondoCardSeparador} />
       <div className={styles.fondoCardMetricas}>
         <div className={styles.fondoCardFila}>
           <span className={styles.fondoCardLabel}>Capital</span>
           <span className={styles.fondoCardMonto}>
-            {clp(fondo.capitalTotal)}
+            {clp(capitalTotal)}
           </span>
         </div>
         <div className={styles.fondoCardFila}>
           <span className={styles.fondoCardLabel}>Valor actual</span>
           <span className={styles.fondoCardMonto}>
-            {clp(fondo.valorActual)}
+            {clp(valorActual)}
           </span>
         </div>
         <div className={styles.fondoCardFila}>
@@ -135,10 +147,13 @@ function FondoCard({
 }
 
 export default function InversionesPage() {
+  const { data: fondosData, loading, error } = useFondos()
+  const fondos = (fondosData ?? []) as FondoApi[]
+
   const { capitalTotal, valorTotal, gananciaTotal, rentabilidadTotal } =
     useMemo(() => {
-      const cap = MOCK_FONDOS.reduce((s, f) => s + f.capitalTotal, 0)
-      const val = MOCK_FONDOS.reduce((s, f) => s + f.valorActual, 0)
+      const cap = fondos.reduce((s, f) => s + Number(f.capital_total), 0)
+      const val = fondos.reduce((s, f) => s + Number(f.valor_actual), 0)
       const gan = val - cap
       const rent = cap > 0 ? (gan / cap) * 100 : 0
       return {
@@ -147,7 +162,10 @@ export default function InversionesPage() {
         gananciaTotal: gan,
         rentabilidadTotal: rent,
       }
-    }, [])
+    }, [fondos])
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>
@@ -159,7 +177,7 @@ export default function InversionesPage() {
         rentabilidadTotal={rentabilidadTotal}
       />
       <div className={styles.fondosGrid}>
-        {MOCK_FONDOS.map((fondo, index) => (
+        {fondos.map((fondo, index) => (
           <FondoCard key={fondo.id} fondo={fondo} index={index} />
         ))}
       </div>

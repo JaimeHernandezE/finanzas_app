@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useViaje } from '@/context/ViajeContext'
-import { MOCK_PRESUPUESTOS, type Viaje } from './mockViajes'
+import { useViajes } from '@/hooks/useViajes'
+import { viajesApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
+import type { Viaje } from './mockViajes'
 import styles from './ViajesPage.module.scss'
 
 // -----------------------------------------------------------------------------
-// Helpers
+// Helpers (API devuelve snake_case; mapeamos a Viaje para la UI)
 // -----------------------------------------------------------------------------
 
 const clp = (n: number) =>
@@ -18,10 +21,17 @@ function formatRangoFechas(fechaInicio: string, fechaFin: string): string {
   return `${d1.toLocaleDateString('es-CL', opts)} – ${d2.toLocaleDateString('es-CL', opts)}`
 }
 
-const TOTAL_PRESUPUESTADO_EJEMPLO = MOCK_PRESUPUESTOS.reduce(
-  (s, p) => s + p.montoPresupuestado,
-  0
-)
+function mapViajeApiToViaje(v: { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean; total_presupuestado?: string }): Viaje {
+  return {
+    id: String(v.id),
+    nombre: v.nombre,
+    fechaInicio: v.fecha_inicio,
+    fechaFin: v.fecha_fin,
+    colorTema: v.color_tema || '#2E86AB',
+    esActivo: v.es_activo,
+    archivado: v.archivado,
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Subcomponentes internos
@@ -134,25 +144,42 @@ function TarjetaArchivado({ viaje }: { viaje: Viaje }) {
 // -----------------------------------------------------------------------------
 
 export default function ViajesPage() {
-  const { viajes, activarViaje, desactivarViaje } = useViaje()
+  const { refetchViajes } = useViaje()
+  const { data: activosData, loading: loadingActivos, error: errorActivos, refetch: refetchActivos } = useViajes(false)
+  const { data: archivadosData, loading: loadingArchivados } = useViajes(true)
   const [expandirArchivados, setExpandirArchivados] = useState(false)
+
+  const activosRaw = (activosData ?? []) as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean; total_presupuestado?: string }[]
+  const archivadosRaw = (archivadosData ?? []) as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }[]
 
   const activosYProximos = useMemo(
     () =>
-      [...viajes]
-        .filter((v) => !v.archivado)
+      activosRaw
+        .map(mapViajeApiToViaje)
         .sort((a, b) => a.fechaInicio.localeCompare(b.fechaInicio)),
-    [viajes]
+    [activosRaw]
   )
 
-  const archivados = useMemo(
-    () => [...viajes].filter((v) => v.archivado),
-    [viajes]
-  )
+  const archivados = useMemo(() => archivadosRaw.map(mapViajeApiToViaje), [archivadosRaw])
 
   const archivadosVisibles = expandirArchivados
     ? archivados
     : archivados.slice(0, 3)
+
+  const handleActivar = async (id: string) => {
+    await viajesApi.activarViaje(Number(id))
+    refetchActivos()
+    refetchViajes()
+  }
+
+  const handleDesactivar = async (id: string) => {
+    await viajesApi.activarViaje(Number(id))
+    refetchActivos()
+    refetchViajes()
+  }
+
+  if (loadingActivos && !activosRaw.length) return <Cargando />
+  if (errorActivos) return <ErrorCarga mensaje={errorActivos} />
 
   return (
     <div className={styles.page}>
@@ -165,15 +192,19 @@ export default function ViajesPage() {
 
       <section className={styles.sectionList}>
         <h2 className={styles.sectionHeader}>PRÓXIMOS Y EN CURSO</h2>
-        {activosYProximos.map((viaje) => (
-          <TarjetaViaje
-            key={viaje.id}
-            viaje={viaje}
-            totalPresupuestado={TOTAL_PRESUPUESTADO_EJEMPLO}
-            onActivar={activarViaje}
-            onDesactivar={desactivarViaje}
-          />
-        ))}
+        {activosYProximos.map((viaje) => {
+          const raw = activosRaw.find((v) => String(v.id) === viaje.id)
+          const totalPresupuestado = raw?.total_presupuestado != null ? Number(raw.total_presupuestado) : 0
+          return (
+            <TarjetaViaje
+              key={viaje.id}
+              viaje={viaje}
+              totalPresupuestado={totalPresupuestado}
+              onActivar={handleActivar}
+              onDesactivar={handleDesactivar}
+            />
+          )
+        })}
       </section>
 
       <section className={styles.sectionList}>

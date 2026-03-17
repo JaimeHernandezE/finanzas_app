@@ -1,50 +1,30 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import { useMovimientos } from '@/hooks/useMovimientos'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './DashboardPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API devuelve snake_case)
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Movimiento {
-  id:          number
-  fecha:       string
-  categoria:   string
-  descripcion: string
-  monto:       number
-  tipo:        'EGRESO' | 'INGRESO'
-  ambito:      'PERSONAL' | 'COMUN'
-  metodo:      'EFECTIVO' | 'DEBITO' | 'CREDITO'
+interface MovimientoApi {
+  id: number
+  fecha: string
+  tipo: 'EGRESO' | 'INGRESO'
+  ambito: 'PERSONAL' | 'COMUN'
+  monto: number
+  comentario: string
+  categoria_nombre: string
+  metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
 }
 
 interface CategoriaGasto {
   categoria: string
-  monto:     number
-  color:     string
+  monto: number
+  color: string
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_MOVIMIENTOS: Movimiento[] = [
-  { id: 1, fecha: '2026-03-15', categoria: 'Alimentación', descripcion: 'Supermercado Lider',    monto: 87400,  tipo: 'EGRESO',  ambito: 'PERSONAL', metodo: 'DEBITO'   },
-  { id: 2, fecha: '2026-03-14', categoria: 'Transporte',   descripcion: 'Bencina',               monto: 45000,  tipo: 'EGRESO',  ambito: 'PERSONAL', metodo: 'EFECTIVO' },
-  { id: 3, fecha: '2026-03-13', categoria: 'Honorarios',   descripcion: 'Proyecto Arquitectura', monto: 850000, tipo: 'INGRESO', ambito: 'PERSONAL', metodo: 'EFECTIVO' },
-  { id: 4, fecha: '2026-03-12', categoria: 'Servicios',    descripcion: 'Agua + Luz',            monto: 62300,  tipo: 'EGRESO',  ambito: 'COMUN',    metodo: 'EFECTIVO' },
-  { id: 5, fecha: '2026-03-11', categoria: 'Alimentación', descripcion: 'Feria semanal',         monto: 28000,  tipo: 'EGRESO',  ambito: 'COMUN',    metodo: 'EFECTIVO' },
-  { id: 6, fecha: '2026-03-10', categoria: 'Entretención', descripcion: 'Netflix',               monto: 10990,  tipo: 'EGRESO',  ambito: 'PERSONAL', metodo: 'CREDITO'  },
-  { id: 7, fecha: '2026-03-09', categoria: 'Salud',        descripcion: 'Farmacia Cruz Verde',   monto: 15600,  tipo: 'EGRESO',  ambito: 'COMUN',    metodo: 'EFECTIVO' },
-  { id: 8, fecha: '2026-03-08', categoria: 'Educación',    descripcion: 'Matrícula U',           monto: 320000, tipo: 'EGRESO',  ambito: 'COMUN',    metodo: 'CREDITO'  },
-]
-
-const MOCK_CATEGORIAS: CategoriaGasto[] = [
-  { categoria: 'Alimentación', monto: 115400, color: '#c8f060' },
-  { categoria: 'Servicios',    monto: 62300,  color: '#60c8f0' },
-  { categoria: 'Educación',    monto: 320000, color: '#f060c8' },
-  { categoria: 'Transporte',   monto: 45000,  color: '#f0c860' },
-  { categoria: 'Salud',        monto: 15600,  color: '#60f0c8' },
-  { categoria: 'Entretención', monto: 10990,  color: '#c860f0' },
-]
+const COLORS = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860', '#60f0c8', '#c860f0']
 
 const DEUDA_TC_MOCK = 330990 // TODO: vendrá de cuotas del backend
 
@@ -67,7 +47,7 @@ const fechaCorta = (iso: string) => {
   })
 }
 
-const METODO_BADGE: Record<Movimiento['metodo'], { label: string; bg: string; color: string }> = {
+const METODO_BADGE: Record<MovimientoApi['metodo_pago_tipo'], { label: string; bg: string; color: string }> = {
   EFECTIVO: { label: 'EF', bg: '#f0f0ec', color: '#6b7280' },
   DEBITO:   { label: 'TD', bg: '#e8f4ff', color: '#3b82f6' },
   CREDITO:  { label: 'TC', bg: '#fff0f0', color: '#ff4d4d' },
@@ -133,16 +113,16 @@ function CategoriaBar({
   )
 }
 
-function MovimientoItem({ mov }: { mov: Movimiento }) {
-  const badge     = METODO_BADGE[mov.metodo]
+function MovimientoItem({ mov }: { mov: MovimientoApi }) {
+  const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
 
   return (
     <div className={styles.movItem}>
       <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
       <div className={styles.movInfo}>
-        <span className={styles.movDesc}>{mov.descripcion}</span>
-        <span className={styles.movCat}>{mov.categoria}</span>
+        <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+        <span className={styles.movCat}>{mov.categoria_nombre}</span>
       </div>
       <div className={styles.movRight}>
         <span
@@ -166,7 +146,7 @@ function MovimientosList({
   titulo, movimientos,
 }: {
   titulo:       string
-  movimientos:  Movimiento[]
+  movimientos:  MovimientoApi[]
 }) {
   const [expandido, setExpandido] = useState(true)
 
@@ -214,6 +194,12 @@ export default function DashboardPage() {
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
 
+  const { movimientos: movimientosRaw, loading, error, refetch } = useMovimientos({
+    mes: mes + 1,
+    anio,
+  })
+  const movimientos = (movimientosRaw ?? []) as MovimientoApi[]
+
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const irAnterior = () => {
@@ -227,26 +213,32 @@ export default function DashboardPage() {
     else setMes(m => m + 1)
   }
 
-  // Filtrar movimientos del mes seleccionado
-  const movMes = MOCK_MOVIMIENTOS.filter(mov => {
-    const [y, mo] = mov.fecha.split('-').map(Number)
-    return mo - 1 === mes && y === anio
-  })
-
-  // Métricas
-  const efectivo = movMes
-    .filter(m => m.metodo !== 'CREDITO')
-    .reduce((acc, m) => acc + (m.tipo === 'INGRESO' ? m.monto : -m.monto), 0)
+  // Métricas y listas (API ya filtra por mes/anio)
+  const efectivo = useMemo(() => movimientos
+    .filter(m => m.metodo_pago_tipo !== 'CREDITO')
+    .reduce((acc, m) => acc + (m.tipo === 'INGRESO' ? m.monto : -m.monto), 0), [movimientos])
   const saldo = efectivo - DEUDA_TC_MOCK
 
-  // Listas por ámbito
-  const personales = movMes.filter(m => m.ambito === 'PERSONAL')
-  const comunes    = movMes.filter(m => m.ambito === 'COMUN')
+  const personales = useMemo(() => movimientos.filter(m => m.ambito === 'PERSONAL'), [movimientos])
+  const comunes    = useMemo(() => movimientos.filter(m => m.ambito === 'COMUN'), [movimientos])
 
-  // Categorías ordenadas de mayor a menor
-  const categoriasSorted = [...MOCK_CATEGORIAS].sort((a, b) => b.monto - a.monto)
+  // Categorías (solo egresos) ordenadas de mayor a menor
+  const categoriasSorted = useMemo(() => {
+    const byCat = new Map<string, number>()
+    for (const m of movimientos) {
+      if (m.tipo !== 'EGRESO') continue
+      const name = m.categoria_nombre || 'Otros'
+      byCat.set(name, (byCat.get(name) ?? 0) + m.monto)
+    }
+    return Array.from(byCat.entries())
+      .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
+      .sort((a, b) => b.monto - a.monto)
+  }, [movimientos])
   const maxCat = categoriasSorted[0]?.monto ?? 1
   const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>

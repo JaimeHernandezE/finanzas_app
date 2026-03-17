@@ -1,11 +1,14 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
+  useCallback,
   type ReactNode,
 } from 'react'
-import { MOCK_VIAJES, type Viaje } from '@/pages/viajes/mockViajes'
+import { viajesApi } from '@/api'
+import type { Viaje } from '@/pages/viajes/mockViajes'
 
 // -----------------------------------------------------------------------------
 // Tipo del contexto
@@ -18,16 +21,43 @@ export interface ViajeContextType {
   setViajeActivo: (viaje: Viaje | null) => void
   activarViaje: (id: string) => void
   desactivarViaje: (id: string) => void
+  refetchViajes: () => void
 }
 
 const ViajeContext = createContext<ViajeContextType | null>(null)
+
+function mapApiToViaje(v: { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }): Viaje {
+  return {
+    id: String(v.id),
+    nombre: v.nombre,
+    fechaInicio: v.fecha_inicio,
+    fechaFin: v.fecha_fin,
+    colorTema: v.color_tema || '#2E86AB',
+    esActivo: v.es_activo,
+    archivado: v.archivado,
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Provider
 // -----------------------------------------------------------------------------
 
 export function ViajeProvider({ children }: { children: ReactNode }) {
-  const [viajes, setViajes] = useState<Viaje[]>(() => [...MOCK_VIAJES])
+  const [viajes, setViajes] = useState<Viaje[]>([])
+
+  const cargarViajes = useCallback(async () => {
+    try {
+      const res = await viajesApi.getViajes(false)
+      const list = (res.data ?? []) as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }[]
+      setViajes(list.map(mapApiToViaje))
+    } catch {
+      setViajes([])
+    }
+  }, [])
+
+  useEffect(() => {
+    cargarViajes()
+  }, [cargarViajes])
 
   const viajeActivo = useMemo(
     () => viajes.find((v) => v.esActivo) ?? null,
@@ -63,8 +93,9 @@ export function ViajeProvider({ children }: { children: ReactNode }) {
       setViajeActivo,
       activarViaje,
       desactivarViaje,
+      refetchViajes: cargarViajes,
     }),
-    [viajes, viajeActivo]
+    [viajes, viajeActivo, cargarViajes]
   )
 
   return (
