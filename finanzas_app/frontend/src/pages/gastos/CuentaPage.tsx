@@ -1,20 +1,23 @@
 import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useMovimientos } from '@/hooks/useMovimientos'
+import { useCategorias } from '@/hooks/useCatalogos'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './CuentaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API snake_case)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Movimiento {
-  id:           number
-  fecha:        string
-  descripcion:  string
-  categoria:    string
-  monto:        number
-  tipo:         'INGRESO' | 'EGRESO'
-  metodo:       'EFECTIVO' | 'DEBITO' | 'CREDITO'
-  autor?:       string
+  id: number
+  fecha: string
+  comentario: string
+  categoria_nombre: string
+  monto: number
+  tipo: 'INGRESO' | 'EGRESO'
+  metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+  autor_nombre?: string
 }
 
 interface Cuenta {
@@ -32,10 +35,7 @@ interface GrupoFecha {
   movimientos:  Movimiento[]
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
+// Cuenta: sin endpoint de cuentas, se mantiene mock
 const MOCK_CUENTA: Cuenta = {
   id:         '1',
   nombre:     'Mis gastos',
@@ -44,21 +44,7 @@ const MOCK_CUENTA: Cuenta = {
   esComun:    false,
 }
 
-const MOCK_MOVIMIENTOS_INIT: Movimiento[] = [
-  { id: 1, fecha: '2026-03-17', descripcion: 'Supermercado Lider',    categoria: 'Alimentación', monto: 87400,  tipo: 'EGRESO',  metodo: 'DEBITO'   },
-  { id: 2, fecha: '2026-03-17', descripcion: 'Bencina',               categoria: 'Transporte',   monto: 45000,  tipo: 'EGRESO',  metodo: 'EFECTIVO' },
-  { id: 3, fecha: '2026-03-15', descripcion: 'Proyecto Arquitectura', categoria: 'Honorarios',   monto: 850000, tipo: 'INGRESO', metodo: 'EFECTIVO' },
-  { id: 4, fecha: '2026-03-14', descripcion: 'Netflix',               categoria: 'Entretención', monto: 10990,  tipo: 'EGRESO',  metodo: 'CREDITO'  },
-  { id: 5, fecha: '2026-03-13', descripcion: 'Farmacia Cruz Verde',   categoria: 'Salud',        monto: 15600,  tipo: 'EGRESO',  metodo: 'EFECTIVO' },
-  { id: 6, fecha: '2026-03-10', descripcion: 'Almuerzo trabajo',      categoria: 'Alimentación', monto: 8900,   tipo: 'EGRESO',  metodo: 'EFECTIVO' },
-]
-
-const MOCK_CATEGORIAS = [
-  'Alimentación', 'Transporte', 'Servicios', 'Salud',
-  'Educación', 'Entretención', 'Honorarios', 'Sueldo',
-]
-
-const METODOS_PAGO: { value: Movimiento['metodo']; label: string }[] = [
+const METODOS_PAGO: { value: Movimiento['metodo_pago_tipo']; label: string }[] = [
   { value: 'EFECTIVO', label: 'Efectivo' },
   { value: 'DEBITO',   label: 'Débito'   },
   { value: 'CREDITO',  label: 'Crédito'  },
@@ -107,7 +93,7 @@ function groupByDate(movimientos: Movimiento[]): GrupoFecha[] {
     }))
 }
 
-const METODO_BADGE: Record<Movimiento['metodo'], { label: string; bg: string; color: string }> = {
+const METODO_BADGE: Record<Movimiento['metodo_pago_tipo'], { label: string; bg: string; color: string }> = {
   EFECTIVO: { label: 'EF', bg: '#f0f0ec', color: '#6b7280' },
   DEBITO:   { label: 'TD', bg: '#e8f4ff', color: '#3b82f6' },
   CREDITO:  { label: 'TC', bg: '#fff0f0', color: '#ff4d4d' },
@@ -146,6 +132,7 @@ function SegmentedControl({
 
 function FilterSidebar({
   abierto,
+  categorias,
   filtrosCategorias,
   filtrosMetodos,
   onToggleCategoria,
@@ -154,6 +141,7 @@ function FilterSidebar({
   onLimpiar,
 }: {
   abierto:           boolean
+  categorias:        { id: number; nombre: string }[]
   filtrosCategorias: string[]
   filtrosMetodos:    string[]
   onToggleCategoria: (cat: string) => void
@@ -180,14 +168,14 @@ function FilterSidebar({
           {/* Categorías */}
           <div className={styles.filterSection}>
             <p className={styles.filterSectionLabel}>Categoría</p>
-            {MOCK_CATEGORIAS.map(cat => (
-              <label key={cat} className={styles.checkItem}>
+            {categorias.map(cat => (
+              <label key={cat.id} className={styles.checkItem}>
                 <input
                   type="checkbox"
-                  checked={filtrosCategorias.includes(cat)}
-                  onChange={() => onToggleCategoria(cat)}
+                  checked={filtrosCategorias.includes(cat.nombre)}
+                  onChange={() => onToggleCategoria(cat.nombre)}
                 />
-                {cat}
+                {cat.nombre}
               </label>
             ))}
           </div>
@@ -229,18 +217,18 @@ function MovimientoRow({
   onEdit:   (id: number) => void
   onDelete: (mov: Movimiento) => void
 }) {
-  const badge     = METODO_BADGE[mov.metodo]
+  const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
 
   return (
     <div className={styles.movRow}>
       <div className={styles.movInfo}>
-        <span className={styles.movDesc}>{mov.descripcion}</span>
-        <span className={styles.movCat}>{mov.categoria}</span>
+        <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+        <span className={styles.movCat}>{mov.categoria_nombre}</span>
       </div>
 
       {esComun && (
-        <span className={styles.movAutor}>{mov.autor ?? '—'}</span>
+        <span className={styles.movAutor}>{mov.autor_nombre ?? '—'}</span>
       )}
 
       <span
@@ -339,7 +327,7 @@ function DeleteModal({
         <h2 className={styles.modalTitulo}>Eliminar movimiento</h2>
         <p className={styles.modalTexto}>
           ¿Eliminar{' '}
-          <strong>"{mov.descripcion}"</strong>{' '}
+          <strong>"{mov.comentario || '—'}"</strong>{' '}
           por <strong>{clp(mov.monto)}</strong>?
           <br />
           Esta acción no se puede deshacer.
@@ -365,16 +353,30 @@ export default function CuentaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
-  // Cuenta (TODO: fetch por id)
   const cuenta: Cuenta = { ...MOCK_CUENTA, id: id ?? '1' }
 
-  // Movimientos (TODO: fetch al backend)
-  const [movimientos, setMovimientos] = useState<Movimiento[]>(MOCK_MOVIMIENTOS_INIT)
-
-  // Navegador de mes
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [filtroTipo,         setFiltroTipo]         = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
+  const [busqueda,           setBusqueda]           = useState('')
+  const [filtrosCategorias,  setFiltrosCategorias]  = useState<string[]>([])
+  const [filtrosMetodos,     setFiltrosMetodos]     = useState<string[]>([])
+  const [sidebarAbierto,     setSidebarAbierto]     = useState(false)
+  const [movimientoAEliminar, setMovimientoAEliminar] = useState<Movimiento | null>(null)
+
+  const { data: categoriasData } = useCategorias()
+  const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
+
+  const { movimientos, loading, error, refetch, eliminar } = useMovimientos({
+    cuenta: id ? Number(id) : undefined,
+    mes: mes + 1,
+    anio,
+    tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
+    q: busqueda || undefined,
+  })
+  const movimientosTyped = (movimientos ?? []) as Movimiento[]
+
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const irAnterior = () => {
@@ -386,13 +388,6 @@ export default function CuentaPage() {
     if (mes === 11) { setMes(0); setAnio(a => a + 1) }
     else setMes(m => m + 1)
   }
-
-  // Filtros
-  const [filtroTipo,         setFiltroTipo]         = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
-  const [busqueda,           setBusqueda]           = useState('')
-  const [filtrosCategorias,  setFiltrosCategorias]  = useState<string[]>([])
-  const [filtrosMetodos,     setFiltrosMetodos]     = useState<string[]>([])
-  const [sidebarAbierto,     setSidebarAbierto]     = useState(false)
 
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
 
@@ -412,35 +407,28 @@ export default function CuentaPage() {
     setSidebarAbierto(false)
   }
 
-  // Modal de eliminación
-  const [movimientoAEliminar, setMovimientoAEliminar] = useState<Movimiento | null>(null)
-
-  const confirmarEliminar = () => {
+  const confirmarEliminar = async () => {
     if (!movimientoAEliminar) return
-    setMovimientos(prev => prev.filter(m => m.id !== movimientoAEliminar.id))
+    await eliminar(movimientoAEliminar.id)
     setMovimientoAEliminar(null)
-    // TODO: llamar al backend para eliminar
   }
 
-  // Navegación
   const irNuevo = () => navigate(`/gastos/nuevo?cuenta=${id}`)
   const irEditar = (movId: number) => navigate(`/gastos/${movId}/editar`)
 
-  // Movimientos filtrados
   const movimientosFiltrados = useMemo(() => {
-    return movimientos.filter(m => {
-      const [y, mo] = m.fecha.split('-').map(Number)
-      if (mo - 1 !== mes || y !== anio) return false
-      if (filtroTipo !== 'TODOS' && m.tipo !== filtroTipo) return false
-      if (busqueda && !m.descripcion.toLowerCase().includes(busqueda.toLowerCase())) return false
-      if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria)) return false
-      if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo)) return false
+    return movimientosTyped.filter(m => {
+      if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria_nombre)) return false
+      if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo_pago_tipo)) return false
       return true
     })
-  }, [movimientos, mes, anio, filtroTipo, busqueda, filtrosCategorias, filtrosMetodos])
+  }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
 
   const grupos = groupByDate(movimientosFiltrados)
   const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.length > 0
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>
@@ -513,6 +501,7 @@ export default function CuentaPage() {
       {/* ── Sidebar de filtros ── */}
       <FilterSidebar
         abierto={sidebarAbierto}
+        categorias={categorias}
         filtrosCategorias={filtrosCategorias}
         filtrosMetodos={filtrosMetodos}
         onToggleCategoria={toggleCategoria}

@@ -1,18 +1,21 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useFondoDetalle } from '@/hooks/useInversiones'
+import { inversionesApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './FondoDetallePage.module.scss'
-import { MOCK_FONDOS, type EventoFondo } from './data'
+import type { EventoFondo } from './data'
 
-// TODO: reemplazar por fetch al backend
-const MOCK_EVENTOS: EventoFondo[] = [
-  { id: 1, tipo: 'VALOR', fecha: '2026-03-15', monto: 5980000 },
-  { id: 2, tipo: 'APORTE', fecha: '2026-03-10', monto: 500000 },
-  { id: 3, tipo: 'VALOR', fecha: '2026-03-01', monto: 5480000 },
-  { id: 4, tipo: 'APORTE', fecha: '2026-02-15', monto: 1000000 },
-  { id: 5, tipo: 'VALOR', fecha: '2026-02-01', monto: 4500000 },
-  { id: 6, tipo: 'APORTE', fecha: '2026-01-10', monto: 2500000 },
-  { id: 7, tipo: 'VALOR', fecha: '2026-01-01', monto: 3800000 },
-]
+interface FondoDetalleApi {
+  id: number
+  nombre: string
+  descripcion: string
+  capital_total: number
+  valor_actual: number
+  ganancia: number
+  rentabilidad: number
+  historial?: { id: number; tipo: string; fecha: string; monto: string; nota?: string | null }[]
+}
 
 const clp = (n: number) =>
   n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
@@ -28,70 +31,66 @@ function formatFecha(fecha: string) {
 
 export default function FondoDetallePage() {
   const { id } = useParams<{ id: string }>()
-  const fondo = MOCK_FONDOS.find((f) => f.id === id)
+  const { data: fondoData, loading, error, refetch } = useFondoDetalle(Number(id))
+  const fondo = fondoData as FondoDetalleApi | null | undefined
 
-  const [eventos, setEventos] = useState<EventoFondo[]>(MOCK_EVENTOS)
   const [openForm, setOpenForm] = useState<'valor' | 'aporte' | null>(null)
-
   const [formValorFecha, setFormValorFecha] = useState(hoy())
   const [formValorMonto, setFormValorMonto] = useState('')
   const [formAporteFecha, setFormAporteFecha] = useState(hoy())
   const [formAporteMonto, setFormAporteMonto] = useState('')
   const [formAporteNota, setFormAporteNota] = useState('')
 
-  useEffect(() => {
-    setEventos(MOCK_EVENTOS)
-    setOpenForm(null)
-  }, [id])
+  const eventos: EventoFondo[] = useMemo(() => {
+    const h = fondo?.historial ?? []
+    return h.map((e) => ({
+      id: e.id,
+      tipo: e.tipo as EventoFondo['tipo'],
+      fecha: e.fecha,
+      monto: Number(e.monto) || 0,
+      nota: e.nota ?? undefined,
+    }))
+  }, [fondo?.historial])
 
   const eventosOrdenados = useMemo(
     () => [...eventos].sort((a, b) => b.fecha.localeCompare(a.fecha)),
     [eventos]
   )
 
-  const { capitalTotal, valorActual, ganancia, rentabilidad } = useMemo(() => {
-    const aportes = eventos.filter((e) => e.tipo === 'APORTE')
-    const valores = eventos.filter((e) => e.tipo === 'VALOR').sort((a, b) => b.fecha.localeCompare(a.fecha))
-    const cap = aportes.reduce((s, e) => s + e.monto, 0)
-    const val = valores[0]?.monto ?? 0
-    const gan = val - cap
-    const rent = cap > 0 ? (gan / cap) * 100 : 0
-    return { capitalTotal: cap, valorActual: val, ganancia: gan, rentabilidad: rent }
-  }, [eventos])
+  const capitalTotal = Number(fondo?.capital_total ?? 0)
+  const valorActual = Number(fondo?.valor_actual ?? 0)
+  const ganancia = Number(fondo?.ganancia ?? 0)
+  const rentabilidad = Number(fondo?.rentabilidad ?? 0)
 
-  const handleConfirmValor = () => {
-    const monto = Number(formValorMonto)
-    if (!Number.isFinite(monto) || monto < 0) return
-    setEventos((prev) => [
-      { id: Date.now(), tipo: 'VALOR' as const, fecha: formValorFecha, monto },
-      ...prev,
-    ])
+  const handleConfirmValor = async () => {
+    const monto = formValorMonto
+    if (!monto || Number(monto) < 0) return
+    await inversionesApi.agregarValor(Number(id), { fecha: formValorFecha, valor_cuota: monto })
     setFormValorMonto('')
     setFormValorFecha(hoy())
     setOpenForm(null)
+    refetch()
   }
 
-  const handleConfirmAporte = () => {
-    const monto = Number(formAporteMonto)
-    if (!Number.isFinite(monto) || monto < 0) return
-    setEventos((prev) => [
-      {
-        id: Date.now(),
-        tipo: 'APORTE' as const,
-        fecha: formAporteFecha,
-        monto,
-        nota: formAporteNota.trim() || undefined,
-      },
-      ...prev,
-    ])
+  const handleConfirmAporte = async () => {
+    const monto = formAporteMonto
+    if (!monto || Number(monto) < 0) return
+    await inversionesApi.agregarAporte(Number(id), {
+      fecha: formAporteFecha,
+      monto,
+      nota: formAporteNota.trim() || undefined,
+    })
     setFormAporteMonto('')
     setFormAporteNota('')
     setFormAporteFecha(hoy())
     setOpenForm(null)
+    refetch()
   }
 
-  const handleEliminar = (eventoId: number) => {
-    setEventos((prev) => prev.filter((e) => e.id !== eventoId))
+  const handleEliminar = async (evento: EventoFondo) => {
+    if (evento.tipo === 'APORTE') await inversionesApi.eliminarAporte(evento.id)
+    else await inversionesApi.eliminarValor(evento.id)
+    refetch()
   }
 
   const openRegistrarValor = () => {
@@ -107,6 +106,8 @@ export default function FondoDetallePage() {
     setFormAporteNota('')
   }
 
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
   if (!fondo) {
     return (
       <div className={styles.page}>
@@ -315,7 +316,7 @@ export default function FondoDetallePage() {
                   <button
                     type="button"
                     className={styles.btnEliminar}
-                    onClick={() => handleEliminar(ev.id)}
+                    onClick={() => handleEliminar(ev)}
                     aria-label="Eliminar"
                   >
                     🗑

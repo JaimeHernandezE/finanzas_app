@@ -4,6 +4,9 @@ import path from 'path'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: ['axios'],
+  },
   server: {
     host: '0.0.0.0',    // Escucha en todas las interfaces dentro del contenedor
     port: 5173,

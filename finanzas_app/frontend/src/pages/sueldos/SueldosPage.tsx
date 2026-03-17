@@ -1,8 +1,12 @@
 import { useState, useMemo } from 'react'
+import { useApi } from '@/hooks/useApi'
+import { finanzasApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
+import { useAuth } from '@/context/AuthContext'
 import styles from './SueldosPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API: id, mes, monto, origen, usuario, autor_nombre)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface IngresoMes {
@@ -14,20 +18,6 @@ interface IngresoMes {
   mes: number
   anio: number
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-const USUARIO_ACTUAL = { id: 'jaime', nombre: 'Jaime' }
-
-const MOCK_INGRESOS: IngresoMes[] = [
-  { id: 1, usuarioId: 'jaime', nombre: 'Jaime', origen: 'Sueldo', monto: 1500000, mes: 2, anio: 2026 },
-  { id: 2, usuarioId: 'jaime', nombre: 'Jaime', origen: 'Honorarios', monto: 300000, mes: 2, anio: 2026 },
-  { id: 3, usuarioId: 'glori', nombre: 'Glori', origen: 'Sueldo', monto: 1000000, mes: 2, anio: 2026 },
-  { id: 4, usuarioId: 'jaime', nombre: 'Jaime', origen: 'Sueldo', monto: 1500000, mes: 1, anio: 2026 },
-  { id: 5, usuarioId: 'glori', nombre: 'Glori', origen: 'Sueldo', monto: 1000000, mes: 1, anio: 2026 },
-]
 
 const COLORES_MIEMBRO = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860']
 
@@ -44,10 +34,6 @@ const clp = (n: number) =>
   n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 const pct = (n: number) => `${n.toFixed(1)}%`
-
-function nextId(ingresos: IngresoMes[]) {
-  return Math.max(0, ...ingresos.map(i => i.id)) + 1
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-componentes
@@ -117,11 +103,31 @@ function FilaTotalFamiliar({ monto }: { monto: number }) {
 
 export default function SueldosPage() {
   const hoy = new Date()
-  const [ingresos, setIngresos] = useState<IngresoMes[]>(MOCK_INGRESOS)
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mostrarFormNuevo, setMostrarFormNuevo] = useState(false)
   const [editandoId, setEditandoId] = useState<number | null>(null)
+
+  const { data: ingresosRaw, loading, error, refetch } = useApi(
+    () => finanzasApi.getIngresosComunes({ mes: mes + 1, anio }),
+    [mes, anio],
+  )
+
+  const ingresos: IngresoMes[] = useMemo(() => {
+    const list = (ingresosRaw ?? []) as { id: number; mes: string; monto: string; origen: string; usuario: number; autor_nombre: string }[]
+    return list.map(i => {
+      const d = i.mes ? new Date(i.mes) : new Date()
+      return {
+        id: i.id,
+        usuarioId: String(i.usuario),
+        nombre: i.autor_nombre ?? '',
+        origen: i.origen,
+        monto: Number(i.monto) || 0,
+        mes: d.getMonth(),
+        anio: d.getFullYear(),
+      }
+    })
+  }, [ingresosRaw])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -144,23 +150,24 @@ export default function SueldosPage() {
     }
   }
 
-  // Miembros únicos: usuario actual primero, luego el resto (orden estable desde todos los ingresos)
   const miembros = useMemo(() => {
     const byId = new Map<string, { id: string; nombre: string }>()
     for (const i of ingresos) {
       if (!byId.has(i.usuarioId)) byId.set(i.usuarioId, { id: i.usuarioId, nombre: i.nombre })
     }
-    const list = Array.from(byId.values())
-    const actualFirst = list.find(m => m.id === USUARIO_ACTUAL.id)
-    const otros = list.filter(m => m.id !== USUARIO_ACTUAL.id)
-    if (actualFirst) return [actualFirst, ...otros]
-    return list
+    return Array.from(byId.values())
   }, [ingresos])
 
   const ingresosMes = useMemo(
     () => ingresos.filter(i => i.mes === mes && i.anio === anio),
     [ingresos, mes, anio]
   )
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
+
+  const { user } = useAuth()
+  const usuarioActualId = user ? String(user.id) : ''
 
   const porUsuario = useMemo(() => {
     return miembros.map(m => ({
@@ -175,6 +182,35 @@ export default function SueldosPage() {
     [porUsuario]
   )
 
+  const misIngresos = useMemo(
+    () => ingresosMes.filter(i => i.usuarioId === usuarioActualId),
+    [ingresosMes, usuarioActualId]
+  )
+
+  const otrosMiembros = useMemo(
+    () => miembros.filter(m => m.id !== usuarioActualId),
+    [miembros, usuarioActualId]
+  )
+
+  const agregar = async (origen: string, monto: number) => {
+    const mesStr = `${anio}-${String(mes + 1).padStart(2, '0')}-01`
+    await finanzasApi.createIngresoComun({ mes: mesStr, monto: String(monto), origen: origen.trim() })
+    setMostrarFormNuevo(false)
+    refetch()
+  }
+
+  const actualizar = async (id: number, origen: string, monto: number) => {
+    await finanzasApi.updateIngresoComun(id, { origen: origen.trim(), monto: String(monto) })
+    setEditandoId(null)
+    refetch()
+  }
+
+  const eliminar = async (id: number) => {
+    await finanzasApi.deleteIngresoComun(id)
+    setEditandoId(null)
+    refetch()
+  }
+
   const conPorcentaje = useMemo(
     () =>
       porUsuario.map(m => ({
@@ -183,42 +219,6 @@ export default function SueldosPage() {
       })),
     [porUsuario, totalFamiliar]
   )
-
-  const misIngresos = useMemo(
-    () => ingresosMes.filter(i => i.usuarioId === USUARIO_ACTUAL.id),
-    [ingresosMes]
-  )
-
-  const otrosMiembros = useMemo(
-    () => miembros.filter(m => m.id !== USUARIO_ACTUAL.id),
-    [miembros]
-  )
-
-  const agregar = (origen: string, monto: number) => {
-    const nuevo: IngresoMes = {
-      id: nextId(ingresos),
-      usuarioId: USUARIO_ACTUAL.id,
-      nombre: USUARIO_ACTUAL.nombre,
-      origen: origen.trim(),
-      monto,
-      mes,
-      anio,
-    }
-    setIngresos(prev => [...prev, nuevo])
-    setMostrarFormNuevo(false)
-  }
-
-  const actualizar = (id: number, origen: string, monto: number) => {
-    setIngresos(prev =>
-      prev.map(i => (i.id === id ? { ...i, origen: origen.trim(), monto } : i))
-    )
-    setEditandoId(null)
-  }
-
-  const eliminar = (id: number) => {
-    setIngresos(prev => prev.filter(i => i.id !== id))
-    setEditandoId(null)
-  }
 
   return (
     <div className={styles.page}>

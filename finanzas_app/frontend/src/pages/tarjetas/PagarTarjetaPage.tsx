@@ -1,28 +1,35 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Input, Select, Textarea } from '@/components/ui'
 import type { SelectOption } from '@/components/ui'
+import { useTarjetas } from '@/hooks/useCatalogos'
+import { useApi } from '@/hooks/useApi'
+import { movimientosApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './PagarTarjetaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tipos
+// Tipos (API devuelve id, numero, monto, mes_facturacion, estado, incluir)
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface Tarjeta {
-  id: string
+  id: number
   nombre: string
   banco: string
 }
 
 interface Cuota {
   id: number
-  movimientoId: number
-  descripcion: string
-  numeroCuota: number
-  totalCuotas: number
+  numero?: number
   monto: number
+  mes_facturacion?: string
   estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
   incluir: boolean
+  /** Solo en flujo "nuevo gasto" local */
+  descripcion?: string
+  movimientoId?: number
+  numeroCuota?: number
+  totalCuotas?: number
 }
 
 interface CargoAdicional {
@@ -32,22 +39,6 @@ interface CargoAdicional {
 }
 
 type FiltroEstado = 'Pendiente' | 'Facturado' | 'Pagado' | 'Todos'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_TARJETAS: Tarjeta[] = [
-  { id: '1', nombre: 'Visa BCI', banco: 'BCI' },
-  { id: '2', nombre: 'Mastercard Santander', banco: 'Santander' },
-]
-
-const MOCK_CUOTAS_INIT: Cuota[] = [
-  { id: 1, movimientoId: 10, descripcion: 'Supermercado Lider', numeroCuota: 1, totalCuotas: 3, monto: 29133, estado: 'FACTURADO', incluir: true },
-  { id: 2, movimientoId: 11, descripcion: 'Netflix', numeroCuota: 1, totalCuotas: 1, monto: 10990, estado: 'PENDIENTE', incluir: true },
-  { id: 3, movimientoId: 12, descripcion: 'Televisor Samsung', numeroCuota: 2, totalCuotas: 6, monto: 42000, estado: 'PENDIENTE', incluir: false },
-  { id: 4, movimientoId: 13, descripcion: 'Zapatos', numeroCuota: 1, totalCuotas: 2, monto: 24990, estado: 'PAGADO', incluir: true },
-]
 
 const CATEGORIAS_EGRESO: SelectOption[] = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -132,14 +123,14 @@ function CuotaRow({
         checked={cuota.incluir}
         disabled={deshabilitado}
         onChange={() => onToggleIncluir(cuota.id)}
-        aria-label={`Incluir ${cuota.descripcion} en el pago`}
+        aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''} en el pago`}
       />
       <div className={styles.cuotaContent}>
         <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
-          {cuota.descripcion}
+          Cuota {cuota.numero ?? cuota.numeroCuota}
         </span>
         <span className={styles.cuotaMeta}>
-          cuota {cuota.numeroCuota} / {cuota.totalCuotas}
+          cuota {cuota.numero ?? cuota.numeroCuota}
         </span>
         <span className={`${styles.cuotaMonto} ${excluida ? styles.excluida : ''}`}>
           {clp(cuota.monto)}
@@ -422,11 +413,24 @@ export default function PagarTarjetaPage() {
   const navigate = useNavigate()
 
   const hoy = new Date()
-  const [tarjetaSeleccionada, setTarjetaSeleccionada] = useState(MOCK_TARJETAS[0]?.id ?? '1')
+  const { data: tarjetasData } = useTarjetas()
+  const tarjetas = (tarjetasData ?? []) as Tarjeta[]
+  const [tarjetaSeleccionada, setTarjetaSeleccionada] = useState('')
+  useEffect(() => {
+    if (tarjetas[0] && !tarjetaSeleccionada) setTarjetaSeleccionada(String(tarjetas[0].id))
+  }, [tarjetas, tarjetaSeleccionada])
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('Todos')
-  const [cuotas, setCuotas] = useState<Cuota[]>(MOCK_CUOTAS_INIT)
+  const { data: cuotasData, loading: cuotasLoading, error: cuotasError, refetch } = useApi(
+    () => movimientosApi.getCuotas({
+      tarjeta: tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id ?? tarjetas[0]?.id,
+      mes: mes + 1,
+      anio,
+    }),
+    [tarjetaSeleccionada, tarjetas, mes, anio],
+  )
+  const cuotas = (cuotasData ?? []) as Cuota[]
   const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
   const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
@@ -454,17 +458,19 @@ export default function PagarTarjetaPage() {
     return true
   })
 
+  const montoNum = (c: Cuota) => typeof c.monto === 'number' ? c.monto : Number(c.monto)
   const incluido = cuotas
     .filter(c => c.incluir && c.estado !== 'PAGADO')
-    .reduce((s, c) => s + c.monto, 0)
-  const excluido = cuotas.filter(c => !c.incluir).reduce((s, c) => s + c.monto, 0)
+    .reduce((s, c) => s + montoNum(c), 0)
+  const excluido = cuotas.filter(c => !c.incluir).reduce((s, c) => s + montoNum(c), 0)
   const cargos = cargosAdicionales.reduce((s, c) => s + c.monto, 0)
   const total = incluido + cargos
 
-  const toggleIncluir = (id: number) => {
-    setCuotas(prev =>
-      prev.map(c => (c.id === id ? { ...c, incluir: !c.incluir } : c))
-    )
+  const toggleIncluir = async (id: number) => {
+    const c = cuotas.find(x => x.id === id)
+    if (!c) return
+    await movimientosApi.updateCuota(id, { incluir: !c.incluir })
+    refetch()
   }
 
   const agregarCargo = (descripcion: string, monto: number) => {
@@ -479,20 +485,22 @@ export default function PagarTarjetaPage() {
     setCargosAdicionales(prev => prev.filter(c => c.id !== id))
   }
 
-  const handleConfirmarPago = () => {
+  const handleConfirmarPago = async () => {
     setTotalPagado(total)
-    setCuotas(prev =>
-      prev.map(c =>
-        c.incluir && c.estado !== 'PAGADO' ? { ...c, estado: 'PAGADO' as const } : c
-      )
+    const aMarcar = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO')
+    await Promise.all(
+      aMarcar.map(c => movimientosApi.updateCuota(c.id, { estado: 'PAGADO' })),
     )
     setCargosAdicionales([])
     setModalConfirmarPago(false)
     setExitoPostPago(true)
-    // TODO: conectar al backend
+    refetch()
   }
 
-  const tarjeta = MOCK_TARJETAS.find(t => t.id === tarjetaSeleccionada)
+  const tarjeta = tarjetas.find(t => String(t.id) === tarjetaSeleccionada)
+
+  if (cuotasLoading) return <Cargando />
+  if (cuotasError) return <ErrorCarga mensaje={cuotasError} />
   const cuotasIncluidasCount = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO').length
   const cuotasExcluidasCount = cuotas.filter(c => !c.incluir).length
 
@@ -541,8 +549,8 @@ export default function PagarTarjetaPage() {
               onChange={e => setTarjetaSeleccionada(e.target.value)}
               aria-label="Seleccionar tarjeta"
             >
-              {MOCK_TARJETAS.map(t => (
-                <option key={t.id} value={t.id}>{t.nombre}</option>
+              {tarjetas.map(t => (
+                <option key={t.id} value={String(t.id)}>{t.nombre}</option>
               ))}
             </select>
           </div>
@@ -697,8 +705,8 @@ export default function PagarTarjetaPage() {
         <ModalNuevoGasto
           tarjetaNombre={tarjeta?.nombre ?? ''}
           onClose={() => setModalNuevoGasto(false)}
-          onGuardar={nuevasCuotas => {
-            setCuotas(prev => [...prev, ...nuevasCuotas])
+          onGuardar={() => {
+            refetch()
             setModalNuevoGasto(false)
           }}
         />

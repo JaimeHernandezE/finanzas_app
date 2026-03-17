@@ -51,7 +51,7 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export default function MiembrosPage() {
   const { user: currentUser } = useAuth()
   const [miembros, setMiembros] = useState<Miembro[]>(() =>
-    MOCK_MIEMBROS.map((m) => ({ ...m, esTuActual: m.id === currentUser?.id }))
+    MOCK_MIEMBROS.map((m) => ({ ...m, esTuActual: String(currentUser?.id ?? '') === m.id }))
   )
   const [invitaciones, setInvitaciones] = useState<Invitacion[]>(MOCK_INVITACIONES)
   const [emailInvitacion, setEmailInvitacion] = useState('')

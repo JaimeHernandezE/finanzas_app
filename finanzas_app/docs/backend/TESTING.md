@@ -52,6 +52,8 @@ Fixtures compartidos:
 | `tests/test_signal_cuotas.py` | Signal de generación de cuotas: N cuotas al crear movimiento con crédito, numeración, suma = monto total, diferencia de centavos en primera cuota, meses consecutivos, estado PENDIENTE e incluir=True, no cuotas para efectivo, no duplicados en edición, monto_cuota manual. |
 | `tests/test_movimientos.py` | Listado (familia, otra familia, filtros ambito/tipo/mes/búsqueda, 401), creación (efectivo, crédito con cuotas, validación tarjeta/num_cuotas), edición y eliminación (solo autor, cascada de cuotas), endpoints de cuotas (listado, filtros, incluir=False mueve mes, aislamiento por familia). |
 | `tests/test_sueldos_liquidacion.py` | Ingresos comunes: listado (familia, filtro mes/año, otra familia, 401), creación (ok, múltiples mismo mes), edición y eliminación (solo autor, 403 ajeno). Liquidación: estructura (periodo, ingresos, gastos_comunes), ingresos y gastos agrupados por usuario, suma múltiples ingresos, sin gastos personales, mes vacío, 400 sin params, otra familia, 401. |
+| `tests/test_inversiones.py` | Fondos: listado (propios y compartidos, métricas, valor actual = capital si no hay registros, no ve otra familia), creación (personal y compartido), detalle con historial. Aportes y valores: crear aporte/valor, eliminar aporte, historial mezclado y ordenado. |
+| `tests/test_viajes.py` | Viajes: listado (activos, no archivados por defecto, archivados con `?archivado=true`), crear, activar (desactiva los demás, toggle si ya activo), archivar (DELETE). Presupuestos: crear, total en detalle, eliminar. Aislamiento por familia. |
 
 ## Cómo ejecutar los tests
 
@@ -79,6 +81,9 @@ docker-compose exec web pytest tests/test_signal_cuotas.py tests/test_movimiento
 # Tests de ingresos comunes y liquidación
 docker-compose exec web pytest tests/test_sueldos_liquidacion.py -v
 
+# Tests de inversiones y viajes
+docker-compose exec web pytest tests/test_inversiones.py tests/test_viajes.py -v
+
 # Cobertura del módulo finanzas
 docker-compose exec web pytest tests/ --cov=applications.finanzas --cov-report=term-missing
 ```
@@ -102,9 +107,20 @@ docker-compose exec web pytest tests/ --cov=applications.finanzas --cov-report=t
 | **Cuotas — endpoint** | 5 | Lista por familia; filtros tarjeta/mes/estado; incluir=False mueve mes; no ve otra familia. |
 | **Ingresos comunes** | 10 | Lista por familia; filtro mes/año; no ve otra familia; crea ok y múltiples mismo mes; edita/elimina solo autor; 403 ajeno; 401 sin token. |
 | **Liquidación** | 9 | Estructura periodo/ingresos/gastos_comunes; ingresos y gastos agrupados por usuario; suma múltiples ingresos; no incluye gastos personales; mes sin datos; 400 sin mes/anio; no ve otra familia; 401 sin token. |
+| **Inversiones — fondos** | 6 | Lista propios y compartidos; métricas; valor actual sin registros; no ve otra familia; crea personal y compartido. |
+| **Inversiones — aportes y valores** | 4 | Crea aporte/valor; elimina aporte; historial mezclado ordenado. |
+| **Viajes** | 8 | Lista activos; no lista archivados por defecto; lista archivados con param; crea; activar desactiva otros / toggle; archivar; no ve otra familia. |
+| **Presupuestos viaje** | 3 | Crea presupuesto; total en detalle; elimina. |
 
-**Total: 77 tests** (26 catálogos + 32 movimientos y cuotas + 19 sueldos y liquidación).
+**Total: 98 tests** (26 catálogos + 32 movimientos y cuotas + 19 sueldos y liquidación + 21 inversiones y viajes).
 
-## Nota técnica
+## Autenticación en tests
 
-Las vistas de finanzas usan `@permission_classes([AllowAny])` y obtienen el usuario con `get_usuario_autenticado(request)` (desde `applications.utils`). Así DRF no aplica JWT por defecto y no devuelve 401 antes de ejecutar la vista; la autenticación la hace nuestro helper (o el mock en tests). Eso permite que en los tests el fixture de auth inyecte el usuario sin tocar Firebase.
+La API usa tokens Firebase validados por `get_usuario_autenticado(request)` en `applications.utils`. En tests no se llama a Firebase: el `conftest.py` hace **mock** de `applications.utils.get_usuario_autenticado` cuando usas los fixtures `auth_header`, `auth_header_2` o `auth_header_otra_familia`. Esos fixtures inyectan el usuario del fixture correspondiente (por ejemplo `usuario`, `usuario_otra_familia`) para que la vista reciba un usuario válido sin token real.
+
+Para que ese mock tenga efecto, **las vistas no deben usar la autenticación JWT por defecto de DRF**. Si una vista no declara `@authentication_classes([])`, DRF ejecuta primero `JWTAuthentication`; al recibir un header como `Bearer token-de-prueba`, JWT intenta validar el token, falla y devuelve **401** antes de que se ejecute la vista y el mock. Por eso todas las vistas que usan `get_usuario_autenticado` deben tener:
+
+- `@authentication_classes([])` — para que DRF no ejecute JWT.
+- `@permission_classes([AllowAny])` — permisos los controla la vista con el usuario devuelto por el helper.
+
+Esto aplica en **usuarios**, **finanzas**, **inversiones** y **viajes**. Si añades una nueva vista que use `get_usuario_autenticado`, incluye ambos decoradores para que los tests que usen `auth_header` funcionen.

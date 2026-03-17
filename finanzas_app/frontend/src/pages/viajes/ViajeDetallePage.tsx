@@ -1,13 +1,24 @@
 import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useViaje } from '@/context/ViajeContext'
-import {
-  MOCK_PRESUPUESTOS,
-  MOCK_MOVIMIENTOS_VIAJE,
-  type PresupuestoViaje,
-  type MovimientoViaje,
-} from './mockViajes'
+import { useViajeDetalle } from '@/hooks/useViajes'
+import { viajesApi } from '@/api'
+import { Cargando, ErrorCarga } from '@/components/ui'
+import type { PresupuestoViaje, MovimientoViaje } from './mockViajes'
 import styles from './ViajeDetallePage.module.scss'
+
+interface ViajeDetalleApi {
+  id: number
+  nombre: string
+  fecha_inicio: string
+  fecha_fin: string
+  color_tema: string
+  es_activo: boolean
+  total_presupuestado: string
+  total_gastado: string
+  presupuestos: { id: number; categoria: number; categoria_nombre: string; monto_planificado: string }[]
+  movimientos?: unknown[]
+}
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -37,17 +48,18 @@ function colorBarra(gastado: number, presupuestado: number): string {
 
 function FilaCategoria({ p }: { p: PresupuestoViaje }) {
   const presup = p.montoPresupuestado
-  const pct = presup > 0 ? (p.montoGastado / presup) * 100 : 0
-  const color = presup > 0 ? colorBarra(p.montoGastado, presup) : '#22a06b'
+  const gastado = p.montoGastado ?? 0
+  const pct = presup > 0 ? (gastado / presup) * 100 : 0
+  const color = presup > 0 ? colorBarra(gastado, presup) : '#22a06b'
   const barWidth = Math.min(pct, 100)
-  const sinPresupuestoConGasto = presup === 0 && p.montoGastado > 0
+  const sinPresupuestoConGasto = presup === 0 && gastado > 0
 
   return (
     <div className={styles.catItem}>
       <div className={styles.catItemRow}>
         <span className={styles.catItemNombre}>{p.categoriaNombre}</span>
         <span className={styles.catItemMontos}>
-          {clp(p.montoGastado)} / {clp(presup)}
+          {clp(gastado)} / {clp(presup)}
         </span>
         <div className={styles.catItemBarWrap}>
           <div className={styles.barTrack}>
@@ -101,36 +113,46 @@ function FilaMovimiento({ m }: { m: MovimientoViaje }) {
 
 export default function ViajeDetallePage() {
   const { id } = useParams<{ id: string }>()
-  const { viajes, activarViaje, desactivarViaje } = useViaje()
+  const { refetchViajes } = useViaje()
+  const { data: viajeData, loading, error, refetch } = useViajeDetalle(Number(id))
+  const viajeApi = viajeData as ViajeDetalleApi | null | undefined
 
-  const viaje = useMemo(
-    () => (id ? viajes.find((v) => v.id === id) : null),
-    [id, viajes]
-  )
+  const viaje = useMemo(() => {
+    if (!viajeApi) return null
+    return {
+      id: String(viajeApi.id),
+      nombre: viajeApi.nombre,
+      fechaInicio: viajeApi.fecha_inicio,
+      fechaFin: viajeApi.fecha_fin,
+      colorTema: viajeApi.color_tema || '#2E86AB',
+      esActivo: viajeApi.es_activo,
+      archivado: false,
+    }
+  }, [viajeApi])
 
-  const { totalPresupuestado, totalGastado, diferencia, diferenciaPct, esExcedido } =
-    useMemo(() => {
-      const presup = MOCK_PRESUPUESTOS.reduce((s, p) => s + p.montoPresupuestado, 0)
-      const gastado = MOCK_PRESUPUESTOS.reduce((s, p) => s + p.montoGastado, 0)
-      const diff = presup - gastado
-      const pct = presup > 0 ? ((gastado - presup) / presup) * 100 : 0
-      return {
-        totalPresupuestado: presup,
-        totalGastado: gastado,
-        diferencia: diff,
-        diferenciaPct: pct,
-        esExcedido: gastado > presup,
-      }
-    }, [])
+  const presupuestos: PresupuestoViaje[] = useMemo(() => {
+    const list = viajeApi?.presupuestos ?? []
+    return list.map((p) => ({
+      categoriaId: String(p.categoria),
+      categoriaNombre: p.categoria_nombre,
+      montoPresupuestado: Number(p.monto_planificado) || 0,
+      montoGastado: 0,
+    }))
+  }, [viajeApi?.presupuestos])
 
-  const movimientosOrdenados = useMemo(
-    () =>
-      [...MOCK_MOVIMIENTOS_VIAJE].sort((a, b) =>
-        b.fecha.localeCompare(a.fecha)
-      ),
+  const totalPresupuestado = Number(viajeApi?.total_presupuestado ?? 0)
+  const totalGastado = Number(viajeApi?.total_gastado ?? 0)
+  const diferencia = totalPresupuestado - totalGastado
+  const diferenciaPct = totalPresupuestado > 0 ? ((totalGastado - totalPresupuestado) / totalPresupuestado) * 100 : 0
+  const esExcedido = totalGastado > totalPresupuestado
+
+  const movimientosOrdenados: MovimientoViaje[] = useMemo(
+    () => [],
     []
   )
 
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
   if (!viaje) {
     return (
       <div className={styles.page}>
@@ -141,6 +163,12 @@ export default function ViajeDetallePage() {
   }
 
   const esActivo = viaje.esActivo
+
+  const handleActivarDesactivar = async () => {
+    await viajesApi.activarViaje(Number(viaje.id))
+    refetch()
+    refetchViajes()
+  }
 
   return (
     <div className={styles.page}>
@@ -178,7 +206,7 @@ export default function ViajeDetallePage() {
               <button
                 type="button"
                 className={styles.btnGhostDanger}
-                onClick={() => desactivarViaje(viaje.id)}
+                onClick={handleActivarDesactivar}
               >
                 Desactivar
               </button>
@@ -186,7 +214,7 @@ export default function ViajeDetallePage() {
               <button
                 type="button"
                 className={styles.btnGhost}
-                onClick={() => activarViaje(viaje.id)}
+                onClick={handleActivarDesactivar}
               >
                 Activar
               </button>
@@ -236,7 +264,7 @@ export default function ViajeDetallePage() {
 
       <section className={styles.categoriaSection}>
         <h2 className={styles.sectionTitle}>POR CATEGORÍA</h2>
-        {MOCK_PRESUPUESTOS.map((p) => (
+        {presupuestos.map((p) => (
           <FilaCategoria key={p.categoriaId} p={p} />
         ))}
       </section>

@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Input, Select, Textarea } from '@/components/ui'
 import type { SelectOption } from '@/components/ui'
+import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
+import { movimientosApi } from '@/api'
 import styles from './MovimientoFormPage.module.scss'
 
 type Tipo   = 'EGRESO' | 'INGRESO'
@@ -13,35 +15,13 @@ interface FormErrors {
   categoria?: string
   tarjeta?:   string
   numCuotas?: string
+  general?:   string
 }
 
-const CATEGORIAS_EGRESO: SelectOption[] = [
-  { value: 'alimentacion',    label: 'Alimentación' },
-  { value: 'transporte',      label: 'Transporte' },
-  { value: 'vivienda',        label: 'Vivienda' },
-  { value: 'salud',           label: 'Salud' },
-  { value: 'entretenimiento', label: 'Entretenimiento' },
-  { value: 'ropa',            label: 'Ropa' },
-  { value: 'educacion',       label: 'Educación' },
-  { value: 'otros',           label: 'Otros' },
-]
-
-const CATEGORIAS_INGRESO: SelectOption[] = [
-  { value: 'sueldo',      label: 'Sueldo' },
-  { value: 'honorarios',  label: 'Honorarios' },
-  { value: 'arriendo',    label: 'Arriendo recibido' },
-  { value: 'otros',       label: 'Otros' },
-]
-
-// Placeholder — en producción vendrán de la API
+// Sin endpoint de cuentas — placeholder
 const CUENTAS: SelectOption[] = [
   { value: '1', label: 'Personal' },
   { value: '2', label: 'Arquitecto' },
-]
-
-const TARJETAS: SelectOption[] = [
-  { value: '1', label: 'Visa BCI' },
-  { value: '2', label: 'Mastercard Santander' },
 ]
 
 interface SubmitData {
@@ -52,6 +32,13 @@ interface SubmitData {
 
 export default function MovimientoFormPage() {
   const navigate = useNavigate()
+  const { data: categoriasData } = useCategorias()
+  const { data: tarjetasData } = useTarjetas()
+  const { data: metodosData } = useMetodosPago()
+
+  const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
+  const tarjetas   = (tarjetasData ?? []) as { id: number; nombre: string }[]
+  const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
 
   const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
   const [ambito,    setAmbito]    = useState<Ambito>('PERSONAL')
@@ -62,12 +49,26 @@ export default function MovimientoFormPage() {
   const [errors,    setErrors]    = useState<FormErrors>({})
   const [result,    setResult]    = useState<SubmitData | null>(null)
 
+  const categoriaOpciones: SelectOption[] = useMemo(() => {
+    const filtradas = categorias.filter(c => c.tipo === tipo)
+    return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
+  }, [categorias, tipo])
+
+  const tarjetaOpciones: SelectOption[] = useMemo(() =>
+    tarjetas.map(t => ({ value: String(t.id), label: t.nombre })),
+  [tarjetas])
+
+  const metodoPagoId = useMemo(() => {
+    const m = metodos.find(x => x.tipo === metodo)
+    return m?.id ?? null
+  }, [metodos, metodo])
+
   const montoCuota =
     numCuotas && monto
       ? Math.ceil(parseFloat(monto) / parseInt(numCuotas))
       : null
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const data = new FormData(e.currentTarget)
     const next: FormErrors = {}
@@ -82,11 +83,44 @@ export default function MovimientoFormPage() {
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
+    if (!metodoPagoId) {
+      setErrors({ general: 'No hay método de pago configurado para ' + metodo + '. Crea uno en Configuración.' })
+      return
+    }
+
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    setErrors({})
+    try {
+      const categoriaId = data.get('categoria')
+      const payload: Record<string, unknown> = {
+        fecha: (data.get('fecha') as string) || new Date().toISOString().split('T')[0],
+        tipo,
+        ambito,
+        categoria: Number(categoriaId),
+        cuenta: null,
+        monto: String(monto),
+        comentario: (data.get('comentario') as string) || '',
+        metodo_pago: metodoPagoId,
+        tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
+        num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
+        monto_cuota: metodo === 'CREDITO' && montoCuota ? montoCuota : null,
+      }
+      await movimientosApi.createMovimiento(payload)
       setResult({ monto, numCuotas, tipo })
-    }, 1500)
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: Record<string, string[] | string> } }
+      const data = ax.response?.data
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const msgs = Object.entries(data).map(([k, v]) =>
+          Array.isArray(v) ? v.join(' ') : String(v)
+        )
+        setErrors({ general: msgs.join(' ') || 'Error al guardar.' })
+      } else {
+        setErrors({ general: 'Error al guardar.' })
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ── Pantalla de éxito ──────────────────────────────────────────────────────
@@ -127,6 +161,11 @@ export default function MovimientoFormPage() {
         </header>
 
         <form onSubmit={handleSubmit} noValidate className={styles.form}>
+          {errors.general && (
+            <div className={styles.errorGeneral} style={{ marginBottom: 16, padding: 12, background: '#fff0f0', borderRadius: 8, color: '#c00', fontSize: 14 }}>
+              {errors.general}
+            </div>
+          )}
 
           {/* Tipo / Ámbito */}
           <div className={styles.row}>
@@ -186,7 +225,7 @@ export default function MovimientoFormPage() {
             <Select
               name="categoria"
               label="Categoría"
-              options={tipo === 'EGRESO' ? CATEGORIAS_EGRESO : CATEGORIAS_INGRESO}
+              options={categoriaOpciones}
               placeholder="Selecciona…"
               error={errors.categoria}
               required
@@ -238,7 +277,7 @@ export default function MovimientoFormPage() {
                 <Select
                   name="tarjeta"
                   label="Tarjeta"
-                  options={TARJETAS}
+                  options={tarjetaOpciones}
                   placeholder="Selecciona…"
                   error={errors.tarjeta}
                   required

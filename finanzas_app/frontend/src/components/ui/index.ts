@@ -9,3 +9,5 @@ export type { SelectProps, SelectOption } from './Select/Select'
 
 export { default as Textarea } from './Textarea/Textarea'
 export type { TextareaProps } from './Textarea/Textarea'
+
+export { Cargando, ErrorCarga } from './EstadoCarga'
