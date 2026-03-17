@@ -1,0 +1,387 @@
+// =============================================================================
+// DashboardPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+// ── Animaciones ───────────────────────────────────────────────────────────────
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes barraEntra {
+  from { width: 0; }
+  to   { width: var(--target-width); }
+}
+
+// ── Layout de página ──────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-8;
+  max-width: 1100px;
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-6;
+  flex-wrap: wrap;
+  gap: $space-3;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+}
+
+.titulo {
+  font-size: 26px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.badge {
+  background: $sidebar-accent;
+  color: #0f0f0f;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  padding: 3px $space-2;
+  border-radius: $radius-full;
+  letter-spacing: 0.01em;
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+  line-height: 1;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Métricas (3 columnas) ─────────────────────────────────────────────────────
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $space-4;
+  margin-bottom: $space-6;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metricCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+  animation: fadeUp 400ms ease both;
+}
+
+.metricCardDark {
+  background: #0f0f0f;
+}
+
+.metricLabel {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.metricValor {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  line-height: 1.2;
+}
+
+.metricNeg {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-normal;
+}
+
+// ── Grid inferior (categorías + listas) ───────────────────────────────────────
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $space-4;
+  align-items: start;
+
+  @media (max-width: 860px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+// ── Gráfico categorías ────────────────────────────────────────────────────────
+
+.catCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+}
+
+.catHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-5;
+}
+
+.catTitulo {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.catTotal {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.catLista {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+// ── Fila de barra ─────────────────────────────────────────────────────────────
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+}
+
+.barLabel {
+  font-size: $font-size-sm;
+  color: $color-text;
+  width: 110px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  background: #f0f0ec;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 4px;
+  width: var(--target-width);
+  animation: barraEntra 600ms ease-out both;
+}
+
+.barMonto {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  width: 82px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+// ── Columna de listas ─────────────────────────────────────────────────────────
+
+.listas {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+// ── Lista colapsable ──────────────────────────────────────────────────────────
+
+.listaCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+}
+
+.listaHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-4 $space-5;
+  background: none;
+  border: none;
+  border-bottom: 1px solid $color-border;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.listaTitulo {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.listaHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.listaCuenta {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.chevron {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  transition: transform $transition-base;
+  display: inline-block;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.listaCuerpo {
+  padding: $space-2 0;
+}
+
+.listaVacia {
+  padding: $space-4 $space-5;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-align: center;
+}
+
+.verTodos {
+  display: block;
+  width: 100%;
+  padding: $space-3 $space-5;
+  background: none;
+  border: none;
+  border-top: 1px solid $color-border;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  text-align: right;
+  transition: color $transition-fast;
+  margin-top: $space-1;
+
+  &:hover {
+    color: $color-primary;
+  }
+}
+
+// ── Ítem de movimiento ────────────────────────────────────────────────────────
+
+.movItem {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-3;
+  padding: $space-3 $space-5;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.movFecha {
+  font-size: 11px;
+  color: $color-text-muted;
+  min-width: 42px;
+  padding-top: 2px;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.movInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.movDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movCat {
+  font-size: 11px;
+  color: $color-text-muted;
+}
+
+.movRight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.movMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+}
+
+.movBadge {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  padding: 1px 5px;
+  border-radius: $radius-sm;
+  letter-spacing: 0.03em;
+}

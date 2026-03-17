@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import MainLayout from '@/components/layout/MainLayout'
-import InicioPage from '@/pages/dashboard/InicioPage'
+import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MovimientosPage from '@/pages/gastos/MovimientosPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
@@ -18,7 +18,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<MainLayout />}>
-          <Route index element={<InicioPage />} />
+          <Route index element={<DashboardPage />} />
 
           <Route path="gastos">
             <Route index element={<MovimientosPage />} />
