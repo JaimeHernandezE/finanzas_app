@@ -1,0 +1,455 @@
+// =============================================================================
+// PresupuestoPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+// ── Animaciones ───────────────────────────────────────────────────────────────
+
+@keyframes barraEntra {
+  from { width: 0; }
+  to   { width: var(--target-width); }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+// ── Layout de página ──────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-8;
+  max-width: 1100px;
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-4;
+  flex-wrap: wrap;
+  gap: $space-3;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: $space-3;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+  line-height: 1;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-top: $space-2;
+}
+
+.tab {
+  padding: $space-2 $space-3;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-normal;
+  color: $color-text-muted;
+  transition: color $transition-fast, border-color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.tabActive {
+  color: $color-text;
+  font-weight: $font-weight-bold;
+  border-bottom-color: #0f0f0f;
+}
+
+// ── Resumen ───────────────────────────────────────────────────────────────────
+
+.resumenSection {
+  margin-bottom: $space-6;
+}
+
+.resumenTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.resumenGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: $space-4;
+
+  @media (max-width: 700px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.resumenCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-5 $space-6;
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.resumenLabel {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.resumenValor {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  line-height: 1.2;
+  color: $color-text;
+}
+
+.resumenValorSuccess {
+  color: #22a06b;
+}
+
+.resumenValorDanger {
+  color: #ff4d4d;
+}
+
+.resumenPorcentaje {
+  font-size: 12px;
+  color: $color-text-muted;
+  margin-top: 2px;
+}
+
+// ── Sección por categoría ─────────────────────────────────────────────────────
+
+.categoriaSection {
+  margin-top: $space-6;
+}
+
+.categoriaHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-4;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.categoriaTitle {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+}
+
+.btnAddCat {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary;
+  }
+}
+
+// ── Formulario inline agregar / editar / asignar ───────────────────────────────
+
+.addForm {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-3 0 $space-4;
+  animation: slideDown 250ms ease both;
+  flex-wrap: wrap;
+}
+
+.addFormSelect,
+.addFormInput {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  max-width: 200px;
+}
+
+.addFormInput {
+  max-width: 140px;
+}
+
+.btnFormConfirm,
+.btnFormCancel {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text-muted;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.btnFormConfirm:hover {
+  color: #22a06b;
+}
+
+.btnFormCancel:hover {
+  color: #ff4d4d;
+}
+
+// ── Ítem de categoría (con presupuesto) ─────────────────────────────────────────
+
+.catItem {
+  padding: $space-4 0;
+  border-bottom: 1px solid #e8e8e4;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.catItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-2;
+}
+
+.catItemNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.btnEdit {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.catItemRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  flex-wrap: wrap;
+}
+
+.catItemMontos {
+  font-size: 13px;
+  color: $color-text;
+  min-width: 180px;
+}
+
+.catItemBarWrap {
+  flex: 1;
+  min-width: 120px;
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.barTrack {
+  flex: 1;
+  height: 10px;
+  background: #f0f0ec;
+  border-radius: 5px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 5px;
+  width: var(--target-width);
+  max-width: 100%;
+  animation: barraEntra 600ms ease-out both;
+  transition: width $transition-base;
+}
+
+.catItemPct {
+  font-size: 13px;
+  font-weight: $font-weight-bold;
+  min-width: 48px;
+  text-align: right;
+}
+
+.catItemIndicador {
+  font-size: 12px;
+  font-weight: $font-weight-semibold;
+  min-width: 70px;
+  text-align: right;
+}
+
+.catItemIndicadorExcedido {
+  color: #ff4d4d;
+  font-size: 12px;
+  font-weight: $font-weight-semibold;
+}
+
+// Edición inline de monto
+.catItemEditRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-top: $space-2;
+  flex-wrap: wrap;
+}
+
+.catItemEditInput {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  max-width: 140px;
+}
+
+// ── Ítem sin presupuesto ───────────────────────────────────────────────────────
+
+.catItemSinPresupuesto {
+  padding: $space-4 0;
+  border-bottom: 1px solid #e8e8e4;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.catItemSinHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-2;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.catItemSinLeft {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+}
+
+.catItemSinNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+}
+
+.badgeSinPresupuesto {
+  font-size: 11px;
+  color: $color-text-muted;
+  background: #f0f0ec;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+}
+
+.btnAsignar {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  transition: color $transition-fast;
+
+  &:hover {
+    color: $color-primary;
+  }
+}
+
+.catItemSinGastado {
+  font-size: 13px;
+  color: $color-text-muted;
+  margin-top: $space-1;
+}
+
+.catItemSinBarWrap {
+  margin-top: $space-2;
+}
+
+.barTrackEmpty {
+  flex: 1;
+  height: 10px;
+  background: #f0f0ec;
+  border-radius: 5px;
+  overflow: hidden;
+}
