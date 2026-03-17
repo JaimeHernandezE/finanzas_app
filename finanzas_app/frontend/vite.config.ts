@@ -10,6 +10,16 @@ export default defineConfig({
     watch: {
       usePolling: true,  // Necesario para detectar cambios en volúmenes Docker
     },
+    // Necesario para que el popup de Firebase (signInWithPopup) pueda usar window.closed
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
+  },
+  // Mismas cabeceras en preview (build de producción local)
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
   },
   resolve: {
     alias: {

@@ -1,7 +1,12 @@
 # backend/firebase_admin_init.py
 import os
+from pathlib import Path
+
 import firebase_admin
 from firebase_admin import credentials
+
+# Ruta por defecto: mismo directorio que este archivo (raíz del backend)
+_DEFAULT_CREDENTIALS_PATH = Path(__file__).resolve().parent / 'firebase-service-account.json'
 
 
 def init_firebase():
@@ -14,8 +19,9 @@ def init_firebase():
         return
     service_account_path = os.getenv(
         'FIREBASE_SERVICE_ACCOUNT_PATH',
-        'firebase-service-account.json'
+        str(_DEFAULT_CREDENTIALS_PATH)
     )
+    service_account_path = os.path.normpath(service_account_path)
     try:
         if os.path.exists(service_account_path):
             cred = credentials.Certificate(service_account_path)
@@ -23,14 +29,14 @@ def init_firebase():
             import json
             raw = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON', '{}')
             if not raw or raw == '{}':
-                import logging
-                logging.getLogger(__name__).warning(
-                    'Firebase no configurado: falta firebase-service-account.json o FIREBASE_SERVICE_ACCOUNT_JSON'
+                print(
+                    f'[Firebase] No configurado: no se encontró {service_account_path}. '
+                    'Coloca el JSON en la raíz del backend o define FIREBASE_SERVICE_ACCOUNT_JSON.'
                 )
                 return
             service_account_info = json.loads(raw)
             cred = credentials.Certificate(service_account_info)
         firebase_admin.initialize_app(cred)
+        print(f'[Firebase] Admin inicializado correctamente con {service_account_path}')
     except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning('Firebase Admin no inicializado: %s', e)
+        print(f'[Firebase] No inicializado: {e}')

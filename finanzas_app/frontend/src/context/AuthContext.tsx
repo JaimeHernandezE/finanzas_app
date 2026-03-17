@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   onAuthStateChanged,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   type User as FirebaseUser
 } from 'firebase/auth'
@@ -30,21 +32,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate()
   const [usuario,  setUsuario]  = useState<Usuario | null>(null)
   const [loading,  setLoading]  = useState(true)
   const [error,    setError]    = useState<string | null>(null)
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        await verificarConBackend(firebaseUser)
-      } else {
-        setUsuario(null)
-      }
-      setLoading(false)
-    })
-    return unsub
-  }, [])
 
   async function verificarConBackend(firebaseUser: FirebaseUser) {
     try {
@@ -64,18 +55,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.removeItem('auth_token')
         setUsuario(null)
         setError('Tu cuenta de Gmail no está registrada. Contacta al administrador.')
+      } else if (res.status === 401) {
+        const body = await res.json().catch(() => ({}))
+        const msg = body?.error || 'Sesión no válida'
+        setError(
+          msg.includes('Token') || msg.includes('Firebase')
+            ? 'No se pudo verificar la sesión. Comprueba que el backend tenga el archivo firebase-service-account.json.'
+            : msg
+        )
+        setUsuario(null)
       }
     } catch (err) {
       console.error('Error verificando con backend:', err)
       setError('Error conectando con el servidor. Intenta nuevamente.')
+      setUsuario(null)
+    } finally {
       setLoading(false)
     }
   }
 
+  const unsubRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function initAuth() {
+      try {
+        const result = await getRedirectResult(auth)
+        if (cancelled) return
+        if (result?.user) {
+          await verificarConBackend(result.user)
+          if (cancelled) return
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Error en redirect de login:', err)
+          setError('Error al iniciar sesión. Intenta nuevamente.')
+          setLoading(false)
+        }
+      }
+
+      if (cancelled) return
+      unsubRef.current = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (cancelled) return
+        if (firebaseUser) {
+          await verificarConBackend(firebaseUser)
+        } else {
+          setUsuario(null)
+          setLoading(false)
+        }
+      })
+    }
+
+    initAuth()
+    return () => {
+      cancelled = true
+      if (unsubRef.current) unsubRef.current()
+      unsubRef.current = null
+    }
+  }, [])
+
   async function login() {
     setError(null)
     try {
-      await signInWithPopup(auth, provider)
+      await signInWithRedirect(auth, provider)
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : ''
       if (code !== 'auth/popup-closed-by-user') {
@@ -88,7 +131,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await signOut(auth)
     localStorage.removeItem('auth_token')
     setUsuario(null)
+    navigate('/login', { replace: true })
   }
+
+  // Cierre de sesión automático tras 5 minutos de inactividad
+  const logoutRef = useRef(logout)
+  logoutRef.current = logout
+  const INACTIVITY_MS = 5 * 60 * 1000
+  useEffect(() => {
+    if (!usuario) return
+
+    let timeoutId: ReturnType<typeof setTimeout>
+
+    function resetTimer() {
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        logoutRef.current()
+      }, INACTIVITY_MS)
+    }
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart']
+    events.forEach((ev) => window.addEventListener(ev, resetTimer))
+    resetTimer()
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer))
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [usuario])
 
   return (
     <AuthContext.Provider value={{ usuario, user: usuario, loading, error, login, logout }}>

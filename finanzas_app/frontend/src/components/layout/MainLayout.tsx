@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useAuth } from '@/context/AuthContext'
 import { useViaje } from '@/context/ViajeContext'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import styles from './MainLayout.module.scss'
@@ -104,6 +105,7 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 
 export default function MainLayout() {
   const navigate = useNavigate()
+  const { user, loading, logout } = useAuth()
   const { viajeActivo } = useViaje()
 
   const propias   = CUENTAS_NAV.filter(c => c.esPropia)
@@ -125,6 +127,32 @@ export default function MainLayout() {
           <span className={styles.brandMark}>◈</span>
           <span className={styles.brandName}>Finanzas</span>
         </button>
+
+        {!loading && !user && (
+          <Link to="/login" className={styles.loginLink}>
+            Iniciar sesión
+          </Link>
+        )}
+
+        {!loading && user && (
+          <div className={styles.userBlock}>
+            <div className={styles.userInfo}>
+              {user.foto ? (
+                <img src={user.foto} alt="" className={styles.userAvatar} />
+              ) : (
+                <span className={styles.userInicial}>
+                  {user.nombre.trim().charAt(0).toUpperCase() || '?'}
+                </span>
+              )}
+              <span className={styles.userName} title={user.email}>
+                {user.nombre}
+              </span>
+            </div>
+            <button type="button" className={styles.logoutBtn} onClick={() => logout()}>
+              Cerrar sesión
+            </button>
+          </div>
+        )}
 
         <ul className={styles.nav}>
 

@@ -20,6 +20,8 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
+      # Opcional: montar solo la clave de Firebase si está en otro sitio (descomenta y ajusta ruta):
+      # - ../firebase-service-account.json:/app/firebase-service-account.json:ro
     ports:
       - "8000:8000"
     depends_on:

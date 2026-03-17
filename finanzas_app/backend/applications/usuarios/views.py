@@ -1,9 +1,13 @@
-from rest_framework.decorators import api_view, permission_classes
+import logging
+
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from firebase_admin import auth as firebase_auth
 from .models import Usuario, Familia
+
+logger = logging.getLogger(__name__)
 
 
 def obtener_usuario_desde_token(request):
@@ -21,10 +25,12 @@ def obtener_usuario_desde_token(request):
         decoded = firebase_auth.verify_id_token(token)
         return decoded, None
     except Exception as e:
+        logger.warning('Firebase token verification failed: %s', e, exc_info=True)
         return None, str(e)
 
 
 @api_view(['GET'])
+@authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
 @permission_classes([AllowAny])
 def me(request):
     """
@@ -34,6 +40,7 @@ def me(request):
     """
     decoded, error = obtener_usuario_desde_token(request)
     if error:
+        print(f'[Firebase] /me/ 401: {error}')
         return Response({'error': error}, status=status.HTTP_401_UNAUTHORIZED)
 
     email = decoded.get('email')
@@ -66,6 +73,7 @@ def me(request):
 
 
 @api_view(['POST'])
+@authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
 @permission_classes([AllowAny])
 def registrar_usuario(request):
     """
