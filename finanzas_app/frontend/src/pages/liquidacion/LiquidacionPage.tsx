@@ -273,6 +273,7 @@ export default function LiquidacionPage() {
             valor={g.montoRegistrado}
             max={totalGastos}
             color={COLORES_MIEMBRO[i % COLORES_MIEMBRO.length]}
+            metaDerecha={`(registrados por ${g.nombre})`}
             delay={i * 60}
           />
         ))}
