@@ -1,0 +1,201 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: $space-8 $space-6;
+}
+
+.card {
+  width: 100%;
+  max-width: 520px;
+  background-color: $color-bg-white;
+  border-radius: $radius-xl;
+  box-shadow: $shadow-md;
+  padding: $space-8;
+}
+
+// ── Header ────────────────────────────────────────────────────────────────────
+
+.header {
+  margin-bottom: $space-6;
+}
+
+.title {
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-bottom: $space-1;
+}
+
+.subtitle {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+// ── Form layout ───────────────────────────────────────────────────────────────
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $space-3;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.label {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-secondary;
+}
+
+.actions {
+  display: flex;
+  gap: $space-3;
+  margin-top: $space-2;
+}
+
+// ── Segmented controls ────────────────────────────────────────────────────────
+
+.segmented {
+  display: flex;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  overflow: hidden;
+  height: $input-height-base;
+}
+
+.segment {
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  transition: background $transition-fast, color $transition-fast;
+
+  & + & {
+    border-left: 1px solid $color-border;
+  }
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.segmentActive {
+  background: $color-primary;
+  color: #fff;
+
+  &:hover {
+    background: $color-primary-hover;
+    color: #fff;
+  }
+}
+
+.segmentDanger {
+  background: $color-danger;
+  color: #fff;
+
+  &:hover {
+    background: $color-danger-hover;
+    color: #fff;
+  }
+}
+
+.segmentSuccess {
+  background: $color-success;
+  color: #fff;
+
+  &:hover {
+    background: darken(#16a34a, 6%);
+    color: #fff;
+  }
+}
+
+// ── Método de pago ────────────────────────────────────────────────────────────
+
+.metodoBtns {
+  display: flex;
+  gap: $space-2;
+}
+
+.metodoBtn {
+  flex: 1;
+  padding: $space-2 $space-3;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  transition: all $transition-fast;
+
+  &:hover {
+    border-color: $color-primary;
+    color: $color-primary;
+    background: $color-primary-light;
+  }
+}
+
+.metodoBtnActive {
+  border-color: $color-primary;
+  background: $color-primary-light;
+  color: $color-primary;
+  font-weight: $font-weight-semibold;
+}
+
+// ── Panel crédito ─────────────────────────────────────────────────────────────
+
+.creditoPanel {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  padding: $space-4;
+  background: $color-bg-subtle;
+  border-radius: $radius-lg;
+  border: 1px solid $color-border;
+}
+
+.cuotaPreview {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-primary;
+  text-align: center;
+  padding: $space-2 $space-3;
+  background: $color-primary-light;
+  border-radius: $radius-base;
+}
+
+// ── Success screen ────────────────────────────────────────────────────────────
+
+.successMsg {
+  font-size: $font-size-base;
+  font-weight: $font-weight-medium;
+  color: $color-success;
+  margin-bottom: $space-3;
+  padding: $space-3;
+  background: $color-success-light;
+  border-radius: $radius-base;
+  text-align: center;
+}
+
+.cuotaResumen {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-align: center;
+  margin-bottom: $space-4;
+}

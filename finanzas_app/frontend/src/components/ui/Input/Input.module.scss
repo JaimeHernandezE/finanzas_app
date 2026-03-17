@@ -1,0 +1,36 @@
+// =============================================================================
+// Input
+// Usa @include input-base y @include input-error desde _mixins.scss.
+// Select y Textarea aplican los mismos mixins para garantizar coherencia.
+// =============================================================================
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  @include field-label;
+}
+
+.required {
+  color: $color-danger;
+}
+
+.input {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+
+  &--error {
+    @include input-error;
+  }
+}
+
+.errorText {
+  @include field-error-text;
+}
+
+.helperText {
+  @include field-helper-text;
+}

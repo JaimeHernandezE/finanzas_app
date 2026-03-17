@@ -1,0 +1,54 @@
+// =============================================================================
+// Select
+// Usa los mismos mixins que Input para garantizar coherencia visual.
+// El wrapper + arrow reemplaza el ícono nativo del navegador.
+// =============================================================================
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  @include field-label;
+}
+
+.required {
+  color: $color-danger;
+}
+
+.wrapper {
+  position: relative;
+}
+
+.select {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $space-8 $input-padding-y $input-padding-x;
+  appearance: none;
+  cursor: pointer;
+
+  &--error {
+    @include input-error;
+  }
+}
+
+// Flecha personalizada (superpuesta al borde derecho)
+.arrow {
+  position: absolute;
+  right: $space-3;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: $color-text-muted;
+  display: flex;
+  align-items: center;
+}
+
+.errorText {
+  @include field-error-text;
+}
+
+.helperText {
+  @include field-helper-text;
+}

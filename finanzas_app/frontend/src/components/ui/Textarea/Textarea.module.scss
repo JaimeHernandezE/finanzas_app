@@ -1,0 +1,36 @@
+// =============================================================================
+// Textarea
+// Usa los mismos mixins que Input y Select.
+// =============================================================================
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  @include field-label;
+}
+
+.required {
+  color: $color-danger;
+}
+
+.textarea {
+  @include input-base;
+  padding: $input-padding-y $input-padding-x;
+  resize: vertical;
+  min-height: 5rem;
+
+  &--error {
+    @include input-error;
+  }
+}
+
+.errorText {
+  @include field-error-text;
+}
+
+.helperText {
+  @include field-helper-text;
+}
