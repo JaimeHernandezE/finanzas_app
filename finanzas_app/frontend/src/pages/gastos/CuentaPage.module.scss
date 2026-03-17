@@ -1,0 +1,585 @@
+// =============================================================================
+// CuentaPage — estilos
+// Variables y mixins inyectados automáticamente vía vite.config (additionalData)
+// =============================================================================
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+// ── Página ────────────────────────────────────────────────────────────────────
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+}
+
+.tituloWrap {
+  display: flex;
+  align-items: baseline;
+  gap: $space-2;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.duenio {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+// ── Navegador de mes ──────────────────────────────────────────────────────────
+
+.mesNav {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+}
+
+.mesBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: none;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-lg;
+  color: $color-text;
+  transition: background $transition-fast, border-color $transition-fast;
+
+  &:hover:not(:disabled) {
+    background: $color-bg-subtle;
+    border-color: $color-border-strong;
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+}
+
+.mesLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 130px;
+  text-align: center;
+}
+
+// ── Botones comunes ───────────────────────────────────────────────────────────
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #333;
+  }
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #ff4d4d;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #e03c3c;
+  }
+}
+
+// Header button oculto en móvil
+.btnNuevoHeader {
+  @media (max-width: 640px) {
+    display: none;
+  }
+}
+
+// Bar button solo visible en móvil (complementa al del header)
+.btnNuevoBar {
+  @media (min-width: 641px) {
+    display: none;
+  }
+}
+
+// ── Barra de filtros ──────────────────────────────────────────────────────────
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  margin-bottom: $space-5;
+  flex-wrap: wrap;
+}
+
+// ── Segmented control ─────────────────────────────────────────────────────────
+
+.segmented {
+  display: flex;
+  background: $color-bg-subtle;
+  border-radius: $radius-base;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.segBtn {
+  padding: $space-1 $space-3;
+  border: none;
+  background: none;
+  border-radius: calc($radius-base - 2px);
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  cursor: pointer;
+  transition: background $transition-fast, color $transition-fast;
+  white-space: nowrap;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.segBtnActive {
+  background: #fff;
+  color: $color-text;
+  box-shadow: $shadow-xs;
+}
+
+// ── Buscador ──────────────────────────────────────────────────────────────────
+
+.searchInput {
+  @include input-base;
+  flex: 1;
+  min-width: 160px;
+  height: 34px;
+  padding: 0 $space-3;
+}
+
+// ── Badge de filtros activos ──────────────────────────────────────────────────
+
+.filterBadge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  background: $sidebar-accent;
+  color: #0f0f0f;
+  border-radius: $radius-full;
+  font-size: 10px;
+  font-weight: $font-weight-bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+// ── Listado ───────────────────────────────────────────────────────────────────
+
+.lista {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+}
+
+// ── Grupo por fecha ───────────────────────────────────────────────────────────
+
+.grupoHeader {
+  position: sticky;
+  top: 0;
+  background: $color-bg-page;
+  padding: $space-2 $space-4;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  border-bottom: 1px solid #e8e8e4;
+}
+
+.grupoLabel {
+  font-size: 11px;
+  font-weight: $font-weight-bold;
+  color: $color-text-muted;
+  letter-spacing: 0.04em;
+}
+
+.grupoSep {
+  font-size: 11px;
+  color: $color-text-muted;
+}
+
+.grupoSubtotal {
+  font-size: 11px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+// ── Fila de movimiento ────────────────────────────────────────────────────────
+
+.movRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #e8e8e4;
+  transition: background $transition-fast;
+
+  &:first-child {
+    border-top: none;
+  }
+
+  &:hover {
+    background: #f7f7f5;
+
+    .movActions {
+      opacity: 1;
+    }
+  }
+}
+
+.movInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.movDesc {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.movCat {
+  font-size: 12px;
+  color: $color-text-muted;
+}
+
+.movAutor {
+  font-size: 12px;
+  color: $color-text-muted;
+  width: 80px;
+  flex-shrink: 0;
+  @include truncate;
+}
+
+.movMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.movBadge {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  padding: 2px 6px;
+  border-radius: $radius-sm;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+
+// ── Botones de acción por fila ────────────────────────────────────────────────
+
+.movActions {
+  display: flex;
+  gap: $space-1;
+  opacity: 0;
+  transition: opacity $transition-fast;
+  flex-shrink: 0;
+
+  // Siempre visibles en touch
+  @media (hover: none) {
+    opacity: 1;
+  }
+}
+
+.actionBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: 14px;
+  color: $color-text-muted;
+  transition: background $transition-fast, color $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.actionBtnDanger {
+  &:hover {
+    background: #fff0f0;
+    color: #ff4d4d;
+  }
+}
+
+// ── Estado vacío ──────────────────────────────────────────────────────────────
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: $space-16 $space-8;
+  gap: $space-1;
+}
+
+.emptyIcon {
+  font-size: 32px;
+  color: $color-text-muted;
+  line-height: 1;
+  margin-bottom: $space-2;
+}
+
+.emptyTitulo {
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+}
+
+.emptySubtitulo {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+// ── Sidebar de filtros ────────────────────────────────────────────────────────
+
+.filterOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 150;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.filterOverlayVisible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.filterPanel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  background: $color-bg-white;
+  z-index: 160;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  box-shadow: $shadow-lg;
+}
+
+.filterPanelOpen {
+  transform: translateX(0);
+}
+
+.filterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-5 $space-5 $space-4;
+  border-bottom: 1px solid $color-border;
+  flex-shrink: 0;
+}
+
+.filterTitulo {
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.filterClose {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: $radius-base;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.filterBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: $space-4 $space-5;
+  display: flex;
+  flex-direction: column;
+  gap: $space-5;
+}
+
+.filterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filterSectionLabel {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: $space-2;
+}
+
+.checkItem {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 0;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  color: $color-text;
+  user-select: none;
+
+  input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #0f0f0f;
+    flex-shrink: 0;
+  }
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.filterFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-4 $space-5;
+  border-top: 1px solid $color-border;
+  flex-shrink: 0;
+  gap: $space-3;
+}
+
+// ── Modal de eliminación ──────────────────────────────────────────────────────
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: $space-4;
+}
+
+.modalCard {
+  background: $color-bg-white;
+  border-radius: 12px;
+  padding: 28px;
+  max-width: 380px;
+  width: 100%;
+  animation: fadeIn 0.15s ease;
+  box-shadow: $shadow-lg;
+}
+
+.modalTitulo {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-bottom: $space-3;
+}
+
+.modalTexto {
+  font-size: $font-size-sm;
+  color: $color-text-secondary;
+  line-height: $line-height-base;
+  margin-bottom: $space-6;
+}
+
+.modalBtns {
+  display: flex;
+  justify-content: flex-end;
+  gap: $space-3;
+}
