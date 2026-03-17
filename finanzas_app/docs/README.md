@@ -22,5 +22,6 @@ Regla práctica:
 |-----------|-------------|
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Despliegue del backend con Docker y comandos rápidos de docker-compose. |
 | [backend/README.md](backend/README.md) | Resumen del backend, estructura de apps y enlaces al resto de docs del backend. |
+| [backend/TESTING.md](backend/TESTING.md) | Pruebas del backend (pytest): fixtures, tests de catálogos, comandos y cobertura. |
 
 *(Se irán añadiendo aquí `docs/frontend/README.md` y más archivos según avance el proyecto.)*

@@ -4,3 +4,10 @@ psycopg2-binary>=2.9
 firebase-admin>=6.2.0
 djangorestframework-simplejwt>=5.3.0
 django-cors-headers>=4.3.0
+python-dateutil
+
+# Testing
+pytest
+pytest-django
+pytest-cov
+factory-boy
