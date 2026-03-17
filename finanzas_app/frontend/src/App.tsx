@@ -1,5 +1,16 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import MainLayout from '@/components/layout/MainLayout'
+
+function Placeholder({ title }: { title: string }) {
+  return (
+    <div style={{ padding: '2rem' }}>
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111' }}>{title}</h2>
+      <p style={{ marginTop: '0.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
+        Página en construcción.
+      </p>
+    </div>
+  )
+}
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MovimientosPage from '@/pages/gastos/MovimientosPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
@@ -22,9 +33,14 @@ export default function App() {
 
           <Route path="gastos">
             <Route index element={<MovimientosPage />} />
-            <Route path="nuevo" element={<MovimientoFormPage />} />
-            <Route path=":id" element={<MovimientoFormPage />} />
+            <Route path="comunes"    element={<Placeholder title="Gastos comunes" />} />
+            <Route path="cuenta/:id" element={<Placeholder title="Cuenta personal" />} />
+            <Route path="nuevo"      element={<MovimientoFormPage />} />
+            <Route path=":id"        element={<MovimientoFormPage />} />
+            <Route path=":id/editar" element={<Placeholder title="Editar movimiento" />} />
           </Route>
+
+          <Route path="sueldos" element={<Placeholder title="Sueldos" />} />
 
           <Route path="tarjetas">
             <Route index element={<TarjetasPage />} />
