@@ -175,6 +175,51 @@
   white-space: nowrap;
 }
 
+// ── Banner viaje activo (Modo Vacaciones) ─────────────────────────────────────
+
+.viajeBanner {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.viajeBannerDot {
+  font-size: 14px;
+  line-height: 1;
+  color: #fff;
+}
+
+.viajeBannerNombre {
+  font-weight: $font-weight-semibold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.viajeBannerTotales {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
+.viajeBannerLink {
+  color: #fff;
+  font-weight: $font-weight-semibold;
+  text-decoration: underline;
+  flex-shrink: 0;
+  padding: 2px 0;
+
+  &:hover {
+    opacity: 0.9;
+  }
+}
+
 // ── Área de contenido ─────────────────────────────────────────────────────────
 
 .content {

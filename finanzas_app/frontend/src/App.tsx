@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import MainLayout from '@/components/layout/MainLayout'
+import { ViajeProvider } from '@/context/ViajeContext'
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -31,9 +32,10 @@ import ConfiguracionPage from '@/pages/configuracion/ConfiguracionPage'
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route index element={<DashboardPage />} />
+      <ViajeProvider>
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route index element={<DashboardPage />} />
 
           <Route path="gastos">
             <Route index element={<MovimientosPage />} />
@@ -63,11 +65,13 @@ export default function App() {
             <Route index element={<ViajesPage />} />
             <Route path="nuevo" element={<ViajeFormPage />} />
             <Route path=":id" element={<ViajeDetallePage />} />
+            <Route path=":id/editar" element={<ViajeFormPage />} />
           </Route>
 
           <Route path="configuracion" element={<ConfiguracionPage />} />
-        </Route>
-      </Routes>
+          </Route>
+        </Routes>
+      </ViajeProvider>
     </BrowserRouter>
   )
 }

@@ -1,0 +1,321 @@
+// =============================================================================
+// ViajeDetallePage — estilos
+// =============================================================================
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-3;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.header {
+  margin-bottom: $space-6;
+}
+
+.headerTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-4;
+  flex-wrap: wrap;
+}
+
+.headerLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.tituloRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+  margin-bottom: $space-1;
+}
+
+.dot {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.fechas {
+  font-size: 13px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-shrink: 0;
+}
+
+.btnGhost {
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnGhostDanger {
+  padding: $space-2 $space-3;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
+
+.btnEdit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  color: $color-text;
+  cursor: pointer;
+  text-decoration: none;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+// ── Resumen ───────────────────────────────────────────────────────────────────
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.resumenGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-4;
+  margin-bottom: $space-6;
+}
+
+.resumenItem {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.resumenLabel {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.resumenValor {
+  font-size: $font-size-base;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.resumenValorSuccess {
+  color: #22a06b;
+}
+
+.resumenValorDanger {
+  color: #ff4d4d;
+}
+
+// ── Por categoría ────────────────────────────────────────────────────────────
+
+.categoriaSection {
+  margin-bottom: $space-6;
+}
+
+.catItem {
+  padding: $space-3 0;
+  border-bottom: 1px solid #e8e8e4;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.catItemRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  flex-wrap: wrap;
+}
+
+.catItemNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  min-width: 100px;
+}
+
+.catItemMontos {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  flex: 0 0 auto;
+}
+
+.catItemBarWrap {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex: 1;
+  min-width: 0;
+}
+
+.barTrack {
+  flex: 1;
+  height: 10px;
+  background: #f0f0ec;
+  border-radius: 5px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 5px;
+  width: var(--target-width);
+  max-width: 100%;
+  transition: width $transition-base;
+}
+
+.catItemPct {
+  font-size: 13px;
+  font-weight: $font-weight-bold;
+  min-width: 48px;
+  text-align: right;
+}
+
+.catItemIndicador {
+  font-size: 12px;
+  min-width: 24px;
+  text-align: center;
+}
+
+.badgeSinPresupuesto {
+  font-size: 11px;
+  color: $color-text-muted;
+  background: #f0f0ec;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+}
+
+// ── Movimientos ──────────────────────────────────────────────────────────────
+
+.movimientosSection {
+  margin-bottom: $space-6;
+}
+
+.movimientoItem {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-3;
+  padding: $space-3 0;
+  border-bottom: 1px solid #e8e8e4;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.movimientoFecha {
+  font-size: 12px;
+  color: $color-text-muted;
+  flex: 0 0 50px;
+}
+
+.movimientoAutor {
+  font-size: 12px;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  flex: 0 0 50px;
+}
+
+.movimientoCenter {
+  flex: 1;
+  min-width: 0;
+}
+
+.movimientoDescripcion {
+  font-size: 14px;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  @include truncate;
+}
+
+.movimientoCategoria {
+  font-size: 12px;
+  color: $color-text-muted;
+  margin-top: 2px;
+}
+
+.movimientoMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  flex-shrink: 0;
+}
+
+.emptyMovimientos {
+  padding: $space-6;
+  text-align: center;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.emptyIcon {
+  display: block;
+  font-size: 24px;
+  margin-bottom: $space-2;
+  opacity: 0.6;
+}

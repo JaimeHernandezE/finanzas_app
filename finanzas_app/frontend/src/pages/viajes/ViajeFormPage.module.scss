@@ -1,0 +1,258 @@
+// =============================================================================
+// ViajeFormPage — estilos
+// =============================================================================
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 600px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  margin-bottom: $space-6;
+}
+
+// ── Campos ───────────────────────────────────────────────────────────────────
+
+.field {
+  margin-bottom: $space-5;
+}
+
+.label {
+  @include field-label;
+}
+
+.input {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+}
+
+.inputRow {
+  display: flex;
+  gap: $space-4;
+  flex-wrap: wrap;
+}
+
+.inputGroup {
+  flex: 1;
+  min-width: 140px;
+}
+
+// ── Color tema ────────────────────────────────────────────────────────────────
+
+.colorSection {
+  margin-bottom: $space-5;
+}
+
+.colorGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-3;
+  margin-top: $space-2;
+}
+
+.colorOption {
+  width: 36px;
+  height: 36px;
+  border-radius: $radius-full;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform $transition-fast, border-color $transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+}
+
+.colorOptionSelected {
+  border-width: 3px;
+  border-color: #0f0f0f;
+  transform: scale(1.15);
+}
+
+// ── Presupuesto por categoría ────────────────────────────────────────────────
+
+.presupuestoSection {
+  margin-bottom: $space-6;
+}
+
+.presupuestoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-3;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.presupuestoTitle {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+}
+
+.btnAgregar {
+  padding: $space-1 $space-2;
+  background: none;
+  border: none;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  cursor: pointer;
+
+  &:hover {
+    color: $color-primary;
+  }
+}
+
+.addRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-bottom: $space-3;
+  flex-wrap: wrap;
+}
+
+.addSelect {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  min-width: 180px;
+}
+
+.addInput {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  width: 120px;
+}
+
+.btnConfirmAdd {
+  padding: $space-1 $space-2;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: #22a06b;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.btnCancelAdd {
+  padding: $space-1 $space-2;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: #ff4d4d;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}
+
+.presupuestoItem {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  margin-bottom: $space-3;
+  flex-wrap: wrap;
+}
+
+.presupuestoItemNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text;
+  min-width: 120px;
+}
+
+.presupuestoItemInput {
+  @include input-base;
+  height: $input-height-base;
+  padding: $input-padding-y $input-padding-x;
+  width: 140px;
+}
+
+.btnEliminar {
+  padding: $space-1 $space-2;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: $font-size-base;
+  color: $color-text-muted;
+
+  &:hover {
+    color: #ff4d4d;
+  }
+}
+
+// ── Acciones ───────────────────────────────────────────────────────────────────
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-top: $space-6;
+  flex-wrap: wrap;
+}
+
+.btnCancel {
+  padding: $space-2 $space-4;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  text-decoration: none;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnGuardar {
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+.btnArchivar {
+  display: block;
+  margin-top: $space-6;
+  padding: $space-2 $space-4;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}

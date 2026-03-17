@@ -1,0 +1,301 @@
+// =============================================================================
+// ViajesPage — estilos
+// =============================================================================
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+// ── Encabezado ────────────────────────────────────────────────────────────────
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+  margin-bottom: $space-6;
+  flex-wrap: wrap;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+}
+
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-4;
+  border: none;
+  border-radius: $radius-base;
+  background: #0f0f0f;
+  color: #fff;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+  text-decoration: none;
+
+  &:hover:not(:disabled) {
+    background: #333;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+// ── Secciones ──────────────────────────────────────────────────────────────────
+
+.sectionHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.sectionHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: $space-3;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+}
+
+.btnVerTodos {
+  background: none;
+  border: none;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  cursor: pointer;
+  padding: $space-1 $space-2;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+// ── Lista de sección ─────────────────────────────────────────────────────────
+
+.sectionList {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  margin-bottom: $space-8;
+}
+
+// ── Tarjeta viaje (activos / próximos) ────────────────────────────────────────
+
+.card {
+  background: $color-bg-white;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  padding: $space-4;
+  transition: border-color $transition-fast;
+}
+
+.cardActivo {
+  border-left: 4px solid var(--card-color-tema, $color-primary);
+}
+
+.cardInner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: $space-3;
+  flex-wrap: wrap;
+}
+
+.cardLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+  margin-bottom: $space-1;
+}
+
+.cardDot {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cardNombre {
+  font-size: 15px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  text-decoration: none;
+  display: inline-block;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.badgeEnCurso {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  background: $color-bg-subtle;
+  padding: 2px 8px;
+  border-radius: $radius-sm;
+}
+
+.cardFechas {
+  font-size: 13px;
+  color: $color-text-muted;
+  margin-bottom: $space-1;
+}
+
+.cardPresupuesto {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-shrink: 0;
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+.btnGhostDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2 $space-3;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: #ff4d4d;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
+
+.btnEdit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-base;
+  color: $color-text;
+  cursor: pointer;
+  text-decoration: none;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
+// ── Tarjeta archivado (compacta) ──────────────────────────────────────────────
+
+.cardArchivado {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  background: $color-bg-white;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  flex-wrap: wrap;
+}
+
+.cardArchivadoDot {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cardArchivadoNombre {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  text-decoration: none;
+  min-width: 0;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.cardArchivadoFechas {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  flex: 1;
+  min-width: 0;
+}
+
+.cardArchivadoEdit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}

@@ -1,5 +1,10 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { useViaje } from '@/context/ViajeContext'
+import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import styles from './MainLayout.module.scss'
+
+const clp = (n: number) =>
+  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tipos y datos mock  // TODO: reemplazar por fetch al backend (endpoint cuentas_visibles)
@@ -99,9 +104,17 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 
 export default function MainLayout() {
   const navigate = useNavigate()
+  const { viajeActivo } = useViaje()
 
   const propias   = CUENTAS_NAV.filter(c => c.esPropia)
   const tuteladas = CUENTAS_NAV.filter(c => !c.esPropia)
+
+  const viajeBannerTotales = (() => {
+    if (!viajeActivo) return null
+    const presupuestado = MOCK_PRESUPUESTOS.reduce((s, p) => s + p.montoPresupuestado, 0)
+    const gastado = MOCK_PRESUPUESTOS.reduce((s, p) => s + p.montoGastado, 0)
+    return { presupuestado, gastado }
+  })()
 
   return (
     <div className={styles.shell}>
@@ -143,6 +156,21 @@ export default function MainLayout() {
 
       {/* ── Contenido principal ── */}
       <main className={styles.content}>
+        {viajeActivo && viajeBannerTotales && (
+          <div
+            className={styles.viajeBanner}
+            style={{ backgroundColor: viajeActivo.colorTema }}
+          >
+            <span className={styles.viajeBannerDot} aria-hidden>●</span>
+            <span className={styles.viajeBannerNombre}>{viajeActivo.nombre}</span>
+            <span className={styles.viajeBannerTotales}>
+              {clp(viajeBannerTotales.gastado)} / {clp(viajeBannerTotales.presupuestado)}
+            </span>
+            <Link to={`/viajes/${viajeActivo.id}`} className={styles.viajeBannerLink}>
+              Ver viaje
+            </Link>
+          </div>
+        )}
         <Outlet />
       </main>
 
