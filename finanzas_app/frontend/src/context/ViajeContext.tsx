@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { viajesApi } from '@/api'
+import { useAuth } from '@/context/AuthContext'
 import type { Viaje } from '@/pages/viajes/mockViajes'
 
 // -----------------------------------------------------------------------------
@@ -43,9 +44,14 @@ function mapApiToViaje(v: { id: number; nombre: string; fecha_inicio: string; fe
 // -----------------------------------------------------------------------------
 
 export function ViajeProvider({ children }: { children: ReactNode }) {
+  const { usuario, loading: authLoading } = useAuth()
   const [viajes, setViajes] = useState<Viaje[]>([])
 
   const cargarViajes = useCallback(async () => {
+    if (!localStorage.getItem('auth_token')) {
+      setViajes([])
+      return
+    }
     try {
       const res = await viajesApi.getViajes(false)
       const list = (res.data ?? []) as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }[]
@@ -56,8 +62,13 @@ export function ViajeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (authLoading) return
+    if (!usuario) {
+      setViajes([])
+      return
+    }
     cargarViajes()
-  }, [cargarViajes])
+  }, [authLoading, usuario, cargarViajes])
 
   const viajeActivo = useMemo(
     () => viajes.find((v) => v.esActivo) ?? null,
