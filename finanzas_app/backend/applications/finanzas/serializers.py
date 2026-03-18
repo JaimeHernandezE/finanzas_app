@@ -9,6 +9,7 @@ from .models import (
     Movimiento,
     Cuota,
     IngresoComun,
+    Presupuesto,
 )
 
 
@@ -138,3 +139,10 @@ class IngresoComunSerializer(serializers.ModelSerializer):
         model = IngresoComun
         fields = ['id', 'mes', 'monto', 'origen', 'usuario', 'autor_nombre']
         read_only_fields = ['usuario', 'familia']
+
+
+class PresupuestoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Presupuesto
+        fields = ['id', 'familia', 'usuario', 'categoria', 'mes', 'monto']
+        read_only_fields = ['familia', 'usuario', 'categoria', 'mes']

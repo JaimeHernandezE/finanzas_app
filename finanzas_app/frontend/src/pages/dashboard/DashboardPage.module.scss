@@ -166,7 +166,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: $space-3;
   margin-bottom: $space-5;
+  flex-wrap: wrap;
 }
 
 .catTitulo {
@@ -176,8 +178,11 @@
 }
 
 .catTotal {
-  font-size: 12px;
-  color: $color-text-muted;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .catLista {
@@ -309,6 +314,8 @@
   border: none;
   border-top: 1px solid $color-border;
   cursor: pointer;
+  text-decoration: none;
+  box-sizing: border-box;
   font-size: $font-size-xs;
   color: $color-text-muted;
   text-align: right;

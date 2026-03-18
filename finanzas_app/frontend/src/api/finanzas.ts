@@ -10,6 +10,14 @@ export interface CuentaPersonalApi {
   duenio_nombre: string | null
 }
 
+export interface PresupuestoMesFila {
+  presupuesto_id: number | null
+  categoria_id: number
+  categoria_nombre: string
+  monto_presupuestado: string | null
+  gastado: number
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),
@@ -43,6 +51,19 @@ export const finanzasApi = {
   getLiquidacion: (mes: number, anio: number) =>
     client.get('/api/finanzas/liquidacion/', { params: { mes, anio } }),
 
-  getPresupuestos: () =>
-    client.get('/api/finanzas/presupuestos/'), // TODO: implementar endpoint en backend
+  /** Filas categoría + presupuesto/gastado del mes */
+  getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL' }) =>
+    client.get<PresupuestoMesFila[]>('/api/finanzas/presupuesto-mes/', { params }),
+
+  createPresupuesto: (data: {
+    categoria: number
+    mes: string
+    monto: string
+    ambito: 'FAMILIAR' | 'PERSONAL'
+  }) => client.post('/api/finanzas/presupuestos/', data),
+
+  patchPresupuesto: (id: number, data: { monto: string }) =>
+    client.patch(`/api/finanzas/presupuestos/${id}/`, data),
+
+  deletePresupuesto: (id: number) => client.delete(`/api/finanzas/presupuestos/${id}/`),
 }

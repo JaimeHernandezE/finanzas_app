@@ -1,5 +1,9 @@
 import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
+import { useApi } from '@/hooks/useApi'
+import { movimientosApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './DashboardPage.module.scss'
 
@@ -26,8 +30,6 @@ interface CategoriaGasto {
 
 const COLORS = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860', '#60f0c8', '#c860f0']
 
-const DEUDA_TC_MOCK = 330990 // TODO: vendrá de cuotas del backend
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,8 +39,23 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
+/** API a veces devuelve monto como string — evitar concatenación en reduces */
+function toPesos(n: unknown): number {
+  const x = Number(n)
+  return Number.isFinite(x) ? Math.round(x) : 0
+}
+
+/** Pesos chilenos: $10.999 (miles con punto) */
+function pesosFmt(n: number): string {
+  const v = toPesos(n)
+  const abs = Math.abs(v).toLocaleString('es-CL', { maximumFractionDigits: 0 })
+  if (v === 0) return `$${abs}`
+  return v < 0 ? `−$${abs}` : `$${abs}`
+}
+
+function pesosFmtAbs(n: number): string {
+  return `$${toPesos(Math.abs(n)).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
+}
 
 const fechaCorta = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number)
@@ -58,14 +75,19 @@ const METODO_BADGE: Record<MovimientoApi['metodo_pago_tipo'], { label: string; b
 // ─────────────────────────────────────────────────────────────────────────────
 
 function MetricCard({
-  label, valor, variant = 'default', delay = 0,
+  label,
+  valor,
+  variant = 'default',
+  delay = 0,
 }: {
   label:    string
   valor:    number
   variant?: 'default' | 'danger' | 'dark'
   delay?:   number
 }) {
-  const isNeg = valor < 0
+  const v = toPesos(valor)
+  const isNeg = v < 0
+  const esMontoSiemprePositivo = variant === 'danger'
 
   const labelColor =
     variant === 'dark' ? 'rgba(255,255,255,0.5)' : undefined
@@ -76,6 +98,8 @@ function MetricCard({
       : variant === 'danger' ? '#ff4d4d'
       : '#0f0f0f'
 
+  const textoValor = esMontoSiemprePositivo ? pesosFmtAbs(v) : pesosFmt(v)
+
   return (
     <div
       className={`${styles.metricCard} ${variant === 'dark' ? styles.metricCardDark : ''}`}
@@ -85,8 +109,7 @@ function MetricCard({
         {label}
       </span>
       <span className={styles.metricValor} style={{ color: valorColor }}>
-        {clp(Math.abs(valor))}
-        {isNeg && <span className={styles.metricNeg}> negativo</span>}
+        {textoValor}
       </span>
     </div>
   )
@@ -108,7 +131,7 @@ function CategoriaBar({
           }
         />
       </div>
-      <span className={styles.barMonto}>{clp(monto)}</span>
+      <span className={styles.barMonto}>{pesosFmtAbs(monto)}</span>
     </div>
   )
 }
@@ -129,7 +152,7 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
           className={styles.movMonto}
           style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
         >
-          {esIngreso ? '+' : '−'}{clp(mov.monto)}
+          {pesosFmt(esIngreso ? toPesos(mov.monto) : -toPesos(mov.monto))}
         </span>
         <span
           className={styles.movBadge}
@@ -143,10 +166,13 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
 }
 
 function MovimientosList({
-  titulo, movimientos,
+  titulo,
+  movimientos,
+  verTodosTo,
 }: {
   titulo:       string
   movimientos:  MovimientoApi[]
+  verTodosTo?:  string
 }) {
   const [expandido, setExpandido] = useState(true)
 
@@ -176,7 +202,11 @@ function MovimientosList({
               {movimientos.map(m => (
                 <MovimientoItem key={m.id} mov={m} />
               ))}
-              <button className={styles.verTodos}>Ver todos →</button>
+              {verTodosTo && (
+                <Link to={verTodosTo} className={styles.verTodos}>
+                  Ver todos →
+                </Link>
+              )}
             </>
           )}
         </div>
@@ -194,11 +224,27 @@ export default function DashboardPage() {
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
 
-  const { movimientos: movimientosRaw, loading, error, refetch } = useMovimientos({
+  const { movimientos: movimientosRaw, loading, error } = useMovimientos({
     mes: mes + 1,
     anio,
   })
   const movimientos = (movimientosRaw ?? []) as MovimientoApi[]
+
+  const { data: deudaRes, loading: loadingDeuda } = useApi(
+    () => movimientosApi.getCuotasDeudaPendiente(),
+    [],
+  )
+  const { data: cuentasData } = useCuentasPersonales()
+
+  const deudaTc = useMemo(() => {
+    const t = deudaRes?.total
+    return Math.round(Number(t) || 0)
+  }, [deudaRes])
+
+  const linkListadoPersonales = useMemo(() => {
+    const p = (cuentasData ?? []).find(c => c.es_propia)
+    return p ? `/gastos/cuenta/${p.id}` : '/configuracion/cuentas'
+  }, [cuentasData])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -214,10 +260,18 @@ export default function DashboardPage() {
   }
 
   // Métricas y listas (API ya filtra por mes/anio)
-  const efectivo = useMemo(() => movimientos
-    .filter(m => m.metodo_pago_tipo !== 'CREDITO')
-    .reduce((acc, m) => acc + (m.tipo === 'INGRESO' ? m.monto : -m.monto), 0), [movimientos])
-  const saldo = efectivo - DEUDA_TC_MOCK
+  const efectivo = useMemo(
+    () =>
+      movimientos
+        .filter(m => m.metodo_pago_tipo !== 'CREDITO')
+        .reduce(
+          (acc, m) =>
+            acc + (m.tipo === 'INGRESO' ? toPesos(m.monto) : -toPesos(m.monto)),
+          0,
+        ),
+    [movimientos],
+  )
+  const saldo = efectivo - deudaTc
 
   const personales = useMemo(() => movimientos.filter(m => m.ambito === 'PERSONAL'), [movimientos])
   const comunes    = useMemo(() => movimientos.filter(m => m.ambito === 'COMUN'), [movimientos])
@@ -228,7 +282,7 @@ export default function DashboardPage() {
     for (const m of movimientos) {
       if (m.tipo !== 'EGRESO') continue
       const name = m.categoria_nombre || 'Otros'
-      byCat.set(name, (byCat.get(name) ?? 0) + m.monto)
+      byCat.set(name, (byCat.get(name) ?? 0) + toPesos(m.monto))
     }
     return Array.from(byCat.entries())
       .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
@@ -237,7 +291,7 @@ export default function DashboardPage() {
   const maxCat = categoriasSorted[0]?.monto ?? 1
   const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
 
-  if (loading) return <Cargando />
+  if (loading || loadingDeuda) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />
 
   return (
@@ -268,7 +322,7 @@ export default function DashboardPage() {
       {/* ── Tarjetas métricas ── */}
       <div className={styles.metrics}>
         <MetricCard label="Efectivo disponible" valor={efectivo}      variant="default" delay={0}   />
-        <MetricCard label="Deuda tarjetas"       valor={DEUDA_TC_MOCK} variant="danger"  delay={80}  />
+        <MetricCard label="Deuda tarjetas"       valor={deudaTc}       variant="danger"  delay={80}  />
         <MetricCard label="Saldo proyectado"     valor={saldo}         variant="dark"    delay={160} />
       </div>
 
@@ -279,7 +333,7 @@ export default function DashboardPage() {
         <div className={styles.catCard}>
           <div className={styles.catHeader}>
             <span className={styles.catTitulo}>Gastos por categoría</span>
-            <span className={styles.catTotal}>{clp(totalCat)}</span>
+            <span className={styles.catTotal}>{pesosFmtAbs(totalCat)}</span>
           </div>
           <div className={styles.catLista}>
             {categoriasSorted.map((c, i) => (
@@ -290,8 +344,16 @@ export default function DashboardPage() {
 
         {/* Columna derecha: listas de movimientos */}
         <div className={styles.listas}>
-          <MovimientosList titulo="Gastos personales" movimientos={personales} />
-          <MovimientosList titulo="Gastos comunes"    movimientos={comunes}    />
+          <MovimientosList
+            titulo="Gastos personales"
+            movimientos={personales}
+            verTodosTo={linkListadoPersonales}
+          />
+          <MovimientosList
+            titulo="Gastos comunes"
+            movimientos={comunes}
+            verTodosTo="/gastos/comunes"
+          />
         </div>
 
       </div>

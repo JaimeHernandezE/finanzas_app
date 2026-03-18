@@ -30,6 +30,10 @@ export const movimientosApi = {
   getCuotas: (filtros: { tarjeta?: number; mes?: number; anio?: number; estado?: string } = {}) =>
     client.get('/api/finanzas/cuotas/', { params: filtros }),
 
+  /** Suma de cuotas TC no pagadas (familia) */
+  getCuotasDeudaPendiente: () =>
+    client.get<{ total: string }>('/api/finanzas/cuotas/deuda-pendiente/'),
+
   updateCuota: (id: number, data: { incluir?: boolean; estado?: string }) =>
     client.put(`/api/finanzas/cuotas/${id}/`, data),
 }

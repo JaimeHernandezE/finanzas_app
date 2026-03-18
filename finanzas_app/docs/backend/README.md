@@ -46,3 +46,4 @@ Más comandos y contexto: [docs/DEPLOYMENT.md — Comandos rápidos](../DEPLOYME
 | GET | `/api/finanzas/cuentas-personales/` | Cuentas propias + tuteladas del usuario (Firebase Bearer). |
 | POST | `/api/finanzas/cuentas-personales/` | Crea cuenta propia (`nombre`, `descripcion`, `visible_familia`). |
 | GET/PATCH/DELETE | `/api/finanzas/cuentas-personales/<id>/` | Detalle; editar/eliminar solo si eres dueño. |
+| GET | `/api/finanzas/cuotas/deuda-pendiente/` | Suma de cuotas TC no pagadas (`PENDIENTE`/`FACTURADO`) de la familia → `{ total }`. |

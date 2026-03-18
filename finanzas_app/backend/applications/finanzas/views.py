@@ -1,5 +1,8 @@
 # applications/finanzas/views.py
 
+from datetime import date
+from decimal import Decimal
+
 from django.db.models import Q, Sum
 from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -16,6 +19,7 @@ from .models import (
     Movimiento,
     Cuota,
     IngresoComun,
+    Presupuesto,
 )
 from .serializers import (
     CategoriaSerializer,
@@ -27,6 +31,7 @@ from .serializers import (
     MovimientoListSerializer,
     CuotaSerializer,
     IngresoComunSerializer,
+    PresupuestoSerializer,
 )
 
 
@@ -460,6 +465,32 @@ def cuotas(request):
     return Response(CuotaSerializer(qs, many=True).data)
 
 
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def cuotas_deuda_pendiente(request):
+    """
+    Suma de montos de cuotas de tarjeta aún no pagadas (toda la familia).
+    Útil para el dashboard (saldo proyectado vs efectivo).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    if not usuario.familia_id:
+        return Response({'total': '0'})
+
+    total = (
+        Cuota.objects.filter(movimiento__familia_id=usuario.familia_id)
+        .exclude(estado='PAGADO')
+        .aggregate(t=Sum('monto'))
+        .get('t')
+    )
+    if total is None:
+        total = 0
+    return Response({'total': str(total)})
+
+
 @api_view(['PUT'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -580,6 +611,229 @@ def ingreso_comun_detalle(request, pk):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── PRESUPUESTO MENSUAL (familia / personal) ─────────────────────────────────
+
+def _categoria_accesible(usuario, categoria_id):
+    """Categoría global, familiar o personal del usuario."""
+    try:
+        cid = int(categoria_id)
+    except (TypeError, ValueError):
+        return None
+    q_glob = Q(familia__isnull=True, usuario__isnull=True)
+    q_fam = Q(familia=usuario.familia, usuario__isnull=True) if usuario.familia_id else Q(pk__in=[])
+    q_per = Q(usuario=usuario)
+    return Categoria.objects.filter(pk=cid).filter(q_glob | q_fam | q_per).first()
+
+
+def _puede_editar_presupuesto(usuario, presupuesto):
+    if presupuesto.familia_id != usuario.familia_id:
+        return False
+    if presupuesto.usuario_id is None:
+        return True
+    return presupuesto.usuario_id == usuario.id
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def presupuesto_mes(request):
+    """
+    GET ?mes=3&anio=2026&ambito=FAMILIAR|PERSONAL
+    Lista categorías con presupuesto y/o gastos del mes (egresos COMUN o PERSONAL).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response([])
+
+    try:
+        mes = int(request.GET.get('mes', 0))
+        anio = int(request.GET.get('anio', 0))
+    except ValueError:
+        return Response(
+            {'error': 'mes y anio deben ser numéricos.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    ambito = (request.GET.get('ambito') or 'FAMILIAR').upper()
+    if ambito not in ('FAMILIAR', 'PERSONAL'):
+        return Response(
+            {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not (1 <= mes <= 12) or anio < 2000 or anio > 2100:
+        return Response(
+            {'error': 'mes o anio inválido.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    mes_first = date(anio, mes, 1)
+
+    if ambito == 'FAMILIAR':
+        pres_qs = Presupuesto.objects.filter(
+            familia_id=usuario.familia_id,
+            mes=mes_first,
+            usuario__isnull=True,
+        ).select_related('categoria')
+        mov_qs = Movimiento.objects.filter(
+            familia_id=usuario.familia_id,
+            fecha__month=mes,
+            fecha__year=anio,
+            tipo='EGRESO',
+            ambito='COMUN',
+            oculto=False,
+        )
+    else:
+        pres_qs = Presupuesto.objects.filter(
+            familia_id=usuario.familia_id,
+            mes=mes_first,
+            usuario=usuario,
+        ).select_related('categoria')
+        mov_qs = Movimiento.objects.filter(
+            familia_id=usuario.familia_id,
+            usuario=usuario,
+            fecha__month=mes,
+            fecha__year=anio,
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            oculto=False,
+        )
+
+    gastos_por_cat = {
+        row['categoria_id']: row['t'] or 0
+        for row in mov_qs.values('categoria_id').annotate(t=Sum('monto'))
+    }
+    pres_map = {p.categoria_id: p for p in pres_qs}
+    all_ids = set(pres_map.keys()) | set(gastos_por_cat.keys())
+    nombres = {
+        c.id: c.nombre
+        for c in Categoria.objects.filter(pk__in=all_ids)
+    }
+
+    filas = []
+    for cid in sorted(all_ids, key=lambda x: nombres.get(x, '')):
+        p = pres_map.get(cid)
+        g = gastos_por_cat.get(cid) or 0
+        try:
+            gastado = int(g)
+        except (TypeError, ValueError):
+            gastado = int(float(g))
+        filas.append({
+            'presupuesto_id': p.id if p else None,
+            'categoria_id': cid,
+            'categoria_nombre': nombres.get(cid, '—'),
+            'monto_presupuestado': str(p.monto) if p else None,
+            'gastado': gastado,
+        })
+    return Response(filas)
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def presupuestos_create(request):
+    """
+    POST { categoria, mes (YYYY-MM-01), monto, ambito: FAMILIAR|PERSONAL }
+    Crea o actualiza el presupuesto de esa categoría/mes.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'Usuario sin familia.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    cat = _categoria_accesible(usuario, request.data.get('categoria'))
+    if not cat:
+        return Response(
+            {'error': 'Categoría no válida o no accesible.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    mes_raw = request.data.get('mes')
+    if not mes_raw:
+        return Response({'error': 'mes es obligatorio.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        parts = str(mes_raw)[:10].split('-')
+        mes_first = date(int(parts[0]), int(parts[1]), int(parts[2]) if len(parts) > 2 else 1)
+        if mes_first.day != 1:
+            mes_first = date(mes_first.year, mes_first.month, 1)
+    except (ValueError, IndexError):
+        return Response({'error': 'mes inválido (use YYYY-MM-01).'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        monto = Decimal(str(request.data.get('monto', '0')))
+    except Exception:
+        return Response({'error': 'monto inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+    if monto < 0:
+        return Response({'error': 'monto no puede ser negativo.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    ambito = (request.data.get('ambito') or 'FAMILIAR').upper()
+    if ambito == 'FAMILIAR':
+        p, _ = Presupuesto.objects.update_or_create(
+            familia=usuario.familia,
+            usuario=None,
+            categoria=cat,
+            mes=mes_first,
+            defaults={'monto': monto},
+        )
+    elif ambito == 'PERSONAL':
+        p, _ = Presupuesto.objects.update_or_create(
+            familia=usuario.familia,
+            usuario=usuario,
+            categoria=cat,
+            mes=mes_first,
+            defaults={'monto': monto},
+        )
+    else:
+        return Response(
+            {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(PresupuestoSerializer(p).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH', 'DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def presupuesto_detalle_finanzas(request, pk):
+    """PATCH { monto } o DELETE."""
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    try:
+        p = Presupuesto.objects.get(pk=pk, familia_id=usuario.familia_id)
+    except Presupuesto.DoesNotExist:
+        return Response(
+            {'error': 'Presupuesto no encontrado.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not _puede_editar_presupuesto(usuario, p):
+        return Response(
+            {'error': 'Sin permisos para modificar este presupuesto.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == 'DELETE':
+        p.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    try:
+        monto = Decimal(str(request.data.get('monto', p.monto)))
+    except Exception:
+        return Response({'error': 'monto inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+    if monto < 0:
+        return Response({'error': 'monto no puede ser negativo.'}, status=status.HTTP_400_BAD_REQUEST)
+    p.monto = monto
+    p.save(update_fields=['monto'])
+    return Response(PresupuestoSerializer(p).data)
 
 
 # ── LIQUIDACIÓN ────────────────────────────────────────────────────────────────
