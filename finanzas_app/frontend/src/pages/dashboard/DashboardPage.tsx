@@ -5,6 +5,7 @@ import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { movimientosApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './DashboardPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,18 +46,6 @@ function toPesos(n: unknown): number {
   return Number.isFinite(x) ? Math.round(x) : 0
 }
 
-/** Pesos chilenos: $10.999 (miles con punto) */
-function pesosFmt(n: number): string {
-  const v = toPesos(n)
-  const abs = Math.abs(v).toLocaleString('es-CL', { maximumFractionDigits: 0 })
-  if (v === 0) return `$${abs}`
-  return v < 0 ? `−$${abs}` : `$${abs}`
-}
-
-function pesosFmtAbs(n: number): string {
-  return `$${toPesos(Math.abs(n)).toLocaleString('es-CL', { maximumFractionDigits: 0 })}`
-}
-
 const fechaCorta = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString('es-CL', {
@@ -85,6 +74,7 @@ function MetricCard({
   variant?: 'default' | 'danger' | 'dark'
   delay?:   number
 }) {
+  const { formatMonto } = useConfig()
   const v = toPesos(valor)
   const isNeg = v < 0
   const esMontoSiemprePositivo = variant === 'danger'
@@ -98,7 +88,9 @@ function MetricCard({
       : variant === 'danger' ? '#ff4d4d'
       : '#0f0f0f'
 
-  const textoValor = esMontoSiemprePositivo ? pesosFmtAbs(v) : pesosFmt(v)
+  const textoValor = esMontoSiemprePositivo
+    ? formatMonto(Math.abs(v))
+    : v < 0 ? `−${formatMonto(Math.abs(v))}` : formatMonto(v)
 
   return (
     <div
@@ -118,6 +110,7 @@ function MetricCard({
 function CategoriaBar({
   categoria, monto, color, max, delay,
 }: CategoriaGasto & { max: number; delay: number }) {
+  const { formatMonto } = useConfig()
   const pct = max > 0 ? (monto / max) * 100 : 0
 
   return (
@@ -131,14 +124,18 @@ function CategoriaBar({
           }
         />
       </div>
-      <span className={styles.barMonto}>{pesosFmtAbs(monto)}</span>
+      <span className={styles.barMonto}>{formatMonto(Math.abs(monto))}</span>
     </div>
   )
 }
 
 function MovimientoItem({ mov }: { mov: MovimientoApi }) {
+  const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const montoFmt  = esIngreso
+    ? formatMonto(toPesos(mov.monto))
+    : `−${formatMonto(toPesos(mov.monto))}`
 
   return (
     <div className={styles.movItem}>
@@ -152,7 +149,7 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
           className={styles.movMonto}
           style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
         >
-          {pesosFmt(esIngreso ? toPesos(mov.monto) : -toPesos(mov.monto))}
+          {montoFmt}
         </span>
         <span
           className={styles.movBadge}
@@ -220,6 +217,7 @@ function MovimientosList({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const { formatMonto } = useConfig()
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -333,7 +331,7 @@ export default function DashboardPage() {
         <div className={styles.catCard}>
           <div className={styles.catHeader}>
             <span className={styles.catTitulo}>Gastos por categoría</span>
-            <span className={styles.catTotal}>{pesosFmtAbs(totalCat)}</span>
+            <span className={styles.catTotal}>{formatMonto(Math.abs(totalCat))}</span>
           </div>
           <div className={styles.catLista}>
             {categoriasSorted.map((c, i) => (

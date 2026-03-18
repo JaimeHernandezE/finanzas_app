@@ -90,10 +90,19 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-LANGUAGE_CODE = 'es-cl'
-TIME_ZONE = 'America/Santiago'
+LANGUAGE_CODE = 'es-CL'
+TIME_ZONE = os.environ.get('TIME_ZONE', 'America/Santiago')
 USE_I18N = True
+USE_L10N = True
 USE_TZ = True
+
+# ── MONEDA ────────────────────────────────────────────────────────────────────
+# Moneda base de la app. Todos los montos se almacenan en esta moneda.
+MONEDA_BASE = os.environ.get('MONEDA_BASE', 'CLP')
+MONEDA_SIMBOLO = os.environ.get('MONEDA_SIMBOLO', '$')
+MONEDA_SEPARADOR_MILES = os.environ.get('MONEDA_SEPARADOR_MILES', '.')
+MONEDA_SEPARADOR_DECIMALES = os.environ.get('MONEDA_SEPARADOR_DECIMALES', ',')
+MONEDA_DECIMALES = int(os.environ.get('MONEDA_DECIMALES', '0'))
 
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'

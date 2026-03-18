@@ -6,6 +6,7 @@ import type { SelectOption } from '@/components/ui'
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './MovimientoFormPage.module.scss'
 
 type Tipo   = 'EGRESO' | 'INGRESO'
@@ -22,6 +23,7 @@ interface FormErrors {
 }
 
 export default function MovimientoFormPage() {
+  const { formatMonto } = useConfig()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { data: categoriasData } = useCategorias()
@@ -293,14 +295,14 @@ export default function MovimientoFormPage() {
                 min="1"
                 placeholder={
                   montoCuota
-                    ? `$${montoCuota.toLocaleString('es-CL')} (calculado)`
+                    ? `${formatMonto(montoCuota)} (calculado)`
                     : 'Se calcula automático'
                 }
                 helperText="Si no ingresas, se divide monto ÷ cuotas. La diferencia de centavos va a la primera."
               />
               {montoCuota && numCuotas && (
                 <p className={styles.cuotaPreview}>
-                  {numCuotas} cuotas de ${montoCuota.toLocaleString('es-CL')}
+                  {numCuotas} cuotas de {formatMonto(montoCuota)}
                 </p>
               )}
             </div>

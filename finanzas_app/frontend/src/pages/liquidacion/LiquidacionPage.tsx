@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './LiquidacionPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,9 +38,6 @@ const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 const pct = (n: number) => `${n.toFixed(1)}%`
 
@@ -112,6 +110,7 @@ function PropBarRow({
   metaDerecha?: React.ReactNode
   delay?:      number
 }) {
+  const { formatMonto } = useConfig()
   const ancho = max > 0 ? (valor / max) * 100 : 0
 
   return (
@@ -125,17 +124,18 @@ function PropBarRow({
           }
         />
       </div>
-      <span className={styles.barValor}>{clp(valor)}</span>
+      <span className={styles.barValor}>{formatMonto(valor)}</span>
       {metaDerecha && <span className={styles.barMeta}>{metaDerecha}</span>}
     </div>
   )
 }
 
 function FilaTotal({ label, monto }: { label: string; monto: number }) {
+  const { formatMonto } = useConfig()
   return (
     <div className={styles.filaTotal}>
       <span className={styles.filaTotalLabel}>{label}</span>
-      <span className={styles.filaTotalMonto}>{clp(monto)}</span>
+      <span className={styles.filaTotalMonto}>{formatMonto(monto)}</span>
     </div>
   )
 }
@@ -145,6 +145,7 @@ function FilaTotal({ label, monto }: { label: string; monto: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function LiquidacionPage() {
+  const { formatMonto } = useConfig()
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -256,10 +257,10 @@ export default function LiquidacionPage() {
             <span className={styles.prorrateoCalc}>
               {pct(d.porcentaje)}
               <span className={styles.prorrateoOp}> × </span>
-              {clp(totalGastos)}
+              {formatMonto(totalGastos)}
               <span className={styles.prorrateoOp}> = </span>
             </span>
-            <span className={styles.prorrateoMonto}>{clp(d.monto)}</span>
+            <span className={styles.prorrateoMonto}>{formatMonto(d.monto)}</span>
           </div>
         ))}
       </SeccionCard>
@@ -273,9 +274,9 @@ export default function LiquidacionPage() {
             <div key={c.usuarioId} className={styles.compFila}>
               <span className={styles.compNombre}>{c.nombre}</span>
               <span className={styles.compDetalle}>
-                pagó {clp(c.pagado)}
+                pagó {formatMonto(c.pagado)}
                 <span className={styles.compSep}> — </span>
-                debería {clp(c.debería)}
+                debería {formatMonto(c.debería)}
                 <span className={styles.compSep}> → </span>
               </span>
               <span
@@ -285,9 +286,9 @@ export default function LiquidacionPage() {
                 }}
               >
                 {esDeudor
-                  ? `debe ${clp(Math.abs(c.diferencia))}`
+                  ? `debe ${formatMonto(Math.abs(c.diferencia))}`
                   : esAcreedor
-                  ? `recibe ${clp(c.diferencia)}`
+                  ? `recibe ${formatMonto(c.diferencia)}`
                   : 'está al día'}
               </span>
             </div>
@@ -300,12 +301,12 @@ export default function LiquidacionPage() {
             <p className={styles.resultTexto}>
               <strong>{transferencias[0].de}</strong>{' '}
               le transfiere{' '}
-              <span className={styles.resultMonto}>{clp(transferencias[0].monto)}</span>{' '}
+              <span className={styles.resultMonto}>{formatMonto(transferencias[0].monto)}</span>{' '}
               a <strong>{transferencias[0].a}</strong>
             </p>
             {(mes === new Date().getMonth() && anio === new Date().getFullYear()) && (
               <p className={styles.resultProyeccion}>
-                Proyección basada en {clp(totalGastos)} de gastos registrados hasta hoy
+                Proyección basada en {formatMonto(totalGastos)} de gastos registrados hasta hoy
               </p>
             )}
           </div>

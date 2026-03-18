@@ -4,6 +4,7 @@ import { useApi } from '@/hooks/useApi'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './PresupuestoPage.module.scss'
 
 interface CatPres {
@@ -38,13 +39,6 @@ function toPesos(n: unknown): number {
   return Number.isFinite(x) ? Math.round(x) : 0
 }
 
-function pesosFmt(n: number): string {
-  const v = toPesos(n)
-  const abs = Math.abs(v).toLocaleString('es-CL', { maximumFractionDigits: 0 })
-  if (v === 0) return `$${abs}`
-  return v < 0 ? `−$${abs}` : `$${abs}`
-}
-
 function colorBarra(gastado: number, presupuestado: number): string {
   if (presupuestado <= 0) return gastado > 0 ? '#f59e0b' : '#94a3b8'
   const pct = (gastado / presupuestado) * 100
@@ -64,16 +58,17 @@ function ResumenCards({
   disponible: number
   porcentajeGeneral: number
 }) {
+  const { formatMonto } = useConfig()
   const isExcedido = disponible < 0
   return (
     <div className={styles.resumenGrid}>
       <div className={styles.resumenCard}>
         <span className={styles.resumenLabel}>Presupuestado</span>
-        <span className={styles.resumenValor}>{pesosFmt(totalPresupuestado)}</span>
+        <span className={styles.resumenValor}>{formatMonto(totalPresupuestado)}</span>
       </div>
       <div className={styles.resumenCard}>
         <span className={styles.resumenLabel}>Gastado</span>
-        <span className={styles.resumenValor}>{pesosFmt(totalGastado)}</span>
+        <span className={styles.resumenValor}>{formatMonto(totalGastado)}</span>
         <span className={styles.resumenPorcentaje}>
           {porcentajeGeneral.toFixed(1)}%
         </span>
@@ -87,7 +82,7 @@ function ResumenCards({
             isExcedido ? styles.resumenValorDanger : styles.resumenValorSuccess
           }`}
         >
-          {pesosFmt(Math.abs(disponible))}
+          {formatMonto(Math.abs(disponible))}
         </span>
       </div>
     </div>
@@ -111,6 +106,7 @@ function ItemConPresupuesto({
   onEditConfirm: (cat: CatPres) => void
   onEditCancel: () => void
 }) {
+  const { formatMonto } = useConfig()
   const key = String(cat.categoriaId)
   const presup = cat.presupuestado ?? 0
   const pct = presup > 0 ? (cat.gastado / presup) * 100 : cat.gastado > 0 ? 999 : 0
@@ -137,7 +133,7 @@ function ItemConPresupuesto({
       {isEditing ? (
         <div className={styles.catItemEditRow}>
           <span className={styles.catItemMontos}>
-            {pesosFmt(cat.gastado)} de{' '}
+            {formatMonto(cat.gastado)} de{' '}
             <InputMontoClp
               soloInput
               inputClassName={styles.catItemEditInput}
@@ -167,7 +163,7 @@ function ItemConPresupuesto({
       ) : (
         <div className={styles.catItemRow}>
           <span className={styles.catItemMontos}>
-            {pesosFmt(cat.gastado)} de {pesosFmt(presup)}
+            {formatMonto(cat.gastado)} de {formatMonto(presup)}
           </span>
           <div className={styles.catItemBarWrap}>
             <div className={styles.barTrack}>
@@ -186,7 +182,7 @@ function ItemConPresupuesto({
             </span>
             {excedido > 0 ? (
               <span className={styles.catItemIndicadorExcedido}>
-                Excedido +{pesosFmt(excedido)}
+                Excedido +{formatMonto(excedido)}
               </span>
             ) : (
               <span
@@ -221,6 +217,7 @@ function ItemSinPresupuesto({
   onAssignConfirm: (cat: CatPres) => void
   onAssignCancel: () => void
 }) {
+  const { formatMonto } = useConfig()
   const key = String(cat.categoriaId)
   const isAssigning = assignKey === key
 
@@ -271,7 +268,7 @@ function ItemSinPresupuesto({
       ) : (
         <>
           <span className={styles.catItemSinGastado}>
-            {pesosFmt(cat.gastado)} gastado
+            {formatMonto(cat.gastado)} gastado
           </span>
           <div className={styles.catItemSinBarWrap}>
             <div className={styles.barTrackEmpty} />

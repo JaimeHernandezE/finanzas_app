@@ -4,6 +4,7 @@ import { finanzasApi } from '@/api'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import { useAuth } from '@/context/AuthContext'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './SueldosPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -30,9 +31,6 @@ const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 const pct = (n: number) => `${n.toFixed(1)}%`
 
@@ -68,6 +66,7 @@ function ResumenBarRow({
   color: string
   delay?: number
 }) {
+  const { formatMonto } = useConfig()
   return (
     <div className={styles.barRow}>
       <span className={styles.barNombre}>{nombre}</span>
@@ -83,17 +82,18 @@ function ResumenBarRow({
           }
         />
       </div>
-      <span className={styles.barTotal}>{clp(total)}</span>
+      <span className={styles.barTotal}>{formatMonto(total)}</span>
       <span className={styles.barPct}>{pct(porcentaje)}</span>
     </div>
   )
 }
 
 function FilaTotalFamiliar({ monto }: { monto: number }) {
+  const { formatMonto } = useConfig()
   return (
     <div className={styles.filaTotalFamiliar}>
       <span className={styles.filaTotalLabel}>Total familiar</span>
-      <span className={styles.filaTotalMonto}>{clp(monto)}</span>
+      <span className={styles.filaTotalMonto}>{formatMonto(monto)}</span>
     </div>
   )
 }
@@ -103,6 +103,7 @@ function FilaTotalFamiliar({ monto }: { monto: number }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function SueldosPage() {
+  const { formatMonto } = useConfig()
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -333,7 +334,7 @@ export default function SueldosPage() {
                 {lista.map(ing => (
                   <li key={ing.id} className={styles.filaSoloLectura}>
                     <span className={styles.filaOrigen}>{ing.origen}</span>
-                    <span className={styles.filaMonto}>{clp(ing.monto)}</span>
+                    <span className={styles.filaMonto}>{formatMonto(ing.monto)}</span>
                   </li>
                 ))}
               </ul>
@@ -406,10 +407,11 @@ function FilaIngreso({
   onEditar: () => void
   onEliminar: () => void
 }) {
+  const { formatMonto } = useConfig()
   return (
     <li className={styles.filaIngreso}>
       <span className={styles.filaOrigen}>{ingreso.origen}</span>
-      <span className={styles.filaMonto}>{clp(ingreso.monto)}</span>
+      <span className={styles.filaMonto}>{formatMonto(ingreso.monto)}</span>
       <button type="button" className={styles.btnIcon} onClick={onEditar} title="Editar">
         ✎
       </button>

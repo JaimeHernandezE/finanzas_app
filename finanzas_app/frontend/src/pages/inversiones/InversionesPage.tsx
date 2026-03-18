@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useFondos } from '@/hooks/useInversiones'
 import { inversionesApi } from '@/api/inversiones'
 import { Button, Input, Textarea, Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './InversionesPage.module.scss'
 
 interface FondoApi {
@@ -13,9 +14,6 @@ interface FondoApi {
   valor_actual: number
   es_compartido?: boolean
 }
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 function ResumenTotal({
   capitalTotal,
@@ -28,6 +26,7 @@ function ResumenTotal({
   gananciaTotal: number
   rentabilidadTotal: number
 }) {
+  const { formatMonto } = useConfig()
   const esPositivo = gananciaTotal >= 0
   const labelGanancia = gananciaTotal >= 0 ? 'Ganancia' : 'Pérdida'
   return (
@@ -36,11 +35,11 @@ function ResumenTotal({
       <div className={styles.resumenGrid}>
         <div className={styles.resumenCard}>
           <span className={styles.resumenLabel}>Capital total</span>
-          <span className={styles.resumenValor}>{clp(capitalTotal)}</span>
+          <span className={styles.resumenValor}>{formatMonto(capitalTotal)}</span>
         </div>
         <div className={styles.resumenCard}>
           <span className={styles.resumenLabel}>Valor actual</span>
-          <span className={styles.resumenValor}>{clp(valorTotal)}</span>
+          <span className={styles.resumenValor}>{formatMonto(valorTotal)}</span>
         </div>
         <div className={styles.resumenCard}>
           <span className={styles.resumenLabel}>{labelGanancia}</span>
@@ -49,7 +48,7 @@ function ResumenTotal({
               esPositivo ? styles.resumenValorGanancia : styles.resumenValorPerdida
             }
           >
-            {clp(Math.abs(gananciaTotal))}
+            {formatMonto(Math.abs(gananciaTotal))}
           </span>
           <span
             className={`${styles.resumenPorcentaje} ${
@@ -74,6 +73,7 @@ function FondoCard({
   fondo: FondoApi
   index: number
 }) {
+  const { formatMonto } = useConfig()
   const capitalTotal = Number(fondo.capital_total)
   const valorActual = Number(fondo.valor_actual)
   const ganancia = valorActual - capitalTotal
@@ -99,13 +99,13 @@ function FondoCard({
         <div className={styles.fondoCardFila}>
           <span className={styles.fondoCardLabel}>Capital</span>
           <span className={styles.fondoCardMonto}>
-            {clp(capitalTotal)}
+            {formatMonto(capitalTotal)}
           </span>
         </div>
         <div className={styles.fondoCardFila}>
           <span className={styles.fondoCardLabel}>Valor actual</span>
           <span className={styles.fondoCardMonto}>
-            {clp(valorActual)}
+            {formatMonto(valorActual)}
           </span>
         </div>
         <div className={styles.fondoCardFila}>
@@ -118,7 +118,7 @@ function FondoCard({
                   : styles.fondoCardMontoPerdida
               }
             >
-              {clp(ganancia)}
+              {formatMonto(ganancia)}
             </span>
             <span
               className={
