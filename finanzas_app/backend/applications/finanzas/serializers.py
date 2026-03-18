@@ -1,5 +1,7 @@
 # applications/finanzas/serializers.py
 
+from datetime import date
+
 from rest_framework import serializers
 from .models import (
     Categoria,
@@ -42,8 +44,17 @@ class CuotaSerializer(serializers.ModelSerializer):
         ]
 
 
+# Campos que no pueden cambiarse en un movimiento vinculado a IngresoComun
+# (el ingreso común es la fuente de verdad de tipo/ámbito/categoría/método/cuenta).
+MOVIMIENTO_INGRESO_COMUN_CAMPOS_RESTRINGIDOS = frozenset({
+    'tipo', 'ambito', 'categoria', 'metodo_pago', 'cuenta',
+    'tarjeta', 'num_cuotas', 'monto_cuota', 'viaje', 'oculto',
+})
+
+
 class MovimientoSerializer(serializers.ModelSerializer):
     cuotas = CuotaSerializer(many=True, read_only=True)
+    ingreso_comun = serializers.SerializerMethodField()
 
     class Meta:
         model = Movimiento
@@ -51,9 +62,19 @@ class MovimientoSerializer(serializers.ModelSerializer):
             'id', 'fecha', 'tipo', 'ambito', 'categoria',
             'cuenta', 'monto', 'comentario', 'oculto',
             'metodo_pago', 'tarjeta', 'num_cuotas', 'monto_cuota',
-            'viaje', 'cuotas', 'created_at',
+            'viaje', 'cuotas', 'created_at', 'ingreso_comun',
         ]
-        read_only_fields = ['familia', 'usuario', 'created_at', 'cuotas']
+        read_only_fields = ['familia', 'usuario', 'created_at', 'cuotas', 'ingreso_comun']
+
+    def get_ingreso_comun(self, obj):
+        """PK del IngresoComun vinculado, si existe."""
+        if hasattr(obj, '_ingreso_comun_pk'):
+            return obj._ingreso_comun_pk
+        return (
+            IngresoComun.objects.filter(movimiento_id=obj.pk)
+            .values_list('pk', flat=True)
+            .first()
+        )
 
     def validate(self, data):
         """Valida que si el método es crédito, se proporcione tarjeta y num_cuotas."""
@@ -69,6 +90,29 @@ class MovimientoSerializer(serializers.ModelSerializer):
                 )
         return data
 
+    def update(self, instance, validated_data):
+        ic = IngresoComun.objects.filter(movimiento_id=instance.pk).first()
+        if ic:
+            restringidos = MOVIMIENTO_INGRESO_COMUN_CAMPOS_RESTRINGIDOS & validated_data.keys()
+            if restringidos:
+                raise serializers.ValidationError({
+                    k: (
+                        'Este movimiento está vinculado a un ingreso común; '
+                        'solo puedes editar fecha, monto y comentario (origen).'
+                    )
+                    for k in restringidos
+                })
+        instance = super().update(instance, validated_data)
+        ic = IngresoComun.objects.filter(movimiento_id=instance.pk).first()
+        if ic:
+            mes = date(instance.fecha.year, instance.fecha.month, 1)
+            IngresoComun.objects.filter(pk=ic.pk).update(
+                monto=instance.monto,
+                origen=instance.comentario or '',
+                mes=mes,
+            )
+        return instance
+
 
 class MovimientoListSerializer(serializers.ModelSerializer):
     """
@@ -81,6 +125,7 @@ class MovimientoListSerializer(serializers.ModelSerializer):
         source='tarjeta.nombre', read_only=True, allow_null=True
     )
     autor_nombre = serializers.CharField(source='usuario.first_name', read_only=True)
+    ingreso_comun = serializers.SerializerMethodField()
 
     class Meta:
         model = Movimiento
@@ -89,8 +134,11 @@ class MovimientoListSerializer(serializers.ModelSerializer):
             'categoria', 'categoria_nombre',
             'metodo_pago', 'metodo_pago_tipo',
             'tarjeta', 'tarjeta_nombre',
-            'autor_nombre', 'oculto',
+            'autor_nombre', 'oculto', 'ingreso_comun',
         ]
+
+    def get_ingreso_comun(self, obj):
+        return getattr(obj, '_ingreso_comun_pk', None)
 
 
 class CuentaPersonalSerializer(serializers.ModelSerializer):
@@ -134,11 +182,16 @@ class IngresoComunSerializer(serializers.ModelSerializer):
     autor_nombre = serializers.CharField(
         source='usuario.first_name', read_only=True
     )
+    movimiento = serializers.IntegerField(
+        source='movimiento_id', read_only=True, allow_null=True
+    )
 
     class Meta:
         model = IngresoComun
-        fields = ['id', 'mes', 'monto', 'origen', 'usuario', 'autor_nombre']
-        read_only_fields = ['usuario', 'familia']
+        fields = [
+            'id', 'mes', 'monto', 'origen', 'usuario', 'autor_nombre', 'movimiento',
+        ]
+        read_only_fields = ['usuario', 'familia', 'movimiento']
 
 
 class PresupuestoSerializer(serializers.ModelSerializer):

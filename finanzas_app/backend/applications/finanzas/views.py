@@ -3,7 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, OuterRef, Subquery
 from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -33,6 +33,12 @@ from .serializers import (
     IngresoComunSerializer,
     PresupuestoSerializer,
 )
+
+
+def _qs_movimientos_con_ingreso_comun(qs):
+    """Anota _ingreso_comun_pk para serializers (evita N+1)."""
+    sub = IngresoComun.objects.filter(movimiento_id=OuterRef('pk')).values('pk')[:1]
+    return qs.annotate(_ingreso_comun_pk=Subquery(sub))
 
 
 # ── CATEGORÍAS ────────────────────────────────────────────────────────────────
@@ -362,6 +368,7 @@ def movimientos(request):
             qs = qs.filter(comentario__icontains=q)
 
         qs = qs.filter(oculto=False)
+        qs = _qs_movimientos_con_ingreso_comun(qs)
 
         return Response(MovimientoListSerializer(qs, many=True).data)
 
@@ -376,23 +383,27 @@ def movimientos(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['GET', 'PUT', 'DELETE'])
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def movimiento_detalle(request, pk):
     """
-    GET    → Retorna el movimiento con sus cuotas
-    PUT    → Edita el movimiento (no regenera cuotas si ya existen)
-    DELETE → Elimina el movimiento y sus cuotas en cascada
+    GET    → Retorna el movimiento con sus cuotas (campo ingreso_comun si aplica).
+    PUT/PATCH → Edita el movimiento. Si está vinculado a un ingreso común,
+                solo fecha, monto y comentario; los cambios se reflejan en IngresoComun.
+    DELETE → Elimina el movimiento. No aplica a movimientos vinculados a ingreso común
+             (eliminar el ingreso común en su lugar).
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
 
     try:
-        movimiento = Movimiento.objects.select_related(
-            'categoria', 'metodo_pago', 'tarjeta', 'usuario'
-        ).prefetch_related('cuotas').get(
+        movimiento = _qs_movimientos_con_ingreso_comun(
+            Movimiento.objects.select_related(
+                'categoria', 'metodo_pago', 'tarjeta', 'usuario'
+            ).prefetch_related('cuotas')
+        ).get(
             pk=pk,
             familia=usuario.familia
         )
@@ -411,10 +422,20 @@ def movimiento_detalle(request, pk):
                 {'error': 'Solo puedes eliminar tus propios movimientos.'},
                 status=status.HTTP_403_FORBIDDEN
             )
+        if movimiento._ingreso_comun_pk is not None:
+            return Response(
+                {
+                    'error': (
+                        'Este movimiento está vinculado a un ingreso común. '
+                        'Elimínalo desde Ingresos comunes o edítalo allí / aquí (monto, fecha, comentario).'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         movimiento.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    if request.method == 'PUT':
+    if request.method in ('PUT', 'PATCH'):
         if movimiento.usuario != usuario:
             return Response(
                 {'error': 'Solo puedes editar tus propios movimientos.'},
@@ -425,7 +446,13 @@ def movimiento_detalle(request, pk):
         )
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            movimiento.refresh_from_db()
+            movimiento = _qs_movimientos_con_ingreso_comun(
+                Movimiento.objects.select_related(
+                    'categoria', 'metodo_pago', 'tarjeta', 'usuario'
+                ).prefetch_related('cuotas')
+            ).get(pk=movimiento.pk, familia=usuario.familia)
+            return Response(MovimientoSerializer(movimiento).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -579,13 +606,13 @@ def ingresos_comunes(request):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['PUT', 'DELETE'])
+@api_view(['PUT', 'PATCH', 'DELETE'])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def ingreso_comun_detalle(request, pk):
     """
-    PUT    → Edita un ingreso común (solo el autor)
-    DELETE → Elimina un ingreso común (solo el autor)
+    PUT/PATCH → Edita un ingreso común (solo el autor); el Movimiento vinculado se actualiza.
+    DELETE → Elimina el ingreso y el movimiento vinculado.
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
@@ -609,11 +636,12 @@ def ingreso_comun_detalle(request, pk):
         ingreso.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    if request.method == 'PUT':
+    if request.method in ('PUT', 'PATCH'):
         serializer = IngresoComunSerializer(ingreso, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            ingreso.refresh_from_db()
+            return Response(IngresoComunSerializer(ingreso).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 

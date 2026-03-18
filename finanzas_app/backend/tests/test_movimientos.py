@@ -1,7 +1,9 @@
 # backend/tests/test_movimientos.py
 
 import pytest
-from applications.finanzas.models import Movimiento, Cuota
+from decimal import Decimal
+
+from applications.finanzas.models import Movimiento, Cuota, IngresoComun
 
 
 @pytest.mark.django_db
@@ -242,6 +244,73 @@ class TestMovimientosEdicionEliminacion:
             **auth_header_2,
         )
         assert res.status_code == 403
+
+    def test_patch_movimiento_vinculado_ingreso_sincroniza_ingreso_comun(
+        self, client, auth_header, usuario, familia
+    ):
+        """PATCH en movimiento generado por IngresoComun actualiza mes/monto/origen."""
+        ing = IngresoComun.objects.create(
+            usuario=usuario,
+            familia=familia,
+            mes='2026-03-01',
+            monto='1000000.00',
+            origen='Sueldo',
+        )
+        ing.refresh_from_db()
+        mid = ing.movimiento_id
+        res = client.patch(
+            f'/api/finanzas/movimientos/{mid}/',
+            data={
+                'monto': '1200000.00',
+                'comentario': 'Sueldo + bono',
+                'fecha': '2026-04-01',
+            },
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        assert res.json()['ingreso_comun'] == ing.id
+        ing.refresh_from_db()
+        assert ing.monto == Decimal('1200000.00')
+        assert ing.origen == 'Sueldo + bono'
+        assert ing.mes.isoformat() == '2026-04-01'
+
+    def test_patch_movimiento_vinculado_no_permite_cambiar_tipo(
+        self, client, auth_header, usuario, familia, categoria_egreso
+    ):
+        ing = IngresoComun.objects.create(
+            usuario=usuario,
+            familia=familia,
+            mes='2026-03-01',
+            monto='500000.00',
+            origen='X',
+        )
+        ing.refresh_from_db()
+        res = client.patch(
+            f'/api/finanzas/movimientos/{ing.movimiento_id}/',
+            data={'tipo': 'EGRESO', 'categoria': categoria_egreso.id},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 400
+        assert 'tipo' in res.json()
+
+    def test_delete_movimiento_vinculado_ingreso_retorna_400(
+        self, client, auth_header, usuario, familia
+    ):
+        ing = IngresoComun.objects.create(
+            usuario=usuario,
+            familia=familia,
+            mes='2026-03-01',
+            monto='100.00',
+        )
+        ing.refresh_from_db()
+        res = client.delete(
+            f'/api/finanzas/movimientos/{ing.movimiento_id}/',
+            **auth_header,
+        )
+        assert res.status_code == 400
+        assert Movimiento.objects.filter(pk=ing.movimiento_id).exists()
 
 
 @pytest.mark.django_db

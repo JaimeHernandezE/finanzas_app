@@ -3,20 +3,10 @@ import MainLayout from '@/components/layout/MainLayout'
 import { AuthProvider } from '@/context/AuthContext'
 import { ViajeProvider } from '@/context/ViajeContext'
 import LoginPage from '@/pages/login/LoginPage'
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div style={{ padding: '2rem' }}>
-      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: '#111' }}>{title}</h2>
-      <p style={{ marginTop: '0.5rem', color: '#6b7280', fontSize: '0.875rem' }}>
-        Página en construcción.
-      </p>
-    </div>
-  )
-}
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MovimientosPage from '@/pages/gastos/MovimientosPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
+import MovimientoEditarPage from '@/pages/gastos/MovimientoEditarPage'
 import CuentaPage from '@/pages/gastos/CuentaPage'
 import GastosComunesPage from '@/pages/gastos/GastosComunesPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
@@ -52,7 +42,7 @@ export default function App() {
             <Route path="cuenta/:id" element={<CuentaPage />} />
             <Route path="nuevo"      element={<MovimientoFormPage />} />
             <Route path=":id"        element={<MovimientoFormPage />} />
-            <Route path=":id/editar" element={<Placeholder title="Editar movimiento" />} />
+            <Route path=":id/editar" element={<MovimientoEditarPage />} />
           </Route>
 
           <Route path="sueldos" element={<SueldosPage />} />

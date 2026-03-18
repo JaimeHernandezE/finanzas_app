@@ -24,6 +24,9 @@ export const movimientosApi = {
   updateMovimiento: (id: number, data: Record<string, unknown>) =>
     client.put(`/api/finanzas/movimientos/${id}/`, data),
 
+  patchMovimiento: (id: number, data: Record<string, unknown>) =>
+    client.patch(`/api/finanzas/movimientos/${id}/`, data),
+
   deleteMovimiento: (id: number) =>
     client.delete(`/api/finanzas/movimientos/${id}/`),
 

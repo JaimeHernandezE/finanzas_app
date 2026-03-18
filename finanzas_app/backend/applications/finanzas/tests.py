@@ -158,12 +158,13 @@ class MovimientoModelTest(FinanzasTestBase):
 # =============================================================================
 
 class CuotaModelTest(FinanzasTestBase):
+    """
+    Usa movimiento en efectivo para cuotas manuales (evita duplicar las que
+    genera el signal si fuera crédito).
+    """
 
     def setUp(self):
         super().setUp()
-        tarjeta = Tarjeta.objects.create(
-            usuario=self.usuario, nombre='Visa', banco='BCI',
-        )
         self.movimiento = Movimiento.objects.create(
             familia=self.familia,
             usuario=self.usuario,
@@ -172,9 +173,7 @@ class CuotaModelTest(FinanzasTestBase):
             categoria=self.categoria_egreso,
             fecha=datetime.date(2026, 3, 1),
             monto=Decimal('90000.00'),
-            metodo_pago=self.metodo_credito,
-            tarjeta=tarjeta,
-            num_cuotas=3,
+            metodo_pago=self.metodo_efectivo,
         )
 
     def _crear_cuota(self, numero, mes=None):
@@ -215,6 +214,7 @@ class PresupuestoModelTest(FinanzasTestBase):
         mes = datetime.date(2026, 3, 1)
         Presupuesto.objects.create(
             familia=self.familia,
+            usuario=self.usuario,
             categoria=self.categoria_egreso,
             mes=mes,
             monto=Decimal('100000.00'),
@@ -222,6 +222,7 @@ class PresupuestoModelTest(FinanzasTestBase):
         with self.assertRaises(IntegrityError):
             Presupuesto.objects.create(
                 familia=self.familia,
+                usuario=self.usuario,
                 categoria=self.categoria_egreso,
                 mes=mes,
                 monto=Decimal('200000.00'),

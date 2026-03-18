@@ -72,3 +72,14 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 - Al **crear un usuario** (registro o invitación), se crea automáticamente una `CuentaPersonal` con nombre **«Personal»** (efectivo / vista personal por defecto).
 - Cada **`IngresoComun`** guardado genera o actualiza un **`Movimiento`** de tipo **INGRESO**, ámbito **PERSONAL**, método de pago **EFECTIVO**, en esa cuenta; `comentario` = `origen`; `fecha` = primer día del mes (`mes`). La categoría global del sistema **«Ingreso declarado (fondo común)»** se crea si no existe.
 - Al **eliminar** un `IngresoComun`, se elimina el movimiento vinculado.
+
+## API — Movimientos e ingreso común (vínculo)
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/finanzas/movimientos/` | Lista incluye `ingreso_comun` (id o `null`) por fila. |
+| GET | `/api/finanzas/movimientos/<id>/` | Detalle con `ingreso_comun` si aplica. |
+| PUT/PATCH | `/api/finanzas/movimientos/<id>/` | Edición solo del **autor**. Si `ingreso_comun` ≠ null: solo **`fecha`**, **`monto`** y **`comentario`**; esos cambios actualizan el **`IngresoComun`** (`mes`, `monto`, `origen`). No se puede cambiar tipo, ámbito, categoría, método, cuenta, etc. |
+| DELETE | `/api/finanzas/movimientos/<id>/` | No permitido si el movimiento está vinculado a un ingreso común (borrar/editar vía **Ingresos comunes**). |
+
+**Ingresos comunes:** `GET/POST /api/finanzas/ingresos-comunes/`, `PUT/PATCH/DELETE /api/finanzas/ingresos-comunes/<id>/`. Las respuestas incluyen `movimiento` (id del movimiento generado). Editar el ingreso sigue sincronizando el movimiento.
