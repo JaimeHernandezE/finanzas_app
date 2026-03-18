@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useFondoDetalle } from '@/hooks/useInversiones'
 import { inversionesApi } from '@/api'
-import { Cargando, ErrorCarga } from '@/components/ui'
+import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import styles from './FondoDetallePage.module.scss'
 import type { EventoFondo } from './data'
 
@@ -73,11 +74,11 @@ export default function FondoDetallePage() {
   }
 
   const handleConfirmAporte = async () => {
-    const monto = formAporteMonto
-    if (!monto || Number(monto) < 0) return
+    const n = montoClpANumero(formAporteMonto)
+    if (n <= 0) return
     await inversionesApi.agregarAporte(Number(id), {
       fecha: formAporteFecha,
-      monto,
+      monto: String(n),
       nota: formAporteNota.trim() || undefined,
     })
     setFormAporteMonto('')
@@ -177,13 +178,12 @@ export default function FondoDetallePage() {
             </label>
             <input
               id="valor-monto"
-              type="number"
-              min={0}
-              step={1000}
+              type="text"
+              inputMode="decimal"
               className={styles.formInlineInputNum}
               value={formValorMonto}
-              onChange={(e) => setFormValorMonto(e.target.value)}
-              placeholder="0"
+              onChange={(e) => setFormValorMonto(e.target.value.replace(',', '.'))}
+              placeholder="Ej: 1250,5"
             />
           </div>
           <button
@@ -223,15 +223,13 @@ export default function FondoDetallePage() {
             <label className={styles.formInlineLabel} htmlFor="aporte-monto">
               Monto del aporte
             </label>
-            <input
+            <InputMontoClp
+              soloInput
               id="aporte-monto"
-              type="number"
-              min={0}
-              step={1000}
-              className={styles.formInlineInputNum}
+              inputClassName={styles.formInlineInputNum}
               value={formAporteMonto}
-              onChange={(e) => setFormAporteMonto(e.target.value)}
-              placeholder="0"
+              onChange={setFormAporteMonto}
+              aria-label="Monto del aporte"
             />
           </div>
           <div>

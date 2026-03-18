@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, Select, Textarea } from '@/components/ui'
+import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
@@ -63,9 +64,10 @@ export default function MovimientoFormPage() {
     return m?.id ?? null
   }, [metodos, metodo])
 
+  const montoNum = montoClpANumero(monto)
   const montoCuota =
-    numCuotas && monto
-      ? Math.ceil(parseFloat(monto) / parseInt(numCuotas))
+    numCuotas && montoNum > 0
+      ? Math.ceil(montoNum / parseInt(numCuotas, 10))
       : null
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -73,7 +75,7 @@ export default function MovimientoFormPage() {
     const data = new FormData(e.currentTarget)
     const next: FormErrors = {}
 
-    if (!monto)               next.monto     = 'El monto es obligatorio.'
+    if (!monto || montoNum <= 0) next.monto = 'El monto es obligatorio.'
     if (!data.get('categoria')) next.categoria = 'Selecciona una categoría.'
     if (metodo === 'CREDITO') {
       if (!data.get('tarjeta'))  next.tarjeta   = 'Selecciona una tarjeta.'
@@ -104,7 +106,7 @@ export default function MovimientoFormPage() {
           ambito === 'PERSONAL' && data.get('cuenta')
             ? Number(data.get('cuenta'))
             : null,
-        monto: String(monto),
+        monto: String(montoNum),
         comentario: (data.get('comentario') as string) || '',
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
@@ -232,16 +234,11 @@ export default function MovimientoFormPage() {
             />
           </div>
 
-          {/* Monto */}
-          <Input
+          <InputMontoClp
             name="monto"
             label="Monto"
-            type="number"
-            min="1"
-            step="1"
-            placeholder="0"
             value={monto}
-            onChange={e => setMonto(e.target.value)}
+            onChange={setMonto}
             error={errors.monto}
             helperText="Pesos chilenos (CLP)"
             required

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Input, Select, Textarea } from '@/components/ui'
+import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
 import { useTarjetas } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
@@ -159,7 +160,7 @@ function FormCargoInline({
   const [montoStr, setMontoStr] = useState('')
 
   const handleConfirm = () => {
-    const m = parseInt(montoStr.replace(/\D/g, ''), 10)
+    const m = montoClpANumero(montoStr)
     if (!desc.trim() || isNaN(m) || m <= 0) return
     onConfirm(desc.trim(), m)
     setDesc('')
@@ -176,12 +177,11 @@ function FormCargoInline({
         onChange={e => setDesc(e.target.value)}
         aria-label="Descripción del cargo"
       />
-      <input
-        type="text"
-        className={styles.formCargoMonto}
-        placeholder="$ 0"
+      <InputMontoClp
+        soloInput
+        inputClassName={styles.formCargoMonto}
         value={montoStr}
-        onChange={e => setMontoStr(e.target.value)}
+        onChange={setMontoStr}
         aria-label="Monto del cargo"
       />
       <div className={styles.formCargoBtns}>
@@ -275,14 +275,15 @@ function ModalNuevoGasto({
     const data = new FormData(e.currentTarget)
     const descripcion = (data.get('comentario') as string)?.trim() || 'Nuevo gasto'
     const next: typeof errors = {}
-    if (!monto || parseInt(monto, 10) <= 0) next.monto = 'El monto es obligatorio.'
+    const montoTotalVal = montoClpANumero(monto)
+    if (!monto || montoTotalVal <= 0) next.monto = 'El monto es obligatorio.'
     if (!data.get('categoria')) next.categoria = 'Selecciona una categoría.'
     const n = parseInt(numCuotas, 10)
     if (!numCuotas || isNaN(n) || n < 1) next.numCuotas = 'Ingresa el número de cuotas.'
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
-    const montoTotal = parseInt(String(monto).replace(/\D/g, ''), 10) || 0
+    const montoTotal = montoTotalVal
     const totalCuotas = Math.max(1, n)
     const montoPorCuota = Math.ceil(montoTotal / totalCuotas)
     const baseId = Date.now()
@@ -372,15 +373,13 @@ function ModalNuevoGasto({
                 defaultValue={new Date().toISOString().split('T')[0]}
               />
             </div>
-            <Input
+            <InputMontoClp
               name="monto"
               label="Monto"
-              type="number"
-              min="1"
-              placeholder="0"
               value={monto}
-              onChange={e => setMonto(e.target.value)}
+              onChange={setMonto}
               error={errors.monto}
+              helperText="Pesos chilenos (CLP)"
               required
             />
             <Input

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi } from '@/api'
-import { Cargando, ErrorCarga } from '@/components/ui'
+import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import { useAuth } from '@/context/AuthContext'
 import styles from './SueldosPage.module.scss'
 
@@ -358,7 +359,7 @@ function FormNuevoIngreso({
   const [origen, setOrigen] = useState('')
   const [montoStr, setMontoStr] = useState('')
 
-  const monto = parseInt(montoStr.replace(/\D/g, ''), 10) || 0
+  const monto = montoClpANumero(montoStr)
   const valido = origen.trim() !== '' && monto > 0
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -379,17 +380,13 @@ function FormNuevoIngreso({
         onChange={e => setOrigen(e.target.value)}
         autoFocus
       />
-      <div className={styles.inputMontoWrap}>
-        <span className={styles.prefijoClp}>$</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          className={styles.inputMonto}
-          placeholder="0"
-          value={montoStr}
-          onChange={e => setMontoStr(e.target.value.replace(/\D/g, ''))}
-        />
-      </div>
+      <InputMontoClp
+        soloInput
+        inputClassName={styles.sueldoMontoInput}
+        value={montoStr}
+        onChange={setMontoStr}
+        aria-label="Monto"
+      />
       <button type="submit" className={styles.btnIcon} disabled={!valido} title="Guardar">
         ✓
       </button>
@@ -435,7 +432,7 @@ function FilaEdicion({
   const [origen, setOrigen] = useState(ingreso.origen)
   const [montoStr, setMontoStr] = useState(String(ingreso.monto))
 
-  const monto = parseInt(montoStr.replace(/\D/g, ''), 10) || 0
+  const monto = montoClpANumero(montoStr)
   const valido = origen.trim() !== '' && monto > 0
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -454,16 +451,13 @@ function FilaEdicion({
           onChange={e => setOrigen(e.target.value)}
           autoFocus
         />
-        <div className={styles.inputMontoWrap}>
-          <span className={styles.prefijoClp}>$</span>
-          <input
-            type="text"
-            inputMode="numeric"
-            className={styles.inputMonto}
-            value={montoStr}
-            onChange={e => setMontoStr(e.target.value.replace(/\D/g, ''))}
-          />
-        </div>
+        <InputMontoClp
+          soloInput
+          inputClassName={styles.sueldoMontoInput}
+          value={montoStr}
+          onChange={setMontoStr}
+          aria-label="Monto"
+        />
         <button type="submit" className={styles.btnIcon} disabled={!valido} title="Guardar">
           ✓
         </button>

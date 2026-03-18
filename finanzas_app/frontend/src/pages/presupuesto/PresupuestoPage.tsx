@@ -2,7 +2,8 @@ import { useState, useMemo, useCallback } from 'react'
 import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
 import { useApi } from '@/hooks/useApi'
 import { useCategorias } from '@/hooks/useCatalogos'
-import { Cargando, ErrorCarga } from '@/components/ui'
+import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import styles from './PresupuestoPage.module.scss'
 
 interface CatPres {
@@ -137,14 +138,13 @@ function ItemConPresupuesto({
         <div className={styles.catItemEditRow}>
           <span className={styles.catItemMontos}>
             {pesosFmt(cat.gastado)} de{' '}
-            <input
-              type="number"
-              className={styles.catItemEditInput}
+            <InputMontoClp
+              soloInput
+              inputClassName={styles.catItemEditInput}
               value={editValue}
-              onChange={(e) => onEditChange(e.target.value)}
-              min={0}
-              step={1000}
+              onChange={onEditChange}
               autoFocus
+              aria-label="Monto presupuestado"
             />
           </span>
           <button
@@ -243,15 +243,13 @@ function ItemSinPresupuesto({
       </div>
       {isAssigning ? (
         <div className={styles.addForm}>
-          <input
-            type="number"
-            className={styles.addFormInput}
-            placeholder="Monto"
+          <InputMontoClp
+            soloInput
+            inputClassName={styles.addFormInput}
             value={assignValue}
-            onChange={(e) => onAssignChange(e.target.value)}
-            min={0}
-            step={1000}
+            onChange={onAssignChange}
             autoFocus
+            aria-label="Monto presupuestado"
           />
           <button
             type="button"
@@ -405,8 +403,8 @@ export default function PresupuestoPage() {
 
   const handleAddCategory = () => {
     const cid = parseInt(newCategoryId, 10)
-    const monto = parseInt(newCategoryMonto, 10)
-    if (!Number.isFinite(cid) || !Number.isFinite(monto) || monto <= 0) return
+    const monto = montoClpANumero(newCategoryMonto)
+    if (!Number.isFinite(cid) || monto <= 0) return
     void runAction(async () => {
       await finanzasApi.createPresupuesto({
         categoria: cid,
@@ -428,8 +426,8 @@ export default function PresupuestoPage() {
 
   const handleEditConfirm = (cat: CatPres) => {
     if (cat.presupuestoId == null) return
-    const monto = parseInt(editMontoValue, 10)
-    if (!Number.isFinite(monto) || monto < 0) return
+    const monto = montoClpANumero(editMontoValue)
+    if (monto < 0) return
     void runAction(async () => {
       await finanzasApi.patchPresupuesto(cat.presupuestoId, { monto: String(monto) })
       setEditingKey(null)
@@ -438,8 +436,8 @@ export default function PresupuestoPage() {
   }
 
   const handleAssignConfirm = (cat: CatPres) => {
-    const monto = parseInt(assignMontoValue, 10)
-    if (!Number.isFinite(monto) || monto <= 0) return
+    const monto = montoClpANumero(assignMontoValue)
+    if (monto <= 0) return
     void runAction(async () => {
       await finanzasApi.createPresupuesto({
         categoria: cat.categoriaId,
@@ -544,14 +542,12 @@ export default function PresupuestoPage() {
                 </option>
               ))}
             </select>
-            <input
-              type="number"
-              className={styles.addFormInput}
-              placeholder="Monto presupuestado"
+            <InputMontoClp
+              soloInput
+              inputClassName={styles.addFormInput}
               value={newCategoryMonto}
-              onChange={e => setNewCategoryMonto(e.target.value)}
-              min={0}
-              step={1000}
+              onChange={setNewCategoryMonto}
+              aria-label="Monto presupuestado"
             />
             <button
               type="button"

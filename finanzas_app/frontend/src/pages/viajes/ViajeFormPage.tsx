@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useViajeDetalle } from '@/hooks/useViajes'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { viajesApi } from '@/api'
+import { InputMontoClp } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
 import styles from './ViajeFormPage.module.scss'
 
 // -----------------------------------------------------------------------------
@@ -85,8 +87,8 @@ export default function ViajeFormPage() {
 
   const handleAgregarCategoria = () => {
     const cat = CATEGORIAS_DISPONIBLES.find((c) => c.id === addCategoriaId)
-    const monto = parseInt(addMonto, 10)
-    if (!cat || !Number.isFinite(monto) || monto < 0) return
+    const monto = montoClpANumero(addMonto)
+    if (!cat || monto < 0) return
     setPresupuestoItems((prev) => [
       ...prev,
       { categoriaId: cat.id, categoriaNombre: cat.nombre, montoPresupuestado: monto },
@@ -252,14 +254,12 @@ export default function ViajeFormPage() {
                 </option>
               ))}
             </select>
-            <input
-              type="number"
-              className={styles.addInput}
-              placeholder="Monto"
+            <InputMontoClp
+              soloInput
+              inputClassName={styles.addInput}
               value={addMonto}
-              onChange={(e) => setAddMonto(e.target.value)}
-              min={0}
-              step={1000}
+              onChange={setAddMonto}
+              aria-label="Monto presupuesto"
             />
             <button
               type="button"
@@ -289,18 +289,14 @@ export default function ViajeFormPage() {
             <span className={styles.presupuestoItemNombre}>
               {item.categoriaNombre}
             </span>
-            <input
-              type="number"
-              className={styles.presupuestoItemInput}
-              value={item.montoPresupuestado || ''}
-              onChange={(e) =>
-                handleActualizarMonto(
-                  item.categoriaId,
-                  parseInt(e.target.value, 10) || 0
-                )
+            <InputMontoClp
+              soloInput
+              inputClassName={styles.presupuestoItemInput}
+              value={String(item.montoPresupuestado)}
+              onChange={(v) =>
+                handleActualizarMonto(item.categoriaId, montoClpANumero(v))
               }
-              min={0}
-              step={1000}
+              aria-label={`Monto ${item.categoriaNombre}`}
             />
             <button
               type="button"
