@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, Select, Textarea } from '@/components/ui'
 import type { SelectOption } from '@/components/ui'
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
 import styles from './MovimientoFormPage.module.scss'
 
@@ -13,42 +14,41 @@ type Metodo = 'EFECTIVO' | 'DEBITO' | 'CREDITO'
 interface FormErrors {
   monto?:     string
   categoria?: string
+  cuenta?:    string
   tarjeta?:   string
   numCuotas?: string
   general?:   string
 }
 
-// Sin endpoint de cuentas — placeholder
-const CUENTAS: SelectOption[] = [
-  { value: '1', label: 'Personal' },
-  { value: '2', label: 'Arquitecto' },
-]
-
-interface SubmitData {
-  monto:     string
-  numCuotas: string
-  tipo:      Tipo
-}
-
 export default function MovimientoFormPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { data: categoriasData } = useCategorias()
   const { data: tarjetasData } = useTarjetas()
   const { data: metodosData } = useMetodosPago()
+  const { data: cuentasData } = useCuentasPersonales()
+
+  const cuentasOpciones: SelectOption[] = useMemo(
+    () =>
+      (cuentasData ?? [])
+        .filter(c => c.es_propia)
+        .map(c => ({ value: String(c.id), label: c.nombre })),
+    [cuentasData],
+  )
 
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
   const tarjetas   = (tarjetasData ?? []) as { id: number; nombre: string }[]
   const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
 
   const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
-  const [ambito,    setAmbito]    = useState<Ambito>('PERSONAL')
+  const [ambito,    setAmbito]    = useState<Ambito>(() =>
+    searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL',
+  )
   const [metodo,    setMetodo]    = useState<Metodo>('EFECTIVO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
   const [loading,   setLoading]   = useState(false)
   const [errors,    setErrors]    = useState<FormErrors>({})
-  const [result,    setResult]    = useState<SubmitData | null>(null)
-
   const categoriaOpciones: SelectOption[] = useMemo(() => {
     const filtradas = categorias.filter(c => c.tipo === tipo)
     return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
@@ -79,6 +79,9 @@ export default function MovimientoFormPage() {
       if (!data.get('tarjeta'))  next.tarjeta   = 'Selecciona una tarjeta.'
       if (!numCuotas)            next.numCuotas = 'Ingresa el número de cuotas.'
     }
+    if (ambito === 'PERSONAL' && cuentasOpciones.length > 0 && !data.get('cuenta')) {
+      next.cuenta = 'Selecciona una cuenta personal.'
+    }
 
     setErrors(next)
     if (Object.keys(next).length > 0) return
@@ -97,7 +100,10 @@ export default function MovimientoFormPage() {
         tipo,
         ambito,
         categoria: Number(categoriaId),
-        cuenta: null,
+        cuenta:
+          ambito === 'PERSONAL' && data.get('cuenta')
+            ? Number(data.get('cuenta'))
+            : null,
         monto: String(monto),
         comentario: (data.get('comentario') as string) || '',
         metodo_pago: metodoPagoId,
@@ -106,7 +112,13 @@ export default function MovimientoFormPage() {
         monto_cuota: metodo === 'CREDITO' && montoCuota ? montoCuota : null,
       }
       await movimientosApi.createMovimiento(payload)
-      setResult({ monto, numCuotas, tipo })
+      const cuentaQ = searchParams.get('cuenta')
+      const primeraPropia = cuentasData?.find(c => c.es_propia)
+      let dest = '/configuracion/cuentas'
+      if (ambito === 'COMUN') dest = '/gastos/comunes'
+      else if (cuentaQ) dest = `/gastos/cuenta/${encodeURIComponent(cuentaQ)}`
+      else if (primeraPropia) dest = `/gastos/cuenta/${primeraPropia.id}`
+      navigate(dest, { replace: true })
     } catch (err: unknown) {
       const ax = err as { response?: { data?: Record<string, string[] | string> } }
       const data = ax.response?.data
@@ -121,34 +133,6 @@ export default function MovimientoFormPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  // ── Pantalla de éxito ──────────────────────────────────────────────────────
-  if (result) {
-    const cuotaValor = result.numCuotas
-      ? Math.ceil(parseFloat(result.monto) / parseInt(result.numCuotas))
-      : null
-
-    return (
-      <div className={styles.page}>
-        <div className={styles.card}>
-          <p className={styles.successMsg}>✓ Movimiento registrado correctamente.</p>
-          {cuotaValor && (
-            <p className={styles.cuotaResumen}>
-              Se generaron {result.numCuotas} cuotas de ${cuotaValor.toLocaleString('es-CL')} c/u
-            </p>
-          )}
-          <div className={styles.actions}>
-            <Button variant="ghost" onClick={() => navigate('/gastos')}>
-              Ver gastos
-            </Button>
-            <Button variant="outline" fullWidth onClick={() => setResult(null)}>
-              Registrar otro
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
   }
 
   // ── Formulario ─────────────────────────────────────────────────────────────
@@ -211,13 +195,23 @@ export default function MovimientoFormPage() {
           </div>
 
           {/* Cuenta — solo si Personal */}
-          {ambito === 'PERSONAL' && (
+          {ambito === 'PERSONAL' && cuentasOpciones.length > 0 && (
             <Select
               name="cuenta"
               label="Cuenta"
-              options={CUENTAS}
+              options={cuentasOpciones}
               placeholder="Selecciona cuenta…"
+              error={errors.cuenta}
+              defaultValue={searchParams.get('cuenta') ?? cuentasOpciones[0]?.value}
+              required
             />
+          )}
+          {ambito === 'PERSONAL' && cuentasOpciones.length === 0 && (
+            <p className={styles.avisoCuenta}>
+              Crea al menos una cuenta personal en{' '}
+              <Link to="/configuracion/cuentas">Configuración → Cuentas</Link> para registrar gastos
+              personales con contexto.
+            </p>
           )}
 
           {/* Categoría + Fecha */}

@@ -15,6 +15,14 @@ urlpatterns = [
     path('tarjetas/', views.tarjetas, name='tarjetas'),
     path('tarjetas/<int:pk>/', views.tarjeta_detalle, name='tarjeta-detalle'),
 
+    # Cuentas personales (propias + tuteladas)
+    path('cuentas-personales/', views.cuentas_personales, name='cuentas-personales'),
+    path(
+        'cuentas-personales/<int:pk>/',
+        views.cuenta_personal_detalle,
+        name='cuenta-personal-detalle',
+    ),
+
     # Movimientos
     path('movimientos/', views.movimientos, name='movimientos'),
     path('movimientos/<int:pk>/', views.movimiento_detalle, name='movimiento-detalle'),

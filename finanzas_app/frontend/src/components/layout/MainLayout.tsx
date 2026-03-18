@@ -1,15 +1,13 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useViaje } from '@/context/ViajeContext'
+import { useMemo } from 'react'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import styles from './MainLayout.module.scss'
 
 const clp = (n: number) =>
   n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos y datos mock  // TODO: reemplazar por fetch al backend (endpoint cuentas_visibles)
-// ─────────────────────────────────────────────────────────────────────────────
 
 interface CuentaNav {
   id:         string
@@ -19,12 +17,6 @@ interface CuentaNav {
   esTutelada: boolean
   duenio?:    string
 }
-
-const CUENTAS_NAV: CuentaNav[] = [
-  { id: '1', nombre: 'Mis gastos',   path: '/gastos/cuenta/1', esPropia: true,  esTutelada: false },
-  { id: '2', nombre: 'Honorarios',   path: '/gastos/cuenta/2', esPropia: true,  esTutelada: false },
-  { id: '3', nombre: 'Gastos Sofía', path: '/gastos/cuenta/3', esPropia: false, esTutelada: true, duenio: 'Sofía' },
-]
 
 const FAMILIA_FIJOS = [
   { icon: '₪', label: 'Sueldos', to: '/sueldos' },
@@ -107,9 +99,24 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const { user, loading, logout } = useAuth()
   const { viajeActivo } = useViaje()
+  const { data: cuentasApi } = useCuentasPersonales()
 
-  const propias   = CUENTAS_NAV.filter(c => c.esPropia)
-  const tuteladas = CUENTAS_NAV.filter(c => !c.esPropia)
+  const { propias, tuteladas } = useMemo(() => {
+    const list = (cuentasApi ?? []).map(
+      (c): CuentaNav => ({
+        id: String(c.id),
+        nombre: c.nombre,
+        path: `/gastos/cuenta/${c.id}`,
+        esPropia: c.es_propia,
+        esTutelada: !c.es_propia,
+        duenio: c.duenio_nombre ?? undefined,
+      }),
+    )
+    return {
+      propias: list.filter(c => c.esPropia),
+      tuteladas: list.filter(c => !c.esPropia),
+    }
+  }, [cuentasApi])
 
   const viajeBannerTotales = (() => {
     if (!viajeActivo) return null
@@ -158,6 +165,13 @@ export default function MainLayout() {
 
           {/* Personal */}
           <GroupLabel label="Personal" />
+          {user && propias.length === 0 && (
+            <li className={styles.navHint}>
+              <Link to="/configuracion/cuentas" className={styles.navHintLink}>
+                + Crear cuenta personal
+              </Link>
+            </li>
+          )}
           {propias.map(c => <CuentaItem key={c.id} cuenta={c} />)}
 
           {/* Familia */}

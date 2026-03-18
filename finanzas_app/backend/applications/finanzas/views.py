@@ -8,9 +8,19 @@ from rest_framework.response import Response
 from rest_framework import status
 
 import applications.utils as utils_auth
-from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota, IngresoComun
+from .models import (
+    Categoria,
+    CuentaPersonal,
+    MetodoPago,
+    Tarjeta,
+    Movimiento,
+    Cuota,
+    IngresoComun,
+)
 from .serializers import (
     CategoriaSerializer,
+    CuentaPersonalSerializer,
+    CuentaPersonalWriteSerializer,
     MetodoPagoSerializer,
     TarjetaSerializer,
     MovimientoSerializer,
@@ -189,6 +199,102 @@ def tarjeta_detalle(request, pk):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── CUENTAS PERSONALES ────────────────────────────────────────────────────────
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def cuentas_personales(request):
+    """
+    GET  → Cuentas que el usuario puede ver: propias + tuteladas (TutorCuenta).
+    POST → Crea una cuenta personal propia del usuario autenticado.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    if request.method == 'GET':
+        qs = usuario.cuentas_visibles().select_related('usuario')
+        propias = [c for c in qs if c.usuario_id == usuario.id]
+        tuteladas = [c for c in qs if c.usuario_id != usuario.id]
+        propias.sort(key=lambda x: x.nombre.lower())
+        tuteladas.sort(key=lambda x: x.nombre.lower())
+        ordered = propias + tuteladas
+        ctx = {'usuario': usuario}
+        return Response(
+            CuentaPersonalSerializer(ordered, many=True, context=ctx).data
+        )
+
+    serializer = CuentaPersonalWriteSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    cuenta = CuentaPersonal.objects.create(
+        usuario=usuario,
+        nombre=serializer.validated_data['nombre'],
+        descripcion=serializer.validated_data.get('descripcion') or '',
+        visible_familia=serializer.validated_data.get('visible_familia', False),
+    )
+    return Response(
+        CuentaPersonalSerializer(
+            cuenta, context={'usuario': usuario}
+        ).data,
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def cuenta_personal_detalle(request, pk):
+    """
+    GET    → Detalle si la cuenta está en cuentas_visibles.
+    PUT/PATCH → Solo el dueño puede editar.
+    DELETE → Solo el dueño puede eliminar (si tiene movimientos, puede fallar por FK).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    try:
+        cuenta = CuentaPersonal.objects.select_related('usuario').get(pk=pk)
+    except CuentaPersonal.DoesNotExist:
+        return Response(
+            {'error': 'Cuenta no encontrada.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    visibles = usuario.cuentas_visibles()
+    if not visibles.filter(pk=cuenta.pk).exists():
+        return Response(
+            {'error': 'Sin permisos para acceder a esta cuenta.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    ctx = {'usuario': usuario}
+
+    if request.method == 'GET':
+        return Response(CuentaPersonalSerializer(cuenta, context=ctx).data)
+
+    if cuenta.usuario_id != usuario.id:
+        return Response(
+            {'error': 'Solo el dueño puede modificar o eliminar esta cuenta.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == 'DELETE':
+        cuenta.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    serializer = CuentaPersonalWriteSerializer(
+        cuenta, data=request.data, partial=request.method == 'PATCH'
+    )
+    if serializer.is_valid():
+        serializer.save()
+        cuenta.refresh_from_db()
+        return Response(CuentaPersonalSerializer(cuenta, context=ctx).data)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ── MOVIMIENTOS ───────────────────────────────────────────────────────────────

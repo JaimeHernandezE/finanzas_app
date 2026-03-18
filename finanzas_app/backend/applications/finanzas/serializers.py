@@ -1,7 +1,15 @@
 # applications/finanzas/serializers.py
 
 from rest_framework import serializers
-from .models import Categoria, MetodoPago, Tarjeta, Movimiento, Cuota, IngresoComun
+from .models import (
+    Categoria,
+    CuentaPersonal,
+    MetodoPago,
+    Tarjeta,
+    Movimiento,
+    Cuota,
+    IngresoComun,
+)
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
@@ -82,6 +90,43 @@ class MovimientoListSerializer(serializers.ModelSerializer):
             'tarjeta', 'tarjeta_nombre',
             'autor_nombre', 'oculto',
         ]
+
+
+class CuentaPersonalSerializer(serializers.ModelSerializer):
+    """Listado: cuentas propias y tuteladas visibles para el usuario autenticado."""
+
+    es_propia = serializers.SerializerMethodField()
+    duenio_nombre = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CuentaPersonal
+        fields = [
+            'id',
+            'nombre',
+            'descripcion',
+            'visible_familia',
+            'es_propia',
+            'duenio_nombre',
+        ]
+
+    def get_es_propia(self, obj):
+        u = self.context.get('usuario')
+        if u is None:
+            return True
+        return obj.usuario_id == u.id
+
+    def get_duenio_nombre(self, obj):
+        u = self.context.get('usuario')
+        if u is None or obj.usuario_id == u.id:
+            return None
+        o = obj.usuario
+        return (o.get_full_name() or o.email or o.username or '').strip() or str(o.pk)
+
+
+class CuentaPersonalWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CuentaPersonal
+        fields = ['nombre', 'descripcion', 'visible_familia']
 
 
 class IngresoComunSerializer(serializers.ModelSerializer):

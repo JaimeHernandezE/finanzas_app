@@ -17,7 +17,7 @@ const ITEMS = [
     grupo: 'FINANZAS',
     items: [
       { icon: '▤', label: 'Categorías', resumen: '12 categorías', to: '/configuracion/categorias' },
-      { icon: '◫', label: 'Cuentas personales', resumen: '2 cuentas', to: '/configuracion/cuentas' },
+      { icon: '◫', label: 'Cuentas personales', resumen: 'Organizar gastos', to: '/configuracion/cuentas' },
     ],
   },
   {

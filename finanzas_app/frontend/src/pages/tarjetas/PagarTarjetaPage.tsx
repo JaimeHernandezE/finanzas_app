@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Input, Select, Textarea } from '@/components/ui'
 import type { SelectOption } from '@/components/ui'
 import { useTarjetas } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { movimientosApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
@@ -49,11 +50,6 @@ const CATEGORIAS_EGRESO: SelectOption[] = [
   { value: 'ropa', label: 'Ropa' },
   { value: 'educacion', label: 'Educación' },
   { value: 'otros', label: 'Otros' },
-]
-
-const CUENTAS: SelectOption[] = [
-  { value: '1', label: 'Personal' },
-  { value: '2', label: 'Arquitecto' },
 ]
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,10 +255,12 @@ type AmbitoGasto = 'PERSONAL' | 'COMUN'
 
 function ModalNuevoGasto({
   tarjetaNombre,
+  cuentaOptions,
   onClose,
   onGuardar,
 }: {
   tarjetaNombre: string
+  cuentaOptions: SelectOption[]
   onClose: () => void
   onGuardar: (cuotas: Cuota[]) => void
 }) {
@@ -349,8 +347,14 @@ function ModalNuevoGasto({
                 </div>
               </div>
             </div>
-            {ambito === 'PERSONAL' && (
-              <Select name="cuenta" label="Cuenta" options={CUENTAS} placeholder="Selecciona cuenta…" />
+            {ambito === 'PERSONAL' && cuentaOptions.length > 0 && (
+              <Select
+                name="cuenta"
+                label="Cuenta"
+                options={cuentaOptions}
+                placeholder="Selecciona cuenta…"
+                defaultValue={cuentaOptions[0]?.value}
+              />
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Select
@@ -411,6 +415,14 @@ function ModalNuevoGasto({
 
 export default function PagarTarjetaPage() {
   const navigate = useNavigate()
+  const { data: cuentasData } = useCuentasPersonales()
+  const cuentaOptionsModal = useMemo(
+    () =>
+      (cuentasData ?? [])
+        .filter(c => c.es_propia)
+        .map(c => ({ value: String(c.id), label: c.nombre })),
+    [cuentasData],
+  )
 
   const hoy = new Date()
   const { data: tarjetasData } = useTarjetas()
@@ -704,6 +716,7 @@ export default function PagarTarjetaPage() {
       {modalNuevoGasto && (
         <ModalNuevoGasto
           tarjetaNombre={tarjeta?.nombre ?? ''}
+          cuentaOptions={cuentaOptionsModal}
           onClose={() => setModalNuevoGasto(false)}
           onGuardar={() => {
             refetch()

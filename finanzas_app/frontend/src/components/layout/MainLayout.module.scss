@@ -197,6 +197,20 @@
   }
 }
 
+.navHint {
+  list-style: none;
+  padding: 0 $space-3 $space-2;
+}
+
+.navHintLink {
+  font-size: $font-size-sm;
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: none;
+  &:hover {
+    color: $sidebar-accent;
+  }
+}
+
 // ── Nav item ──────────────────────────────────────────────────────────────────
 
 .navItem {

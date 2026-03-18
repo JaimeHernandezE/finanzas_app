@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './CuentaPage.module.scss'
 
@@ -33,15 +34,6 @@ interface GrupoFecha {
   fecha:        string
   label:        string
   movimientos:  Movimiento[]
-}
-
-// Cuenta: sin endpoint de cuentas, se mantiene mock
-const MOCK_CUENTA: Cuenta = {
-  id:         '1',
-  nombre:     'Mis gastos',
-  esPropia:   true,
-  esTutelada: false,
-  esComun:    false,
 }
 
 const METODOS_PAGO: { value: Movimiento['metodo_pago_tipo']; label: string }[] = [
@@ -352,8 +344,21 @@ function DeleteModal({
 export default function CuentaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { data: cuentasData, loading: cuentasLoading, error: cuentasError } =
+    useCuentasPersonales()
 
-  const cuenta: Cuenta = { ...MOCK_CUENTA, id: id ?? '1' }
+  const cuenta: Cuenta | null = useMemo(() => {
+    const c = cuentasData?.find(x => String(x.id) === id)
+    if (!c) return null
+    return {
+      id: String(c.id),
+      nombre: c.nombre,
+      esPropia: c.es_propia,
+      esTutelada: !c.es_propia,
+      duenio: c.duenio_nombre ?? undefined,
+      esComun: false,
+    }
+  }, [cuentasData, id])
 
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
@@ -426,6 +431,16 @@ export default function CuentaPage() {
 
   const grupos = groupByDate(movimientosFiltrados)
   const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.length > 0
+
+  if (cuentasLoading) return <Cargando />
+  if (cuentasError) return <ErrorCarga mensaje={cuentasError} />
+  if (!cuenta) {
+    return (
+      <ErrorCarga
+        mensaje="Cuenta no encontrada o sin acceso. Crea una cuenta en Configuración o elige otra en el menú."
+      />
+    )
+  }
 
   if (loading) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />
