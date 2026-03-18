@@ -4,6 +4,7 @@ import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './CuentaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,9 +56,6 @@ const MESES_CORTOS = [
   'ene', 'feb', 'mar', 'abr', 'may', 'jun',
   'jul', 'ago', 'sep', 'oct', 'nov', 'dic',
 ]
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 const fechaGrupo = (iso: string) => {
   const [, m, d] = iso.split('-').map(Number)
@@ -209,6 +207,7 @@ function MovimientoRow({
   onEdit:   (id: number) => void
   onDelete: (mov: Movimiento) => void
 }) {
+  const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
 
@@ -227,7 +226,7 @@ function MovimientoRow({
         className={styles.movMonto}
         style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
       >
-        {esIngreso ? '+' : '−'}{clp(mov.monto)}
+        {esIngreso ? '+' : '−'}{formatMonto(mov.monto)}
       </span>
 
       <span
@@ -265,6 +264,7 @@ function DateGroup({
   onEdit:   (id: number) => void
   onDelete: (mov: Movimiento) => void
 }) {
+  const { formatMonto } = useConfig()
   const subtotal = grupo.movimientos.reduce(
     (acc, m) => acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto), 0,
   )
@@ -274,7 +274,7 @@ function DateGroup({
       <div className={styles.grupoHeader}>
         <span className={styles.grupoLabel}>{grupo.label.toUpperCase()}</span>
         <span className={styles.grupoSep}> — </span>
-        <span className={styles.grupoSubtotal}>{clp(subtotal)}</span>
+        <span className={styles.grupoSubtotal}>{formatMonto(subtotal)}</span>
       </div>
       {grupo.movimientos.map(m => (
         <MovimientoRow
@@ -313,6 +313,7 @@ function DeleteModal({
   onCancel:  () => void
   onConfirm: () => void
 }) {
+  const { formatMonto } = useConfig()
   return (
     <div className={styles.modalOverlay} onClick={onCancel}>
       <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
@@ -320,7 +321,7 @@ function DeleteModal({
         <p className={styles.modalTexto}>
           ¿Eliminar{' '}
           <strong>"{mov.comentario || '—'}"</strong>{' '}
-          por <strong>{clp(mov.monto)}</strong>?
+          por <strong>{formatMonto(mov.monto)}</strong>?
           <br />
           Esta acción no se puede deshacer.
         </p>

@@ -4,6 +4,7 @@ import { useViaje } from '@/context/ViajeContext'
 import { useViajeDetalle } from '@/hooks/useViajes'
 import { viajesApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import type { PresupuestoViaje, MovimientoViaje } from './mockViajes'
 import styles from './ViajeDetallePage.module.scss'
 
@@ -23,9 +24,6 @@ interface ViajeDetalleApi {
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 function formatFechaCorta(fecha: string): string {
   return new Date(fecha + 'T12:00:00').toLocaleDateString('es-CL', {
@@ -47,6 +45,7 @@ function colorBarra(gastado: number, presupuestado: number): string {
 // -----------------------------------------------------------------------------
 
 function FilaCategoria({ p }: { p: PresupuestoViaje }) {
+  const { formatMonto } = useConfig()
   const presup = p.montoPresupuestado
   const gastado = p.montoGastado ?? 0
   const pct = presup > 0 ? (gastado / presup) * 100 : 0
@@ -59,7 +58,7 @@ function FilaCategoria({ p }: { p: PresupuestoViaje }) {
       <div className={styles.catItemRow}>
         <span className={styles.catItemNombre}>{p.categoriaNombre}</span>
         <span className={styles.catItemMontos}>
-          {clp(gastado)} / {clp(presup)}
+          {formatMonto(gastado)} / {formatMonto(presup)}
         </span>
         <div className={styles.catItemBarWrap}>
           <div className={styles.barTrack}>
@@ -94,6 +93,7 @@ function FilaCategoria({ p }: { p: PresupuestoViaje }) {
 }
 
 function FilaMovimiento({ m }: { m: MovimientoViaje }) {
+  const { formatMonto } = useConfig()
   return (
     <div className={styles.movimientoItem}>
       <span className={styles.movimientoFecha}>{formatFechaCorta(m.fecha)}</span>
@@ -102,7 +102,7 @@ function FilaMovimiento({ m }: { m: MovimientoViaje }) {
         <div className={styles.movimientoDescripcion}>{m.descripcion}</div>
         <div className={styles.movimientoCategoria}>{m.categoria}</div>
       </div>
-      <span className={styles.movimientoMonto}>{clp(m.monto)}</span>
+      <span className={styles.movimientoMonto}>{formatMonto(m.monto)}</span>
     </div>
   )
 }
@@ -112,6 +112,7 @@ function FilaMovimiento({ m }: { m: MovimientoViaje }) {
 // -----------------------------------------------------------------------------
 
 export default function ViajeDetallePage() {
+  const { formatMonto } = useConfig()
   const { id } = useParams<{ id: string }>()
   const { refetchViajes } = useViaje()
   const { data: viajeData, loading, error, refetch } = useViajeDetalle(Number(id))
@@ -236,13 +237,13 @@ export default function ViajeDetallePage() {
           <div className={styles.resumenItem}>
             <span className={styles.resumenLabel}>Presupuestado</span>
             <span className={styles.resumenValor}>
-              {clp(totalPresupuestado)}
+              {formatMonto(totalPresupuestado)}
             </span>
           </div>
           <div className={styles.resumenItem}>
             <span className={styles.resumenLabel}>Gastado</span>
             <span className={styles.resumenValor}>
-              {clp(totalGastado)}
+              {formatMonto(totalGastado)}
             </span>
           </div>
           <div className={styles.resumenItem}>
@@ -254,7 +255,7 @@ export default function ViajeDetallePage() {
                 esExcedido ? styles.resumenValorDanger : styles.resumenValorSuccess
               }`}
             >
-              {clp(Math.abs(diferencia))} (
+              {formatMonto(Math.abs(diferencia))} (
               {diferenciaPct >= 0 ? '+' : ''}
               {diferenciaPct.toFixed(1)}%)
             </span>

@@ -233,39 +233,11 @@
   padding: $space-1 $space-2;
 }
 
-.inputMontoWrap {
-  display: flex;
-  align-items: center;
-  border: 1px solid $color-border;
-  border-radius: $radius-base;
-  background: $color-bg-white;
+.sueldoMontoInput {
+  flex: 0 1 180px;
+  min-width: 120px;
   height: $input-height-sm;
-  padding: 0 $space-2;
-  min-width: 100px;
-
-  &:focus-within {
-    border-color: $color-border-focus;
-    box-shadow: 0 0 0 3px rgba($color-primary, 0.15);
-  }
-}
-
-.prefijoClp {
-  font-size: $font-size-sm;
-  color: $color-text-muted;
-  margin-right: $space-1;
-}
-
-.inputMonto {
-  flex: 1;
-  border: none;
-  background: none;
-  font-size: $input-font-size;
-  color: $color-text;
-  min-width: 60px;
-
-  &:focus {
-    outline: none;
-  }
+  padding: $space-1 $space-2;
 }
 
 .btnIcon {

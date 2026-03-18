@@ -2,7 +2,9 @@ import { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useFondoDetalle } from '@/hooks/useInversiones'
 import { inversionesApi } from '@/api'
-import { Cargando, ErrorCarga } from '@/components/ui'
+import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
+import { montoClpANumero } from '@/utils/montoClp'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './FondoDetallePage.module.scss'
 import type { EventoFondo } from './data'
 
@@ -17,9 +19,6 @@ interface FondoDetalleApi {
   historial?: { id: number; tipo: string; fecha: string; monto: string; nota?: string | null }[]
 }
 
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
-
 const hoy = () => new Date().toISOString().slice(0, 10)
 
 function formatFecha(fecha: string) {
@@ -30,6 +29,7 @@ function formatFecha(fecha: string) {
 }
 
 export default function FondoDetallePage() {
+  const { formatMonto } = useConfig()
   const { id } = useParams<{ id: string }>()
   const { data: fondoData, loading, error, refetch } = useFondoDetalle(Number(id))
   const fondo = fondoData as FondoDetalleApi | null | undefined
@@ -73,11 +73,11 @@ export default function FondoDetallePage() {
   }
 
   const handleConfirmAporte = async () => {
-    const monto = formAporteMonto
-    if (!monto || Number(monto) < 0) return
+    const n = montoClpANumero(formAporteMonto)
+    if (n <= 0) return
     await inversionesApi.agregarAporte(Number(id), {
       fecha: formAporteFecha,
-      monto,
+      monto: String(n),
       nota: formAporteNota.trim() || undefined,
     })
     setFormAporteMonto('')
@@ -128,15 +128,15 @@ export default function FondoDetallePage() {
       </Link>
       <h1 className={styles.titulo}>{fondo.nombre}</h1>
       <div className={styles.metricasFila}>
-        <span>Capital {clp(capitalTotal)}</span>
-        <span>Valor actual {clp(valorActual)}</span>
+        <span>Capital {formatMonto(capitalTotal)}</span>
+        <span>Valor actual {formatMonto(valorActual)}</span>
         <span
           className={
             esGananciaPositiva ? styles.metricaGananciaPos : styles.metricaGananciaNeg
           }
         >
           Ganancia {esGananciaPositiva ? '+' : ''}
-          {rentabilidad.toFixed(1)}% ({clp(ganancia)})
+          {rentabilidad.toFixed(1)}% ({formatMonto(ganancia)})
         </span>
       </div>
 
@@ -177,13 +177,12 @@ export default function FondoDetallePage() {
             </label>
             <input
               id="valor-monto"
-              type="number"
-              min={0}
-              step={1000}
+              type="text"
+              inputMode="decimal"
               className={styles.formInlineInputNum}
               value={formValorMonto}
-              onChange={(e) => setFormValorMonto(e.target.value)}
-              placeholder="0"
+              onChange={(e) => setFormValorMonto(e.target.value.replace(',', '.'))}
+              placeholder="Ej: 1250,5"
             />
           </div>
           <button
@@ -223,15 +222,13 @@ export default function FondoDetallePage() {
             <label className={styles.formInlineLabel} htmlFor="aporte-monto">
               Monto del aporte
             </label>
-            <input
+            <InputMontoClp
+              soloInput
               id="aporte-monto"
-              type="number"
-              min={0}
-              step={1000}
-              className={styles.formInlineInputNum}
+              inputClassName={styles.formInlineInputNum}
               value={formAporteMonto}
-              onChange={(e) => setFormAporteMonto(e.target.value)}
-              placeholder="0"
+              onChange={setFormAporteMonto}
+              aria-label="Monto del aporte"
             />
           </div>
           <div>
@@ -311,7 +308,7 @@ export default function FondoDetallePage() {
                       ev.tipo === 'APORTE' ? styles.historialMontoAporte : ''
                     }`}
                   >
-                    {clp(ev.monto)}
+                    {formatMonto(ev.monto)}
                   </span>
                   <button
                     type="button"
