@@ -273,6 +273,30 @@ def familia_invitaciones(request):
     )
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def configuracion_global(request):
+    """
+    Retorna la configuración global de la app: zona horaria, moneda, formato.
+    No requiere autenticación — se consume antes del login.
+
+    En el futuro este endpoint puede incluir el tipo de cambio
+    obtenido de una API externa (ej: mindicador.cl para CLP/USD).
+    """
+    from django.conf import settings
+
+    return Response({
+        'zona_horaria': settings.TIME_ZONE,
+        'moneda': {
+            'codigo':              settings.MONEDA_BASE,
+            'simbolo':             settings.MONEDA_SIMBOLO,
+            'decimales':           settings.MONEDA_DECIMALES,
+            'separador_miles':     settings.MONEDA_SEPARADOR_MILES,
+            'separador_decimales': settings.MONEDA_SEPARADOR_DECIMALES,
+        },
+    })
+
+
 @api_view(['DELETE'])
 @authentication_classes([])
 @permission_classes([AllowAny])

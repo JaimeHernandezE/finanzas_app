@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import MainLayout from '@/components/layout/MainLayout'
+import { ConfigProvider } from '@/context/ConfigContext'
 import { AuthProvider } from '@/context/AuthContext'
 import { ViajeProvider } from '@/context/ViajeContext'
 import LoginPage from '@/pages/login/LoginPage'
@@ -28,9 +29,10 @@ import PerfilPage from '@/pages/configuracion/PerfilPage'
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <ViajeProvider>
+    <ConfigProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <ViajeProvider>
           <Routes>
             <Route path="login" element={<LoginPage />} />
             <Route element={<MainLayout />}>
@@ -76,8 +78,9 @@ export default function App() {
             </Route>
             </Route>
           </Routes>
-        </ViajeProvider>
-      </AuthProvider>
-    </BrowserRouter>
+          </ViajeProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ConfigProvider>
   )
 }
