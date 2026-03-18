@@ -66,3 +66,9 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 **Registro (`POST /api/usuarios/registro/`):** si ya existen usuarios en el sistema, un correo nuevo solo puede registrarse si hay una **invitación pendiente** para ese email (creada desde Miembros). El primer usuario de la base sigue creando la familia como ADMIN.
 
 **Modelo:** `InvitacionPendiente` (familia + email + invitador). Las categorías **globales** solo admiten cambio de `nombre` en `PUT /api/finanzas/categorias/<id>/`.
+
+## Ingresos comunes y cuenta «Personal»
+
+- Al **crear un usuario** (registro o invitación), se crea automáticamente una `CuentaPersonal` con nombre **«Personal»** (efectivo / vista personal por defecto).
+- Cada **`IngresoComun`** guardado genera o actualiza un **`Movimiento`** de tipo **INGRESO**, ámbito **PERSONAL**, método de pago **EFECTIVO**, en esa cuenta; `comentario` = `origen`; `fecha` = primer día del mes (`mes`). La categoría global del sistema **«Ingreso declarado (fondo común)»** se crea si no existe.
+- Al **eliminar** un `IngresoComun`, se elimina el movimiento vinculado.

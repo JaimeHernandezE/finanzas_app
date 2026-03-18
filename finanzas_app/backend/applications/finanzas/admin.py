@@ -52,5 +52,6 @@ class PresupuestoAdmin(admin.ModelAdmin):
 
 @admin.register(IngresoComun)
 class IngresoComunAdmin(admin.ModelAdmin):
-    list_display = ['usuario', 'mes', 'monto', 'origen', 'familia']
+    list_display = ['usuario', 'mes', 'monto', 'origen', 'familia', 'movimiento']
     list_filter  = ['familia']
+    readonly_fields = ['movimiento']

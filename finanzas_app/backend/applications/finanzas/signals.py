@@ -3,11 +3,115 @@
 from decimal import Decimal, ROUND_DOWN
 from datetime import date, datetime
 
-from django.db.models.signals import post_save
+from django.contrib.auth import get_user_model
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 from dateutil.relativedelta import relativedelta
 
-from .models import Movimiento, Cuota
+from .models import (
+    Categoria,
+    CuentaPersonal,
+    IngresoComun,
+    MetodoPago,
+    Movimiento,
+    Cuota,
+)
+
+# Nombre estable de la categoría global para ingresos generados desde IngresoComun.
+CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN = 'Ingreso declarado (fondo común)'
+
+
+@receiver(post_save, sender=get_user_model())
+def crear_cuenta_personal_por_defecto(sender, instance, created, **kwargs):
+    """Crea la cuenta personal «Personal» al registrar un usuario."""
+    if not created:
+        return
+    CuentaPersonal.objects.get_or_create(
+        usuario=instance,
+        nombre='Personal',
+        defaults={
+            'descripcion': 'Cuenta por defecto para finanzas personales y efectivo.',
+        },
+    )
+
+
+def _obtener_metodo_efectivo():
+    m = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+    if m:
+        return m
+    return MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+
+def _obtener_categoria_ingreso_declarado():
+    c = Categoria.objects.filter(
+        nombre=CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN,
+        familia__isnull=True,
+        usuario__isnull=True,
+    ).first()
+    if c:
+        return c
+    return Categoria.objects.create(
+        nombre=CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN,
+        tipo='INGRESO',
+        es_inversion=False,
+    )
+
+
+def _asegurar_cuenta_personal(usuario):
+    cuenta, _ = CuentaPersonal.objects.get_or_create(
+        usuario=usuario,
+        nombre='Personal',
+        defaults={
+            'descripcion': 'Cuenta por defecto para finanzas personales y efectivo.',
+        },
+    )
+    return cuenta
+
+
+@receiver(post_save, sender=IngresoComun)
+def sincronizar_movimiento_desde_ingreso_comun(sender, instance, created, **kwargs):
+    """
+    Refleja cada IngresoComun como Movimiento INGRESO en efectivo en cuenta Personal.
+    """
+    cuenta = _asegurar_cuenta_personal(instance.usuario)
+    metodo = _obtener_metodo_efectivo()
+    categoria = _obtener_categoria_ingreso_declarado()
+
+    payload = {
+        'familia_id': instance.familia_id,
+        'usuario_id': instance.usuario_id,
+        'cuenta_id': cuenta.pk,
+        'tipo': 'INGRESO',
+        'ambito': 'PERSONAL',
+        'categoria_id': categoria.pk,
+        'metodo_pago_id': metodo.pk,
+        'fecha': instance.mes,
+        'monto': instance.monto,
+        'comentario': instance.origen or '',
+    }
+
+    if created or not instance.movimiento_id:
+        mov = Movimiento.objects.create(
+            familia_id=instance.familia_id,
+            usuario_id=instance.usuario_id,
+            cuenta=cuenta,
+            tipo='INGRESO',
+            ambito='PERSONAL',
+            categoria=categoria,
+            metodo_pago=metodo,
+            fecha=instance.mes,
+            monto=instance.monto,
+            comentario=instance.origen or '',
+        )
+        IngresoComun.objects.filter(pk=instance.pk).update(movimiento_id=mov.pk)
+    else:
+        Movimiento.objects.filter(pk=instance.movimiento_id).update(**payload)
+
+
+@receiver(post_delete, sender=IngresoComun)
+def eliminar_movimiento_vinculado_ingreso_comun(sender, instance, **kwargs):
+    if instance.movimiento_id:
+        Movimiento.objects.filter(pk=instance.movimiento_id).delete()
 
 
 @receiver(post_save, sender=Movimiento)

@@ -249,3 +249,63 @@ class IngresoComunModelTest(FinanzasTestBase):
         )
         primero = IngresoComun.objects.first()
         self.assertEqual(primero.mes, datetime.date(2026, 3, 1))
+
+
+class UsuarioCuentaPersonalDefaultTest(FinanzasTestBase):
+    """Al crear un usuario existe la cuenta personal «Personal»."""
+
+    def test_cuenta_personal_por_defecto(self):
+        cuenta = CuentaPersonal.objects.get(usuario=self.usuario, nombre='Personal')
+        self.assertEqual(cuenta.usuario, self.usuario)
+
+
+class IngresoComunMovimientoSignalTest(FinanzasTestBase):
+    """IngresoComun genera Movimiento INGRESO en cuenta Personal."""
+
+    def test_crea_movimiento_vinculado(self):
+        from applications.finanzas.signals import CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN
+
+        ing = IngresoComun.objects.create(
+            familia=self.familia,
+            usuario=self.usuario,
+            mes=datetime.date(2026, 3, 1),
+            monto=Decimal('500000.00'),
+            origen='Sueldo',
+        )
+        ing.refresh_from_db()
+        self.assertIsNotNone(ing.movimiento_id)
+        m = ing.movimiento
+        self.assertEqual(m.tipo, 'INGRESO')
+        self.assertEqual(m.ambito, 'PERSONAL')
+        self.assertEqual(m.cuenta.nombre, 'Personal')
+        self.assertEqual(m.comentario, 'Sueldo')
+        self.assertEqual(m.monto, Decimal('500000.00'))
+        self.assertEqual(m.fecha, datetime.date(2026, 3, 1))
+        self.assertEqual(m.metodo_pago.tipo, 'EFECTIVO')
+        self.assertEqual(m.categoria.nombre, CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN)
+
+    def test_editar_ingreso_actualiza_movimiento(self):
+        ing = IngresoComun.objects.create(
+            familia=self.familia,
+            usuario=self.usuario,
+            mes=datetime.date(2026, 3, 1),
+            monto=Decimal('400000.00'),
+            origen='A',
+        )
+        ing.monto = Decimal('600000.00')
+        ing.origen = 'Bono'
+        ing.save()
+        ing.refresh_from_db()
+        self.assertEqual(ing.movimiento.monto, Decimal('600000.00'))
+        self.assertEqual(ing.movimiento.comentario, 'Bono')
+
+    def test_eliminar_ingreso_elimina_movimiento(self):
+        ing = IngresoComun.objects.create(
+            familia=self.familia,
+            usuario=self.usuario,
+            mes=datetime.date(2026, 4, 1),
+            monto=Decimal('100.00'),
+        )
+        mid = ing.movimiento_id
+        ing.delete()
+        self.assertFalse(Movimiento.objects.filter(pk=mid).exists())

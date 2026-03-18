@@ -338,6 +338,10 @@ class IngresoComun(models.Model):
     Registro de ingresos mensuales de cada miembro al fondo común familiar.
     Se usa para calcular la proporción de cada usuario en la liquidación mensual.
 
+    Al guardar, un signal crea o actualiza un Movimiento INGRESO en efectivo en la
+    cuenta personal «Personal» (comentario = origen). Si se elimina este registro,
+    ese movimiento se elimina en cascada lógica.
+
     Ejemplo: si el usuario A gana $1.000.000 y el usuario B gana $500.000,
     A aporta el 66.7% y B el 33.3% de los gastos comunes del mes.
     """
@@ -358,6 +362,14 @@ class IngresoComun(models.Model):
         max_length=100,
         blank=True,
         help_text="Descripción del origen del ingreso. Ej: 'Sueldo', 'Honorarios', 'Arriendo'."
+    )
+    movimiento = models.OneToOneField(
+        'Movimiento',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ingreso_comun',
+        help_text='Ingreso en efectivo en cuenta Personal generado automáticamente.',
     )
 
     def __str__(self):
