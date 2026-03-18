@@ -1,64 +1,56 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
+import { useApi } from '@/hooks/useApi'
+import { useCategorias } from '@/hooks/useCatalogos'
+import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './PresupuestoPage.module.scss'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface CategoriaPresupuesto {
-  id: string
+interface CatPres {
+  categoriaId: number
+  presupuestoId: number | null
   nombre: string
   presupuestado: number | null
   gastado: number
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Datos mock  // TODO: reemplazar por fetch al backend
-// ─────────────────────────────────────────────────────────────────────────────
-
-const MOCK_FAMILIAR: CategoriaPresupuesto[] = [
-  { id: '1', nombre: 'Alimentación', presupuestado: 150000, gastado: 115400 },
-  { id: '2', nombre: 'Servicios', presupuestado: 80000, gastado: 62300 },
-  { id: '3', nombre: 'Educación', presupuestado: 300000, gastado: 320000 },
-  { id: '4', nombre: 'Salud', presupuestado: 50000, gastado: 15600 },
-  { id: '5', nombre: 'Transporte', presupuestado: null, gastado: 45000 },
-  { id: '6', nombre: 'Entretención', presupuestado: null, gastado: 10990 },
-]
-
-const MOCK_PERSONAL: CategoriaPresupuesto[] = [
-  { id: '7', nombre: 'Alimentación', presupuestado: 80000, gastado: 52000 },
-  { id: '8', nombre: 'Transporte', presupuestado: 60000, gastado: 45000 },
-  { id: '9', nombre: 'Entretención', presupuestado: 30000, gastado: 38500 },
-]
-
-// Categorías disponibles para agregar al presupuesto  // TODO: reemplazar por fetch al backend
-const MOCK_CATEGORIAS_DISPONIBLES = [
-  'Alimentación', 'Transporte', 'Servicios', 'Salud',
-  'Educación', 'Entretención', 'Honorarios',
-]
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+function filaToCat(f: PresupuestoMesFila): CatPres {
+  const pres =
+    f.monto_presupuestado != null
+      ? Math.round(Number(f.monto_presupuestado) || 0)
+      : null
+  return {
+    categoriaId: f.categoria_id,
+    presupuestoId: f.presupuesto_id,
+    nombre: f.categoria_nombre,
+    presupuestado: pres,
+    gastado: Math.round(Number(f.gastado) || 0),
+  }
+}
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
+function toPesos(n: unknown): number {
+  const x = Number(n)
+  return Number.isFinite(x) ? Math.round(x) : 0
+}
+
+function pesosFmt(n: number): string {
+  const v = toPesos(n)
+  const abs = Math.abs(v).toLocaleString('es-CL', { maximumFractionDigits: 0 })
+  if (v === 0) return `$${abs}`
+  return v < 0 ? `−$${abs}` : `$${abs}`
+}
 
 function colorBarra(gastado: number, presupuestado: number): string {
+  if (presupuestado <= 0) return gastado > 0 ? '#f59e0b' : '#94a3b8'
   const pct = (gastado / presupuestado) * 100
   if (pct <= 80) return '#22a06b'
   if (pct <= 100) return '#f59e0b'
   return '#ff4d4d'
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Subcomponentes internos
-// ─────────────────────────────────────────────────────────────────────────────
 
 function ResumenCards({
   totalPresupuestado,
@@ -76,11 +68,11 @@ function ResumenCards({
     <div className={styles.resumenGrid}>
       <div className={styles.resumenCard}>
         <span className={styles.resumenLabel}>Presupuestado</span>
-        <span className={styles.resumenValor}>{clp(totalPresupuestado)}</span>
+        <span className={styles.resumenValor}>{pesosFmt(totalPresupuestado)}</span>
       </div>
       <div className={styles.resumenCard}>
         <span className={styles.resumenLabel}>Gastado</span>
-        <span className={styles.resumenValor}>{clp(totalGastado)}</span>
+        <span className={styles.resumenValor}>{pesosFmt(totalGastado)}</span>
         <span className={styles.resumenPorcentaje}>
           {porcentajeGeneral.toFixed(1)}%
         </span>
@@ -94,7 +86,7 @@ function ResumenCards({
             isExcedido ? styles.resumenValorDanger : styles.resumenValorSuccess
           }`}
         >
-          {clp(Math.abs(disponible))}
+          {pesosFmt(Math.abs(disponible))}
         </span>
       </div>
     </div>
@@ -104,36 +96,37 @@ function ResumenCards({
 function ItemConPresupuesto({
   cat,
   onStartEdit,
-  editingId,
+  editingKey,
   editValue,
   onEditChange,
   onEditConfirm,
   onEditCancel,
 }: {
-  cat: CategoriaPresupuesto
-  onStartEdit: (id: string) => void
-  editingId: string | null
+  cat: CatPres
+  onStartEdit: (cat: CatPres) => void
+  editingKey: string | null
   editValue: string
   onEditChange: (v: string) => void
-  onEditConfirm: (id: string) => void
+  onEditConfirm: (cat: CatPres) => void
   onEditCancel: () => void
 }) {
+  const key = String(cat.categoriaId)
   const presup = cat.presupuestado ?? 0
-  const pct = presup > 0 ? (cat.gastado / presup) * 100 : 0
+  const pct = presup > 0 ? (cat.gastado / presup) * 100 : cat.gastado > 0 ? 999 : 0
   const color = colorBarra(cat.gastado, presup)
-  const barWidth = Math.min(pct, 100)
-  const excedido = pct > 100 ? cat.gastado - presup : 0
-  const isEditing = editingId === cat.id
+  const barWidth = presup > 0 ? Math.min(pct, 100) : cat.gastado > 0 ? 100 : 0
+  const excedido = presup > 0 && cat.gastado > presup ? cat.gastado - presup : 0
+  const isEditing = editingKey === key
 
   return (
     <div className={styles.catItem}>
       <div className={styles.catItemHeader}>
         <span className={styles.catItemNombre}>{cat.nombre}</span>
-        {!isEditing && (
+        {!isEditing && cat.presupuestoId != null && (
           <button
             type="button"
             className={styles.btnEdit}
-            onClick={() => onStartEdit(cat.id)}
+            onClick={() => onStartEdit(cat)}
             aria-label="Editar monto"
           >
             ✎
@@ -143,7 +136,7 @@ function ItemConPresupuesto({
       {isEditing ? (
         <div className={styles.catItemEditRow}>
           <span className={styles.catItemMontos}>
-            {clp(cat.gastado)} de{' '}
+            {pesosFmt(cat.gastado)} de{' '}
             <input
               type="number"
               className={styles.catItemEditInput}
@@ -157,7 +150,7 @@ function ItemConPresupuesto({
           <button
             type="button"
             className={styles.btnFormConfirm}
-            onClick={() => onEditConfirm(cat.id)}
+            onClick={() => onEditConfirm(cat)}
             aria-label="Confirmar"
           >
             ✓
@@ -174,7 +167,7 @@ function ItemConPresupuesto({
       ) : (
         <div className={styles.catItemRow}>
           <span className={styles.catItemMontos}>
-            {clp(cat.gastado)} de {clp(presup)}
+            {pesosFmt(cat.gastado)} de {pesosFmt(presup)}
           </span>
           <div className={styles.catItemBarWrap}>
             <div className={styles.barTrack}>
@@ -188,15 +181,12 @@ function ItemConPresupuesto({
                 }
               />
             </div>
-            <span
-              className={styles.catItemPct}
-              style={{ color }}
-            >
-              {pct.toFixed(1)}%
+            <span className={styles.catItemPct} style={{ color }}>
+              {presup > 0 ? `${pct.toFixed(1)}%` : cat.gastado > 0 ? '—' : '0%'}
             </span>
             {excedido > 0 ? (
               <span className={styles.catItemIndicadorExcedido}>
-                Excedido +{clp(excedido)}
+                Excedido +{pesosFmt(excedido)}
               </span>
             ) : (
               <span
@@ -217,21 +207,22 @@ function ItemConPresupuesto({
 function ItemSinPresupuesto({
   cat,
   onStartAssign,
-  assignPresupuestoId,
+  assignKey,
   assignValue,
   onAssignChange,
   onAssignConfirm,
   onAssignCancel,
 }: {
-  cat: CategoriaPresupuesto
-  onStartAssign: (id: string) => void
-  assignPresupuestoId: string | null
+  cat: CatPres
+  onStartAssign: (cat: CatPres) => void
+  assignKey: string | null
   assignValue: string
   onAssignChange: (v: string) => void
-  onAssignConfirm: (id: string) => void
+  onAssignConfirm: (cat: CatPres) => void
   onAssignCancel: () => void
 }) {
-  const isAssigning = assignPresupuestoId === cat.id
+  const key = String(cat.categoriaId)
+  const isAssigning = assignKey === key
 
   return (
     <div className={styles.catItemSinPresupuesto}>
@@ -244,7 +235,7 @@ function ItemSinPresupuesto({
           <button
             type="button"
             className={styles.btnAsignar}
-            onClick={() => onStartAssign(cat.id)}
+            onClick={() => onStartAssign(cat)}
           >
             + Asignar presupuesto
           </button>
@@ -265,7 +256,7 @@ function ItemSinPresupuesto({
           <button
             type="button"
             className={styles.btnFormConfirm}
-            onClick={() => onAssignConfirm(cat.id)}
+            onClick={() => onAssignConfirm(cat)}
             aria-label="Confirmar"
           >
             ✓
@@ -282,7 +273,7 @@ function ItemSinPresupuesto({
       ) : (
         <>
           <span className={styles.catItemSinGastado}>
-            {clp(cat.gastado)} gastado
+            {pesosFmt(cat.gastado)} gastado
           </span>
           <div className={styles.catItemSinBarWrap}>
             <div className={styles.barTrackEmpty} />
@@ -293,163 +284,179 @@ function ItemSinPresupuesto({
   )
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Página principal
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function PresupuestoPage() {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>('FAMILIAR')
-  const [categoriasFamiliar, setCategoriasFamiliar] =
-    useState<CategoriaPresupuesto[]>(MOCK_FAMILIAR)
-  const [categoriasPersonal, setCategoriasPersonal] =
-    useState<CategoriaPresupuesto[]>(MOCK_PERSONAL)
+
+  const { data: rawFilas, loading, error, refetch } = useApi<PresupuestoMesFila[]>(
+    () =>
+      finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito,
+      }),
+    [mes, anio, ambito],
+  )
+
+  const { data: categoriasData } = useCategorias()
+  const categoriasEgreso = useMemo(
+    () =>
+      ((categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]).filter(
+        c => c.tipo === 'EGRESO',
+      ),
+    [categoriasData],
+  )
+
+  const categorias = useMemo(
+    () => (rawFilas ?? []).map(filaToCat),
+    [rawFilas],
+  )
 
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
+  const [newCategoryId, setNewCategoryId] = useState('')
   const [newCategoryMonto, setNewCategoryMonto] = useState('')
+  const [actionError, setActionError] = useState<string | null>(null)
 
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editMontoValue, setEditMontoValue] = useState('')
 
-  const [assignPresupuestoId, setAssignPresupuestoId] = useState<string | null>(
-    null
-  )
+  const [assignKey, setAssignKey] = useState<string | null>(null)
   const [assignMontoValue, setAssignMontoValue] = useState('')
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
+  const mesApi = `${anio}-${String(mes + 1).padStart(2, '0')}-01`
+
   const irAnterior = () => {
     if (mes === 0) {
       setMes(11)
-      setAnio((a) => a - 1)
-    } else setMes((m) => m - 1)
+      setAnio(a => a - 1)
+    } else setMes(m => m - 1)
   }
 
   const irSiguiente = () => {
     if (esActual) return
     if (mes === 11) {
       setMes(0)
-      setAnio((a) => a + 1)
-    } else setMes((m) => m + 1)
+      setAnio(a => a + 1)
+    } else setMes(m => m + 1)
   }
 
-  const categorias =
-    ambito === 'FAMILIAR' ? categoriasFamiliar : categoriasPersonal
-  const setCategorias =
-    ambito === 'FAMILIAR' ? setCategoriasFamiliar : setCategoriasPersonal
-
   const conPresupuesto = useMemo(
-    () => categorias.filter((c) => c.presupuestado !== null),
-    [categorias]
+    () => categorias.filter(c => c.presupuestoId != null),
+    [categorias],
   )
+  const sinPresupuesto = useMemo(
+    () => categorias.filter(c => c.presupuestoId == null),
+    [categorias],
+  )
+
   const totalPresupuestado = conPresupuesto.reduce(
     (s, c) => s + (c.presupuestado ?? 0),
-    0
+    0,
   )
   const totalGastado = conPresupuesto.reduce((s, c) => s + c.gastado, 0)
   const disponible = totalPresupuestado - totalGastado
   const porcentajeGeneral =
-    totalPresupuestado > 0
-      ? (totalGastado / totalPresupuestado) * 100
-      : 0
+    totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0
 
   const conPresupuestoOrdenadas = useMemo(
     () =>
       [...conPresupuesto].sort((a, b) => {
-        const pctA = ((a.presupuestado ?? 0) > 0)
-          ? (a.gastado / (a.presupuestado ?? 1)) * 100
-          : 0
-        const pctB = ((b.presupuestado ?? 0) > 0)
-          ? (b.gastado / (b.presupuestado ?? 1)) * 100
-          : 0
+        const pa = a.presupuestado ?? 1
+        const pb = b.presupuestado ?? 1
+        const pctA = pa > 0 ? (a.gastado / pa) * 100 : 0
+        const pctB = pb > 0 ? (b.gastado / pb) * 100 : 0
         return pctB - pctA
       }),
-    [conPresupuesto]
+    [conPresupuesto],
   )
   const sinPresupuestoOrdenadas = useMemo(
-    () =>
-      [...categorias.filter((c) => c.presupuestado === null)].sort((a, b) =>
-        a.nombre.localeCompare(b.nombre)
-      ),
-    [categorias]
+    () => [...sinPresupuesto].sort((a, b) => a.nombre.localeCompare(b.nombre)),
+    [sinPresupuesto],
   )
 
-  const categoriasNombres = categorias.map((c) => c.nombre)
-  const categoriasDisponiblesParaAgregar = MOCK_CATEGORIAS_DISPONIBLES.filter(
-    (nombre) => !categoriasNombres.includes(nombre)
+  const idsEnLista = useMemo(() => new Set(categorias.map(c => c.categoriaId)), [categorias])
+  const categoriasDisponiblesParaAgregar = useMemo(
+    () => categoriasEgreso.filter(c => !idsEnLista.has(c.id)),
+    [categoriasEgreso, idsEnLista],
+  )
+
+  const runAction = useCallback(
+    async (fn: () => Promise<void>) => {
+      setActionError(null)
+      try {
+        await fn()
+        await refetch()
+      } catch (e: unknown) {
+        const ax = e as { response?: { data?: Record<string, unknown> } }
+        const d = ax.response?.data
+        const msg =
+          d && typeof d === 'object' && 'error' in d
+            ? String(d.error)
+            : 'No se pudo guardar. Revisa la consola.'
+        setActionError(msg)
+      }
+    },
+    [refetch],
   )
 
   const handleAddCategory = () => {
+    const cid = parseInt(newCategoryId, 10)
     const monto = parseInt(newCategoryMonto, 10)
-    if (!newCategoryName.trim() || !Number.isFinite(monto) || monto <= 0) return
-    const nuevoId = String(Date.now())
-    setCategorias((prev) => [
-      ...prev,
-      {
-        id: nuevoId,
-        nombre: newCategoryName.trim(),
-        presupuestado: monto,
-        gastado: 0,
-      },
-    ])
-    setNewCategoryName('')
-    setNewCategoryMonto('')
-    setShowAddForm(false)
+    if (!Number.isFinite(cid) || !Number.isFinite(monto) || monto <= 0) return
+    void runAction(async () => {
+      await finanzasApi.createPresupuesto({
+        categoria: cid,
+        mes: mesApi,
+        monto: String(monto),
+        ambito,
+      })
+      setNewCategoryId('')
+      setNewCategoryMonto('')
+      setShowAddForm(false)
+    })
   }
 
-  const handleStartEdit = (id: string) => {
-    const cat = categorias.find((c) => c.id === id)
-    if (cat?.presupuestado != null) {
-      setEditingId(id)
-      setEditMontoValue(String(cat.presupuestado))
-    }
+  const handleStartEdit = (cat: CatPres) => {
+    if (cat.presupuestoId == null) return
+    setEditingKey(String(cat.categoriaId))
+    setEditMontoValue(String(cat.presupuestado ?? 0))
   }
 
-  const handleEditConfirm = (id: string) => {
+  const handleEditConfirm = (cat: CatPres) => {
+    if (cat.presupuestoId == null) return
     const monto = parseInt(editMontoValue, 10)
     if (!Number.isFinite(monto) || monto < 0) return
-    setCategorias((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, presupuestado: monto } : c
-      )
-    )
-    setEditingId(null)
-    setEditMontoValue('')
+    void runAction(async () => {
+      await finanzasApi.patchPresupuesto(cat.presupuestoId, { monto: String(monto) })
+      setEditingKey(null)
+      setEditMontoValue('')
+    })
   }
 
-  const handleEditCancel = () => {
-    setEditingId(null)
-    setEditMontoValue('')
-  }
-
-  const handleStartAssign = (id: string) => {
-    setAssignPresupuestoId(id)
-    setAssignMontoValue('')
-  }
-
-  const handleAssignConfirm = (id: string) => {
+  const handleAssignConfirm = (cat: CatPres) => {
     const monto = parseInt(assignMontoValue, 10)
-    if (!Number.isFinite(monto) || monto < 0) return
-    setCategorias((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, presupuestado: monto } : c
-      )
-    )
-    setAssignPresupuestoId(null)
-    setAssignMontoValue('')
+    if (!Number.isFinite(monto) || monto <= 0) return
+    void runAction(async () => {
+      await finanzasApi.createPresupuesto({
+        categoria: cat.categoriaId,
+        mes: mesApi,
+        monto: String(monto),
+        ambito,
+      })
+      setAssignKey(null)
+      setAssignMontoValue('')
+    })
   }
 
-  const handleAssignCancel = () => {
-    setAssignPresupuestoId(null)
-    setAssignMontoValue('')
-  }
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>
-      {/* ── Header ── */}
       <div className={styles.header}>
         <div className={styles.headerTop}>
           <h1 className={styles.titulo}>Presupuesto</h1>
@@ -494,7 +501,12 @@ export default function PresupuestoPage() {
         </div>
       </div>
 
-      {/* ── Resumen ── */}
+      {actionError && (
+        <p className={styles.actionError} role="alert">
+          {actionError}
+        </p>
+      )}
+
       <section className={styles.resumenSection}>
         <h2 className={styles.resumenTitle}>Resumen</h2>
         <ResumenCards
@@ -505,14 +517,13 @@ export default function PresupuestoPage() {
         />
       </section>
 
-      {/* ── Por categoría ── */}
       <section className={styles.categoriaSection}>
         <div className={styles.categoriaHeader}>
           <h2 className={styles.categoriaTitle}>Por categoría</h2>
           <button
             type="button"
             className={styles.btnAddCat}
-            onClick={() => setShowAddForm((v) => !v)}
+            onClick={() => setShowAddForm(v => !v)}
           >
             + Categoría
           </button>
@@ -522,14 +533,14 @@ export default function PresupuestoPage() {
           <div className={styles.addForm}>
             <select
               className={styles.addFormSelect}
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
+              value={newCategoryId}
+              onChange={e => setNewCategoryId(e.target.value)}
               aria-label="Seleccionar categoría"
             >
               <option value="">Seleccionar categoría ▾</option>
-              {categoriasDisponiblesParaAgregar.map((nombre) => (
-                <option key={nombre} value={nombre}>
-                  {nombre}
+              {categoriasDisponiblesParaAgregar.map(c => (
+                <option key={c.id} value={String(c.id)}>
+                  {c.nombre}
                 </option>
               ))}
             </select>
@@ -538,7 +549,7 @@ export default function PresupuestoPage() {
               className={styles.addFormInput}
               placeholder="Monto presupuestado"
               value={newCategoryMonto}
-              onChange={(e) => setNewCategoryMonto(e.target.value)}
+              onChange={e => setNewCategoryMonto(e.target.value)}
               min={0}
               step={1000}
             />
@@ -555,7 +566,7 @@ export default function PresupuestoPage() {
               className={styles.btnFormCancel}
               onClick={() => {
                 setShowAddForm(false)
-                setNewCategoryName('')
+                setNewCategoryId('')
                 setNewCategoryMonto('')
               }}
               aria-label="Cancelar"
@@ -565,28 +576,44 @@ export default function PresupuestoPage() {
           </div>
         )}
 
-        {conPresupuestoOrdenadas.map((cat) => (
+        {conPresupuestoOrdenadas.length === 0 && sinPresupuestoOrdenadas.length === 0 && (
+          <p className={styles.emptyHint}>
+            No hay gastos ni presupuestos este mes en este ámbito. Agrega un presupuesto con «+
+            Categoría» o registra movimientos.
+          </p>
+        )}
+
+        {conPresupuestoOrdenadas.map(cat => (
           <ItemConPresupuesto
-            key={cat.id}
+            key={cat.categoriaId}
             cat={cat}
             onStartEdit={handleStartEdit}
-            editingId={editingId}
+            editingKey={editingKey}
             editValue={editMontoValue}
             onEditChange={setEditMontoValue}
             onEditConfirm={handleEditConfirm}
-            onEditCancel={handleEditCancel}
+            onEditCancel={() => {
+              setEditingKey(null)
+              setEditMontoValue('')
+            }}
           />
         ))}
-        {sinPresupuestoOrdenadas.map((cat) => (
+        {sinPresupuestoOrdenadas.map(cat => (
           <ItemSinPresupuesto
-            key={cat.id}
+            key={cat.categoriaId}
             cat={cat}
-            onStartAssign={handleStartAssign}
-            assignPresupuestoId={assignPresupuestoId}
+            onStartAssign={c => {
+              setAssignKey(String(c.categoriaId))
+              setAssignMontoValue('')
+            }}
+            assignKey={assignKey}
             assignValue={assignMontoValue}
             onAssignChange={setAssignMontoValue}
             onAssignConfirm={handleAssignConfirm}
-            onAssignCancel={handleAssignCancel}
+            onAssignCancel={() => {
+              setAssignKey(null)
+              setAssignMontoValue('')
+            }}
           />
         ))}
       </section>

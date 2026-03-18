@@ -453,3 +453,19 @@
   border-radius: 5px;
   overflow: hidden;
 }
+
+.actionError {
+  color: #b91c1c;
+  font-size: $font-size-sm;
+  margin-bottom: $space-4;
+  padding: $space-3;
+  background: #fef2f2;
+  border-radius: $radius-base;
+}
+
+.emptyHint {
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+  margin-bottom: $space-4;
+  line-height: 1.5;
+}
