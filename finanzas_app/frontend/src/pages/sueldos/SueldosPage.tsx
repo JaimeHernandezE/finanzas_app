@@ -113,6 +113,9 @@ export default function SueldosPage() {
     [mes, anio],
   )
 
+  const { user } = useAuth()
+  const usuarioActualId = user ? String(user.id) : ''
+
   const ingresos: IngresoMes[] = useMemo(() => {
     const list = (ingresosRaw ?? []) as { id: number; mes: string; monto: string; origen: string; usuario: number; autor_nombre: string }[]
     return list.map(i => {
@@ -160,14 +163,8 @@ export default function SueldosPage() {
 
   const ingresosMes = useMemo(
     () => ingresos.filter(i => i.mes === mes && i.anio === anio),
-    [ingresos, mes, anio]
+    [ingresos, mes, anio],
   )
-
-  if (loading) return <Cargando />
-  if (error) return <ErrorCarga mensaje={error} />
-
-  const { user } = useAuth()
-  const usuarioActualId = user ? String(user.id) : ''
 
   const porUsuario = useMemo(() => {
     return miembros.map(m => ({
@@ -217,8 +214,11 @@ export default function SueldosPage() {
         ...m,
         porcentaje: totalFamiliar > 0 ? (m.total / totalFamiliar) * 100 : 0,
       })),
-    [porUsuario, totalFamiliar]
+    [porUsuario, totalFamiliar],
   )
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   return (
     <div className={styles.page}>
