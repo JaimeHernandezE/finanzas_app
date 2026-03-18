@@ -196,6 +196,14 @@
   }
 }
 
+.hintInvitacion {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin: 0 0 $space-3;
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
 .invitarRow {
   display: flex;
   align-items: center;

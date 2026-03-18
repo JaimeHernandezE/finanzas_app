@@ -115,7 +115,11 @@ def categoria_detalle(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     if request.method == 'PUT':
-        serializer = CategoriaSerializer(categoria, data=request.data, partial=True)
+        if es_global:
+            data = {'nombre': request.data.get('nombre', categoria.nombre)}
+            serializer = CategoriaSerializer(categoria, data=data, partial=True)
+        else:
+            serializer = CategoriaSerializer(categoria, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)

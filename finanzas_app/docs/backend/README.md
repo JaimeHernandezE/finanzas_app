@@ -50,3 +50,19 @@ Más comandos y contexto: [docs/DEPLOYMENT.md — Comandos rápidos](../DEPLOYME
 | GET | `/api/finanzas/presupuesto-mes/` | Query: `mes`, `anio`, `ambito` = `FAMILIAR` o `PERSONAL`. |
 | POST | `/api/finanzas/presupuestos/` | Body: `categoria`, `mes` (YYYY-MM-01), `monto`, `ambito`. |
 | PATCH/DELETE | `/api/finanzas/presupuestos/<id>/` | Actualizar monto o borrar presupuesto. |
+
+## API — Usuarios / familia (Bearer Firebase)
+
+Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <token Firebase>`.
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/usuarios/familia/miembros/` | Lista miembros de la familia del usuario autenticado. |
+| PATCH | `/api/usuarios/familia/miembros/<id>/rol/` | Body `{ "rol": "ADMIN" \| "MIEMBRO" \| "LECTURA" }`. Solo **ADMIN**; no puede dejar la familia sin administrador. |
+| GET | `/api/usuarios/familia/invitaciones/` | Invitaciones pendientes (email registrado, aún no se ha unido). |
+| POST | `/api/usuarios/familia/invitaciones/` | Body `{ "email": "..." }`. Solo **ADMIN**. |
+| DELETE | `/api/usuarios/familia/invitaciones/<id>/` | Revocar invitación. Solo **ADMIN**. |
+
+**Registro (`POST /api/usuarios/registro/`):** si ya existen usuarios en el sistema, un correo nuevo solo puede registrarse si hay una **invitación pendiente** para ese email (creada desde Miembros). El primer usuario de la base sigue creando la familia como ADMIN.
+
+**Modelo:** `InvitacionPendiente` (familia + email + invitador). Las categorías **globales** solo admiten cambio de `nombre` en `PUT /api/finanzas/categorias/<id>/`.

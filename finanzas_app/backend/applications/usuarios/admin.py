@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Familia, Usuario
+from .models import Familia, Usuario, InvitacionPendiente
 
 
 @admin.register(Familia)
@@ -16,3 +16,10 @@ class UsuarioAdmin(UserAdmin):
     fieldsets    = UserAdmin.fieldsets + (
         ('App Finanzas', {'fields': ('firebase_uid', 'familia', 'rol')}),
     )
+
+
+@admin.register(InvitacionPendiente)
+class InvitacionPendienteAdmin(admin.ModelAdmin):
+    list_display = ['email', 'familia', 'invitador', 'created_at']
+    list_filter = ['familia']
+    search_fields = ['email']

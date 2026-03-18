@@ -86,9 +86,6 @@ export default function CategoriasPage() {
   const [addTipo, setAddTipo] = useState<'INGRESO' | 'EGRESO'>('EGRESO')
   const [addEsInversion, setAddEsInversion] = useState(false)
 
-  if (loading) return <Cargando />
-  if (error) return <ErrorCarga mensaje={error} />
-
   const filtradas = useMemo(
     () => categorias.filter((c) => c.tipo === filtroTipo),
     [categorias, filtroTipo]
@@ -96,6 +93,9 @@ export default function CategoriasPage() {
   const globales = useMemo(() => filtradas.filter((c) => c.ambito === 'GLOBAL'), [filtradas])
   const familiares = useMemo(() => filtradas.filter((c) => c.ambito === 'FAMILIAR'), [filtradas])
   const personales = useMemo(() => filtradas.filter((c) => c.ambito === 'PERSONAL'), [filtradas])
+
+  if (loading) return <Cargando />
+  if (error) return <ErrorCarga mensaje={error} />
 
   const startEdit = (c: Categoria) => {
     setEditingId(c.id)
@@ -112,9 +112,23 @@ export default function CategoriasPage() {
 
   const saveEdit = async () => {
     if (!editingId) return
-    await catalogosApi.updateCategoria(Number(editingId), { nombre: editNombre, tipo: editTipo })
-    setEditingId(null)
-    refetch()
+    const c = categorias.find((x) => x.id === editingId)
+    if (!c) return
+    try {
+      if (c.ambito === 'GLOBAL') {
+        await catalogosApi.updateCategoria(Number(editingId), { nombre: editNombre })
+      } else {
+        await catalogosApi.updateCategoria(Number(editingId), {
+          nombre: editNombre,
+          tipo: editTipo,
+          es_inversion: editEsInversion,
+        })
+      }
+      setEditingId(null)
+      refetch()
+    } catch {
+      // Error genérico: el interceptor ya puede redirigir a login
+    }
   }
 
   const startDelete = (id: string) => {

@@ -11,8 +11,10 @@ export const catalogosApi = {
     es_inversion?: boolean
   }) => client.post('/api/finanzas/categorias/', data),
 
-  updateCategoria: (id: number, data: Partial<{ nombre: string; tipo: string }>) =>
-    client.put(`/api/finanzas/categorias/${id}/`, data),
+  updateCategoria: (
+    id: number,
+    data: Partial<{ nombre: string; tipo: string; es_inversion: boolean }>
+  ) => client.put(`/api/finanzas/categorias/${id}/`, data),
 
   deleteCategoria: (id: number) =>
     client.delete(`/api/finanzas/categorias/${id}/`),

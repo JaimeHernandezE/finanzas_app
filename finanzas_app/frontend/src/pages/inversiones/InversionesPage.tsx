@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useFondos } from '@/hooks/useInversiones'
-import { Cargando, ErrorCarga } from '@/components/ui'
+import { inversionesApi } from '@/api/inversiones'
+import { Button, Input, Textarea, Cargando, ErrorCarga } from '@/components/ui'
 import styles from './InversionesPage.module.scss'
 
 interface FondoApi {
@@ -147,8 +148,42 @@ function FondoCard({
 }
 
 export default function InversionesPage() {
-  const { data: fondosData, loading, error } = useFondos()
+  const { data: fondosData, loading, error, refetch } = useFondos()
   const fondos = (fondosData ?? []) as FondoApi[]
+
+  const [nombreFondo, setNombreFondo] = useState('')
+  const [descFondo, setDescFondo] = useState('')
+  const [compartido, setCompartido] = useState(false)
+  const [savingFondo, setSavingFondo] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [formAbierto, setFormAbierto] = useState(false)
+
+  const crearFondo = async () => {
+    const n = nombreFondo.trim()
+    if (!n) {
+      setFormError('El nombre es obligatorio.')
+      return
+    }
+    setFormError(null)
+    setSavingFondo(true)
+    try {
+      await inversionesApi.createFondo({
+        nombre: n,
+        descripcion: descFondo.trim(),
+        es_compartido: compartido,
+      })
+      setNombreFondo('')
+      setDescFondo('')
+      setCompartido(false)
+      setFormAbierto(false)
+      await refetch()
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { error?: string } } }
+      setFormError(ax.response?.data?.error ?? 'No se pudo crear el fondo.')
+    } finally {
+      setSavingFondo(false)
+    }
+  }
 
   const { capitalTotal, valorTotal, gananciaTotal, rentabilidadTotal } =
     useMemo(() => {
@@ -169,7 +204,53 @@ export default function InversionesPage() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.titulo}>Inversiones</h1>
+      <div className={styles.headerRow}>
+        <h1 className={styles.titulo}>Inversiones</h1>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setFormAbierto(a => !a)
+            setFormError(null)
+          }}
+        >
+          {formAbierto ? 'Cerrar' : '+ Nuevo fondo'}
+        </Button>
+      </div>
+
+      {formAbierto && (
+        <section className={styles.nuevoFondoCard}>
+          <h2 className={styles.nuevoFondoTitle}>Nuevo fondo de inversión</h2>
+          <Input
+            label="Nombre"
+            placeholder="Ej: Fondo mutuo conservador"
+            value={nombreFondo}
+            onChange={e => setNombreFondo(e.target.value)}
+          />
+          <Textarea
+            label="Descripción (opcional)"
+            placeholder="Notas o tipo de instrumento…"
+            value={descFondo}
+            onChange={e => setDescFondo(e.target.value)}
+            rows={2}
+          />
+          <label className={styles.checkCompartido}>
+            <input
+              type="checkbox"
+              checked={compartido}
+              onChange={e => setCompartido(e.target.checked)}
+            />
+            <span>Compartir con la familia (visible para todos)</span>
+          </label>
+          {formError && <p className={styles.formError}>{formError}</p>}
+          <div className={styles.nuevoFondoActions}>
+            <Button type="button" onClick={crearFondo} loading={savingFondo}>
+              Crear fondo
+            </Button>
+          </div>
+        </section>
+      )}
+
       <ResumenTotal
         capitalTotal={capitalTotal}
         valorTotal={valorTotal}

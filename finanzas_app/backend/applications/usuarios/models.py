@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -57,3 +58,31 @@ class Usuario(AbstractUser):
 
     def __str__(self):
         return self.get_full_name() or self.username
+
+
+class InvitacionPendiente(models.Model):
+    """
+    Email invitado a unirse a una familia (registro pendiente).
+    No envía correo por sí sola; la app solo registra la invitación.
+    """
+
+    familia = models.ForeignKey(
+        Familia,
+        on_delete=models.CASCADE,
+        related_name='invitaciones_pendientes',
+    )
+    email = models.EmailField()
+    invitador = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='invitaciones_enviadas',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [('familia', 'email')]
+        verbose_name = 'invitación pendiente'
+        verbose_name_plural = 'invitaciones pendientes'
+
+    def __str__(self):
+        return f'{self.email} → {self.familia}'
