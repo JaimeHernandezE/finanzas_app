@@ -1,0 +1,32 @@
+{
+  "name": "mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@finanzas/shared": "file:../shared",
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "axios": "^1.6.0",
+    "expo": "~55.0.8",
+    "expo-constants": "~17.1.6",
+    "expo-linking": "~7.1.5",
+    "expo-local-authentication": "~15.1.5",
+    "expo-router": "~5.1.0",
+    "expo-secure-store": "~14.2.3",
+    "expo-status-bar": "~55.0.4",
+    "nativewind": "^2.0.11",
+    "react": "19.2.0",
+    "react-native": "0.83.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "tailwindcss": "^3.3.2",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}

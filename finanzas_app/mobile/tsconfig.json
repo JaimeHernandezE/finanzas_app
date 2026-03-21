@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@finanzas/shared": ["../shared"],
+      "@finanzas/shared/*": ["../shared/*"]
+    }
+  }
+}
