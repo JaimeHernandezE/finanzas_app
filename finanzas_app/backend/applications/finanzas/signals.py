@@ -114,18 +114,37 @@ def eliminar_movimiento_vinculado_ingreso_comun(sender, instance, **kwargs):
         Movimiento.objects.filter(pk=instance.movimiento_id).delete()
 
 
+def calcular_mes_base(fecha_gasto: date, dia_facturacion: int | None) -> date:
+    """
+    Calcula el primer mes de facturación de las cuotas según el ciclo
+    de la tarjeta.
+
+    Si la tarjeta no tiene día de facturación definido, usa el mes
+    calendario del gasto (comportamiento anterior).
+
+    Ejemplos con dia_facturacion=15:
+      - gasto 10 mar → primer mes: marzo   (10 <= 15)
+      - gasto 15 mar → primer mes: marzo   (15 <= 15)
+      - gasto 16 mar → primer mes: abril   (16 > 15)
+    """
+    if not dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+
+    if fecha_gasto.day <= dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+    else:
+        siguiente = date(fecha_gasto.year, fecha_gasto.month, 1) + relativedelta(months=1)
+        return date(siguiente.year, siguiente.month, 1)
+
+
 @receiver(post_save, sender=Movimiento)
 def generar_cuotas(sender, instance, created, **kwargs):
     """
     Genera automáticamente los registros de Cuota cuando se crea
     un Movimiento con método de pago tipo CRÉDITO.
 
-    Reglas:
-    - Solo se ejecuta en la creación (created=True), no en ediciones
-    - Si el movimiento ya tiene cuotas, no genera nuevas (evita duplicados)
-    - El mes de facturación de la primera cuota es el mes actual
-    - Las siguientes cuotas se prorratean mes a mes
-    - Si hay diferencia de centavos, va a la primera cuota
+    El mes de facturación de la primera cuota se calcula según
+    el día de facturación de la tarjeta asociada al movimiento.
     """
     if not created:
         return
@@ -159,7 +178,13 @@ def generar_cuotas(sender, instance, created, **kwargs):
     fecha = instance.fecha
     if isinstance(fecha, str):
         fecha = datetime.strptime(fecha, '%Y-%m-%d').date()
-    mes_base = date(fecha.year, fecha.month, 1)
+
+    # Obtener el día de facturación de la tarjeta si existe
+    dia_facturacion = None
+    if instance.tarjeta:
+        dia_facturacion = instance.tarjeta.dia_facturacion
+
+    mes_base = calcular_mes_base(fecha, dia_facturacion)
 
     cuotas = []
     for i in range(n):

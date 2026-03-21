@@ -106,3 +106,101 @@ class TestSignalGeneracionCuotas:
             movimiento=mov, numero=1
         ).first()
         assert primera_cuota.monto == Decimal('30000.00')
+
+    def test_gasto_antes_del_cierre_factura_en_mes_actual(
+        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """
+        Gasto el día 10, tarjeta cierra el 15 → primera cuota en el mismo mes.
+        """
+        tarjeta.dia_facturacion = 15
+        tarjeta.save()
+
+        mov = Movimiento.objects.create(
+            usuario=usuario, familia=familia,
+            fecha='2026-03-10',
+            tipo='EGRESO', ambito='PERSONAL',
+            categoria=categoria_egreso, monto='90000.00',
+            metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=3,
+        )
+        primera = Cuota.objects.filter(movimiento=mov, numero=1).first()
+        assert primera.mes_facturacion == date(2026, 3, 1)
+
+    def test_gasto_despues_del_cierre_factura_en_mes_siguiente(
+        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """
+        Gasto el día 20, tarjeta cierra el 15 → primera cuota en el mes siguiente.
+        """
+        tarjeta.dia_facturacion = 15
+        tarjeta.save()
+
+        mov = Movimiento.objects.create(
+            usuario=usuario, familia=familia,
+            fecha='2026-03-20',
+            tipo='EGRESO', ambito='PERSONAL',
+            categoria=categoria_egreso, monto='90000.00',
+            metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=3,
+        )
+        primera = Cuota.objects.filter(movimiento=mov, numero=1).first()
+        assert primera.mes_facturacion == date(2026, 4, 1)
+
+    def test_gasto_exactamente_en_dia_cierre_factura_en_mes_actual(
+        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """
+        Gasto exactamente el día de cierre → entra al ciclo actual.
+        """
+        tarjeta.dia_facturacion = 15
+        tarjeta.save()
+
+        mov = Movimiento.objects.create(
+            usuario=usuario, familia=familia,
+            fecha='2026-03-15',
+            tipo='EGRESO', ambito='PERSONAL',
+            categoria=categoria_egreso, monto='90000.00',
+            metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=3,
+        )
+        primera = Cuota.objects.filter(movimiento=mov, numero=1).first()
+        assert primera.mes_facturacion == date(2026, 3, 1)
+
+    def test_sin_dia_facturacion_usa_mes_calendario(
+        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """
+        Tarjeta sin día de facturación definido → usa mes calendario del gasto.
+        """
+        tarjeta.dia_facturacion = None
+        tarjeta.save()
+
+        mov = Movimiento.objects.create(
+            usuario=usuario, familia=familia,
+            fecha='2026-03-25',
+            tipo='EGRESO', ambito='PERSONAL',
+            categoria=categoria_egreso, monto='90000.00',
+            metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=2,
+        )
+        primera = Cuota.objects.filter(movimiento=mov, numero=1).first()
+        assert primera.mes_facturacion == date(2026, 3, 1)
+
+    def test_cuotas_consecutivas_desde_mes_correcto(
+        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """
+        Gasto el 20 con cierre el 15 → primera cuota en abril,
+        segunda en mayo, tercera en junio.
+        """
+        tarjeta.dia_facturacion = 15
+        tarjeta.save()
+
+        mov = Movimiento.objects.create(
+            usuario=usuario, familia=familia,
+            fecha='2026-03-20',
+            tipo='EGRESO', ambito='PERSONAL',
+            categoria=categoria_egreso, monto='90000.00',
+            metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=3,
+        )
+        cuotas = Cuota.objects.filter(movimiento=mov).order_by('numero')
+        assert cuotas[0].mes_facturacion == date(2026, 4, 1)
+        assert cuotas[1].mes_facturacion == date(2026, 5, 1)
+        assert cuotas[2].mes_facturacion == date(2026, 6, 1)

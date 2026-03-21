@@ -69,6 +69,14 @@ class Tarjeta(models.Model):
     Tarjetas de crédito del usuario. Son personales: cada usuario gestiona
     las suyas. La separación entre gastos personales y comunes la determina
     el campo 'ambito' en Movimiento, no la tarjeta en sí.
+
+    dia_facturacion: día del mes en que el banco genera el estado de cuenta.
+                     Determina en qué ciclo cae cada gasto.
+                     Ej: 15 → gastos del 16 al 15 del mes siguiente forman un ciclo.
+
+    dia_vencimiento: día del mes en que vence el pago del estado de cuenta.
+                     Generalmente es el mes siguiente al de facturación.
+                     Ej: 5 → el pago vence el 5 del mes siguiente al cierre.
     """
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -77,8 +85,16 @@ class Tarjeta(models.Model):
         help_text="Propietario de la tarjeta. Solo este usuario puede "
                   "usarla al registrar movimientos."
     )
-    nombre = models.CharField(max_length=100, help_text="Ej: 'Visa BCI', 'Mastercard Santander'")
-    banco  = models.CharField(max_length=100)
+    nombre          = models.CharField(max_length=100, help_text="Ej: 'Visa BCI', 'Mastercard Santander'")
+    banco           = models.CharField(max_length=100)
+    dia_facturacion = models.IntegerField(
+        null=True, blank=True,
+        help_text="Día del mes en que cierra el ciclo de facturación (1-31)."
+    )
+    dia_vencimiento = models.IntegerField(
+        null=True, blank=True,
+        help_text="Día del mes en que vence el pago (1-31)."
+    )
 
     def __str__(self):
         return f"{self.nombre} — {self.usuario}"
