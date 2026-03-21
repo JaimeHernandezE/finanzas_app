@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: finanzas-app-api
+    env: python
+    region: oregon
+    plan: free
+    rootDir: finanzas_app/backend
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60"
+    envVars:
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: finanzas-db
+          property: connectionString
+      - key: ALLOWED_HOSTS
+        value: "finanzas-app-api.onrender.com"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://finanzas-app-api.onrender.com"
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      # Agregar manualmente en el dashboard de Render:
+      # FIREBASE_SERVICE_ACCOUNT_JSON = <contenido del JSON en una línea>
+
+databases:
+  - name: finanzas-db
+    databaseName: finanzas_db
+    user: finanzas_user
+    plan: free
