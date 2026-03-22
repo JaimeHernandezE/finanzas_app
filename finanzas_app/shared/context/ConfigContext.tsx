@@ -45,9 +45,13 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const cargar = async () => {
       try {
-        const res = await axios.get(
-          `${import.meta.env.VITE_API_URL}/api/usuarios/config/`
-        )
+        const baseURL =
+          (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ??
+          (typeof import.meta !== 'undefined'
+            ? (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL
+            : undefined) ??
+          'http://localhost:8000'
+        const res = await axios.get(`${baseURL}/api/usuarios/config/`)
         setConfig(res.data)
       } catch {
         // Usar configuración por defecto si falla
