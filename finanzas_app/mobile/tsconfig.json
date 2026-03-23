@@ -3,8 +3,18 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@finanzas/shared": ["../shared"],
-      "@finanzas/shared/*": ["../shared/*"]
+      "@finanzas/shared": [
+        "../shared"
+      ],
+      "@finanzas/shared/*": [
+        "../shared/*"
+      ]
     }
-  }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
+  ]
 }
