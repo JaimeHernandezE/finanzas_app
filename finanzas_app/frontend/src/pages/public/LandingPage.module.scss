@@ -1,0 +1,192 @@
+@use '../../styles/variables' as v;
+
+$dark: #0f0f0f;
+$accent: #c8f060;
+$text: #f7f7f5;
+$muted: rgba(247, 247, 245, 0.5);
+$border: rgba(247, 247, 245, 0.1);
+$radius: 12px;
+
+.root {
+  min-height: 100vh;
+  background: $dark;
+  color: $text;
+  display: flex;
+  flex-direction: column;
+  font-family: inherit;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 40px;
+  border-bottom: 1px solid $border;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brandMark {
+  width: 32px;
+  height: 32px;
+  background: $accent;
+  color: $dark;
+  font-size: 16px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+}
+
+.brandName {
+  font-size: 15px;
+  font-weight: 600;
+  color: $text;
+}
+
+.navLogin {
+  font-size: 14px;
+  font-weight: 600;
+  color: $text;
+  text-decoration: none;
+  padding: 8px 16px;
+  border: 1.5px solid $border;
+  border-radius: 8px;
+  transition: border-color 0.15s, color 0.15s;
+
+  &:hover {
+    border-color: rgba(247, 247, 245, 0.3);
+    color: $accent;
+  }
+}
+
+.hero {
+  flex: 1;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 80px 40px 60px;
+  width: 100%;
+}
+
+.heroContent {
+  text-align: center;
+  margin-bottom: 64px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: $accent;
+  background: rgba(200, 240, 96, 0.1);
+  border: 1px solid rgba(200, 240, 96, 0.2);
+  padding: 4px 14px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  margin-bottom: 24px;
+}
+
+.titulo {
+  font-size: clamp(36px, 6vw, 64px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -2px;
+  margin: 0 0 20px;
+  color: $text;
+}
+
+.tituloAccent {
+  color: $accent;
+}
+
+.subtitulo {
+  font-size: 16px;
+  color: $muted;
+  line-height: 1.6;
+  max-width: 480px;
+  margin: 0 auto 36px;
+}
+
+.ctaBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: $accent;
+  color: $dark;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 28px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.15s;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(200, 240, 96, 0.25);
+  }
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.featureCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $border;
+  border-radius: $radius;
+  padding: 24px;
+  transition: border-color 0.15s, background 0.15s;
+
+  &:hover {
+    border-color: rgba(247, 247, 245, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+.featureIcon {
+  font-size: 20px;
+  color: $accent;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.featureTitulo {
+  font-size: 14px;
+  font-weight: 700;
+  color: $text;
+  margin: 0 0 6px;
+}
+
+.featureDesc {
+  font-size: 13px;
+  color: $muted;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.footer {
+  padding: 24px 40px;
+  border-top: 1px solid $border;
+  text-align: center;
+
+  p {
+    font-size: 12px;
+    color: $muted;
+    margin: 0;
+  }
+}

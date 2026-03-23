@@ -23,7 +23,7 @@ const FAMILIA_FIJOS = [
 ] as const
 
 const ANALISIS_ITEMS = [
-  { icon: '◈', label: 'Dashboard',   to: '/'            },
+  { icon: '◈', label: 'Dashboard',   to: '/dashboard'   },
   { icon: '▤', label: 'Presupuesto', to: '/presupuesto' },
 ] as const
 
@@ -35,7 +35,7 @@ const MAS_ITEMS = [
 ] as const
 
 const BOTTOM_NAV = [
-  { icon: '◈', label: 'Dashboard',      to: '/',               end: true  },
+  { icon: '◈', label: 'Dashboard',      to: '/dashboard',      end: false },
   { icon: '⊕', label: 'Gastos comunes', to: '/gastos/comunes', end: false },
   { icon: '⇄', label: 'Resumen común',  to: '/liquidacion',    end: false },
 ] as const
@@ -130,7 +130,7 @@ export default function MainLayout() {
 
       {/* ── Sidebar ── */}
       <nav className={styles.sidebar}>
-        <button className={styles.brand} onClick={() => navigate('/')}>
+        <button className={styles.brand} onClick={() => navigate('/dashboard')}>
           <span className={styles.brandMark}>◈</span>
           <span className={styles.brandName}>Finanzas</span>
         </button>
@@ -184,7 +184,7 @@ export default function MainLayout() {
           {/* Análisis */}
           <GroupLabel label="Análisis" />
           {ANALISIS_ITEMS.map(item => (
-            <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} end={item.to === '/'} />
+            <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
           ))}
 
           {/* Más */}
