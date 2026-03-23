@@ -422,11 +422,12 @@ export default function PresupuestoPage() {
   }
 
   const handleEditConfirm = (cat: CatPres) => {
-    if (cat.presupuestoId == null) return
+    const presupuestoId = cat.presupuestoId
+    if (presupuestoId == null) return
     const monto = montoClpANumero(editMontoValue)
     if (monto < 0) return
     void runAction(async () => {
-      await finanzasApi.patchPresupuesto(cat.presupuestoId, { monto: String(monto) })
+      await finanzasApi.patchPresupuesto(presupuestoId, { monto: String(monto) })
       setEditingKey(null)
       setEditMontoValue('')
     })

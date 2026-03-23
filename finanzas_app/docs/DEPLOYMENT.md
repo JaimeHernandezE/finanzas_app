@@ -28,13 +28,13 @@ Para entornos no locales, usar variables de entorno o un archivo `.env` (no vers
 
 Ejecutar **siempre desde la carpeta `backend/`** (donde está el `docker-compose.yml`):
 
-```bash
+```powershell
 cd backend
 ```
 
 ### Levantar y construir
 
-```bash
+```powershell
 # Construir imágenes y levantar en segundo plano
 docker-compose up -d --build
 
@@ -44,7 +44,7 @@ docker-compose up --build
 
 ### Parar y bajar
 
-```bash
+```powershell
 # Parar contenedores
 docker-compose stop
 
@@ -57,7 +57,7 @@ docker-compose down -v
 
 ### Reiniciar contenedores
 
-```bash
+```powershell
 # Reiniciar todos los servicios
 docker-compose restart
 
@@ -74,7 +74,7 @@ Tras `restart`, los contenedores se levantan de nuevo sin reconstruir imágenes.
 
 ### Logs
 
-```bash
+```powershell
 # Logs de todos los servicios
 docker-compose logs -f
 
@@ -90,7 +90,7 @@ docker-compose logs -f frontend
 
 ### Ejecutar comandos dentro del contenedor Django
 
-```bash
+```powershell
 # Shell en el contenedor web
 docker-compose exec web bash
 
@@ -107,7 +107,7 @@ docker-compose exec web python manage.py check
 
 ### Reconstruir un servicio (tras cambiar Dockerfile o dependencias)
 
-```bash
+```powershell
 # Solo backend (p. ej. tras cambiar requirements.txt o Dockerfile)
 docker-compose up -d --build web
 
@@ -117,7 +117,7 @@ docker-compose up -d --build frontend
 
 ### Ver estado de los servicios
 
-```bash
+```powershell
 docker-compose ps
 ```
 
@@ -125,7 +125,7 @@ docker-compose ps
 
 1. **Primera vez** (desde `finanzas_app/backend/`):
 
-   ```bash
+   ```powershell
    docker-compose up -d --build
    docker-compose exec web python manage.py makemigrations
    docker-compose exec web python manage.py migrate
@@ -160,13 +160,13 @@ Si en tu entorno los cambios no se reflejan, reinicia el servicio: `docker-compo
 - Firebase Service Account JSON (de Firebase Console)
 
 ### Generar SECRET_KEY
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+```powershell
+[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
 ```
 
 ### Convertir Firebase JSON a una línea (para variable de entorno)
-```bash
-cat firebase-service-account.json | python3 -m json.tool --compact
+```powershell
+Get-Content .\firebase-service-account.json -Raw | ConvertFrom-Json | ConvertTo-Json -Compress
 ```
 
 ### Orden de creación en Render
