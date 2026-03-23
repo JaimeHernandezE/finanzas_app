@@ -1,4 +1,4 @@
-name: Tests
+name: CI / CD
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    name: Tests
     runs-on: ubuntu-latest
 
     services:
@@ -45,3 +46,16 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/finanzas_test
           FIREBASE_SERVICE_ACCOUNT_JSON: '{}'
         run: pytest --tb=short -q
+
+  deploy:
+    name: Deploy a Render
+    needs: test
+    runs-on: ubuntu-latest
+    # Solo en push a main (no en PRs) y solo si los tests pasaron
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger deploy
+        run: |
+          curl --silent --show-error --fail \
+            "${{ secrets.RENDER_DEPLOY_HOOK }}"
