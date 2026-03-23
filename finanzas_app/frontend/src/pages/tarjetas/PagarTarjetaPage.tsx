@@ -19,6 +19,8 @@ interface Tarjeta {
   id: number
   nombre: string
   banco: string
+  dia_facturacion: number | null
+  dia_vencimiento: number | null
 }
 
 interface Cuota {
@@ -566,6 +568,12 @@ export default function PagarTarjetaPage() {
               ))}
             </select>
           </div>
+          {tarjeta?.dia_facturacion && (
+            <p className={styles.cicloInfo}>
+              Ciclo: del {tarjeta.dia_facturacion + 1} del mes anterior al {tarjeta.dia_facturacion} de este mes
+              {tarjeta.dia_vencimiento ? ` · Vence el ${tarjeta.dia_vencimiento} del mes siguiente` : ''}
+            </p>
+          )}
           <div className={styles.mesNav}>
             <button
               type="button"

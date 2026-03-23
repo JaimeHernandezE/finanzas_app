@@ -30,9 +30,27 @@ class MetodoPagoSerializer(serializers.ModelSerializer):
 
 class TarjetaSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Tarjeta
-        fields = ['id', 'nombre', 'banco', 'usuario']
+        model  = Tarjeta
+        fields = [
+            'id', 'nombre', 'banco',
+            'dia_facturacion', 'dia_vencimiento',
+            'usuario',
+        ]
         read_only_fields = ['usuario']
+
+    def validate_dia_facturacion(self, value):
+        if value is not None and not (1 <= value <= 31):
+            raise serializers.ValidationError(
+                'El día de facturación debe estar entre 1 y 31.'
+            )
+        return value
+
+    def validate_dia_vencimiento(self, value):
+        if value is not None and not (1 <= value <= 31):
+            raise serializers.ValidationError(
+                'El día de vencimiento debe estar entre 1 y 31.'
+            )
+        return value
 
 
 class CuotaSerializer(serializers.ModelSerializer):

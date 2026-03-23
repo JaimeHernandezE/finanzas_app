@@ -151,6 +151,88 @@ Si en tu entorno los cambios no se reflejan, reinicia el servicio: `docker-compo
 - Admin Django: **http://localhost:8000/admin/**
 - Login con Firebase (POST): **http://localhost:8000/api/usuarios/auth/firebase/**
 
+---
+
+## Despliegue en Render (plan gratuito)
+
+### Requisitos previos
+- Cuenta en [render.com](https://render.com) conectada a GitHub
+- Firebase Service Account JSON (de Firebase Console)
+
+### Generar SECRET_KEY
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+```
+
+### Convertir Firebase JSON a una línea (para variable de entorno)
+```bash
+cat firebase-service-account.json | python3 -m json.tool --compact
+```
+
+### Orden de creación en Render
+
+#### 1. Base de datos PostgreSQL
+- **New → PostgreSQL**
+- Name: `finanzas-db` | Region: Oregon | Plan: **Free**
+- Copiar la **Internal Database URL** para el paso siguiente
+
+#### 2. Web Service (backend)
+- **New → Web Service** → conectar repositorio
+- Root Directory: `finanzas_app/backend`
+- Build Command: `./build.sh`
+- Start Command: `gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60`
+- Plan: **Free**
+
+Variables de entorno a configurar:
+```
+DEBUG                         = False
+SECRET_KEY                    = <generada arriba>
+DATABASE_URL                  = <Internal Database URL del paso 1>
+ALLOWED_HOSTS                 = <nombre>.onrender.com
+CORS_ALLOWED_ORIGINS          = https://<frontend>.onrender.com
+FIREBASE_SERVICE_ACCOUNT_JSON = <JSON en una línea>
+```
+
+#### 3. Static Site (frontend)
+- **New → Static Site** → mismo repositorio
+- Root Directory: `finanzas_app/frontend`
+- Build Command: `npm install && npm run build`
+- Publish Directory: `dist`
+
+Variables de entorno:
+```
+VITE_API_URL               = https://<backend>.onrender.com
+VITE_FIREBASE_API_KEY      = <de Firebase Console>
+VITE_FIREBASE_AUTH_DOMAIN  = <de Firebase Console>
+VITE_FIREBASE_PROJECT_ID   = <de Firebase Console>
+```
+
+#### 4. Firebase — dominios autorizados
+En Firebase Console → Authentication → Settings → Dominios autorizados:
+- Agregar el dominio del Static Site de Render
+
+### Evitar el sleep del plan gratuito (UptimeRobot)
+El plan gratuito duerme el servidor tras 15 min sin tráfico.
+
+1. Crear cuenta gratuita en [uptimerobot.com](https://uptimerobot.com)
+2. **Add New Monitor** → HTTP(s)
+3. URL: `https://<backend>.onrender.com/api/usuarios/config/`
+4. Monitoring Interval: **5 minutes**
+
+### CI/CD automático
+Render despliega automáticamente en cada push a `main`.
+El workflow `.github/workflows/tests.yml` corre los tests antes del deploy.
+
+### Limitaciones del plan gratuito
+| Servicio | Límite |
+|---|---|
+| Web Service | 512 MB RAM — duerme tras 15 min de inactividad |
+| PostgreSQL | 256 MB almacenamiento — expira a los 90 días |
+| Static Site | Sin límite de ancho de banda |
+| Build minutes | 500 min/mes |
+
+---
+
 ## Documentación relacionada
 
 - [README del backend](../backend/README.md) — Estructura del proyecto Django y apps.

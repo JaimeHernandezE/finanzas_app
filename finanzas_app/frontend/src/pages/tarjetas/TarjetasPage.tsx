@@ -9,6 +9,8 @@ interface TarjetaRow {
   id: number
   nombre: string
   banco: string
+  dia_facturacion: number | null
+  dia_vencimiento: number | null
 }
 
 export default function TarjetasPage() {
@@ -17,6 +19,8 @@ export default function TarjetasPage() {
 
   const [nombre, setNombre] = useState('')
   const [banco, setBanco] = useState('')
+  const [diaFacturacion, setDiaFacturacion] = useState('')
+  const [diaVencimiento, setDiaVencimiento] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -30,9 +34,16 @@ export default function TarjetasPage() {
     setFormError(null)
     setSaving(true)
     try {
-      await catalogosApi.createTarjeta({ nombre: n, banco: b })
+      await catalogosApi.createTarjeta({
+        nombre: n,
+        banco: b,
+        dia_facturacion: diaFacturacion ? Number(diaFacturacion) : null,
+        dia_vencimiento: diaVencimiento ? Number(diaVencimiento) : null,
+      })
       setNombre('')
       setBanco('')
+      setDiaFacturacion('')
+      setDiaVencimiento('')
       await refetch()
     } catch (e: unknown) {
       const ax = e as { response?: { data?: Record<string, string[] | string> } }
@@ -79,6 +90,12 @@ export default function TarjetasPage() {
               <div className={styles.tarjetaInfo}>
                 <span className={styles.tarjetaNombre}>{t.nombre}</span>
                 <span className={styles.tarjetaBanco}>{t.banco}</span>
+                {t.dia_facturacion && (
+                  <span className={styles.tarjetaCiclo}>
+                    Cierre: día {t.dia_facturacion}
+                    {t.dia_vencimiento ? ` · Vence: día ${t.dia_vencimiento}` : ''}
+                  </span>
+                )}
               </div>
               <Link to="/tarjetas/pagar" className={styles.linkPagar}>
                 Estado de cuenta
@@ -102,6 +119,26 @@ export default function TarjetasPage() {
             placeholder="Ej: Banco de Chile"
             value={banco}
             onChange={e => setBanco(e.target.value)}
+          />
+        </div>
+        <div className={styles.formRow}>
+          <Input
+            label="Día de facturación (opcional)"
+            type="number"
+            min={1}
+            max={31}
+            placeholder="Ej: 15"
+            value={diaFacturacion}
+            onChange={e => setDiaFacturacion(e.target.value)}
+          />
+          <Input
+            label="Día de vencimiento (opcional)"
+            type="number"
+            min={1}
+            max={31}
+            placeholder="Ej: 5"
+            value={diaVencimiento}
+            onChange={e => setDiaVencimiento(e.target.value)}
           />
         </div>
         {formError && <p className={styles.errorMsg}>{formError}</p>}
