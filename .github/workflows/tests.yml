@@ -55,7 +55,12 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Trigger deploy
+      - name: Deploy backend
         run: |
           curl --silent --show-error --fail \
-            "${{ secrets.RENDER_DEPLOY_HOOK }}"
+            "${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}"
+
+      - name: Deploy frontend
+        run: |
+          curl --silent --show-error --fail \
+            "${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}"
