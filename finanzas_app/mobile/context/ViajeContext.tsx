@@ -1,25 +1,21 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  useCallback,
   type ReactNode,
 } from 'react'
-import { viajesApi } from '@/api'
-import { useAuth } from '@/context/AuthContext'
-import type { Viaje } from '@/pages/viajes/mockViajes'
-
-// -----------------------------------------------------------------------------
-// Tipo del contexto
-// -----------------------------------------------------------------------------
+import { viajesApi } from '@finanzas/shared/api/viajes'
+import type { ViajeLista } from '@finanzas/shared/types'
+import { useAuth } from './AuthContext'
 
 export interface ViajeContextType {
-  viajes: Viaje[]
-  setViajes: React.Dispatch<React.SetStateAction<Viaje[]>>
-  viajeActivo: Viaje | null
-  setViajeActivo: (viaje: Viaje | null) => void
+  viajes: ViajeLista[]
+  setViajes: React.Dispatch<React.SetStateAction<ViajeLista[]>>
+  viajeActivo: ViajeLista | null
+  setViajeActivo: (viaje: ViajeLista | null) => void
   activarViaje: (id: string) => void
   desactivarViaje: (id: string) => void
   refetchViajes: () => void
@@ -27,7 +23,15 @@ export interface ViajeContextType {
 
 const ViajeContext = createContext<ViajeContextType | null>(null)
 
-function mapApiToViaje(v: { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }): Viaje {
+function mapApiToViaje(v: {
+  id: number
+  nombre: string
+  fecha_inicio: string
+  fecha_fin: string
+  color_tema: string
+  es_activo: boolean
+  archivado: boolean
+}): ViajeLista {
   return {
     id: String(v.id),
     nombre: v.nombre,
@@ -39,27 +43,31 @@ function mapApiToViaje(v: { id: number; nombre: string; fecha_inicio: string; fe
   }
 }
 
-// -----------------------------------------------------------------------------
-// Provider
-// -----------------------------------------------------------------------------
-
 export function ViajeProvider({ children }: { children: ReactNode }) {
   const { usuario, loading: authLoading } = useAuth()
-  const [viajes, setViajes] = useState<Viaje[]>([])
+  const [viajes, setViajes] = useState<ViajeLista[]>([])
 
   const cargarViajes = useCallback(async () => {
-    if (!localStorage.getItem('auth_token')) {
+    if (!usuario) {
       setViajes([])
       return
     }
     try {
       const res = await viajesApi.getViajes(false)
-      const list = (res.data ?? []) as { id: number; nombre: string; fecha_inicio: string; fecha_fin: string; color_tema: string; es_activo: boolean; archivado: boolean }[]
+      const list = (res.data ?? []) as {
+        id: number
+        nombre: string
+        fecha_inicio: string
+        fecha_fin: string
+        color_tema: string
+        es_activo: boolean
+        archivado: boolean
+      }[]
       setViajes(list.map(mapApiToViaje))
     } catch {
       setViajes([])
     }
-  }, [])
+  }, [usuario])
 
   useEffect(() => {
     if (authLoading) return
@@ -75,7 +83,7 @@ export function ViajeProvider({ children }: { children: ReactNode }) {
     [viajes]
   )
 
-  const setViajeActivo = (viaje: Viaje | null) => {
+  const setViajeActivo = (viaje: ViajeLista | null) => {
     setViajes((prev) =>
       prev.map((v) => ({
         ...v,
@@ -85,9 +93,7 @@ export function ViajeProvider({ children }: { children: ReactNode }) {
   }
 
   const activarViaje = (id: string) => {
-    setViajes((prev) =>
-      prev.map((v) => ({ ...v, esActivo: v.id === id }))
-    )
+    setViajes((prev) => prev.map((v) => ({ ...v, esActivo: v.id === id })))
   }
 
   const desactivarViaje = (id: string) => {
@@ -113,10 +119,6 @@ export function ViajeProvider({ children }: { children: ReactNode }) {
     <ViajeContext.Provider value={value}>{children}</ViajeContext.Provider>
   )
 }
-
-// -----------------------------------------------------------------------------
-// Hook
-// -----------------------------------------------------------------------------
 
 export function useViaje(): ViajeContextType {
   const ctx = useContext(ViajeContext)

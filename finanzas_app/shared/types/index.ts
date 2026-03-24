@@ -102,6 +102,7 @@ export interface Fondo {
   familia:     number
 }
 
+/** Modelo API / Django (tabla Viaje) */
 export interface Viaje {
   id:          number
   nombre:      string
@@ -110,4 +111,15 @@ export interface Viaje {
   fecha_fin:   string
   activo:      boolean
   familia:     number
+}
+
+/** Viaje mapeado para UI (selector / mobile), alineado con el web */
+export interface ViajeLista {
+  id:          string
+  nombre:      string
+  fechaInicio: string
+  fechaFin:    string
+  colorTema:   string
+  esActivo:    boolean
+  archivado:   boolean
 }

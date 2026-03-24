@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { useRouter } from 'expo-router'
 import * as SecureStore from 'expo-secure-store'
 import axios from 'axios'
+import { GoogleAuthProvider, signInWithCredential, signOut } from 'firebase/auth'
+import { auth } from '../lib/firebase'
 
 export interface Usuario {
   id:      number
@@ -19,7 +21,8 @@ interface AuthContextType {
   user:    Usuario | null
   loading: boolean
   error:   string | null
-  login:   () => Promise<void>
+  /** id_token de Google OAuth (expo-auth-session) → Firebase → backend */
+  loginWithGoogleIdToken: (googleIdToken: string) => Promise<void>
   logout:  () => Promise<void>
 }
 
@@ -33,7 +36,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState<string | null>(null)
 
-  // Al iniciar: restaurar sesión desde SecureStore
   useEffect(() => {
     restaurarSesion()
   }, [])
@@ -48,45 +50,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUsuario(res.data)
     } catch {
       await SecureStore.deleteItemAsync('auth_token')
+      await signOut(auth).catch(() => {})
     } finally {
       setLoading(false)
     }
   }
 
-  async function login() {
-    setError(null)
-    setLoading(true)
-    try {
-      // TODO: configurar Firebase Auth para mobile.
-      // Pasos:
-      //   1. Instalar @react-native-google-signin/google-signin
-      //   2. Configurar GoogleSignin.configure({ webClientId: '...' })
-      //   3. const { idToken } = await GoogleSignin.signIn()
-      //   4. POST a /api/usuarios/auth/firebase/ con { firebase_token: idToken }
-      //   5. Guardar access con SecureStore.setItemAsync('auth_token', res.data.access)
-      //   6. setUsuario(res.data.usuario)
-      throw new Error(
-        'Firebase Auth pendiente de configurar para mobile.\n' +
-        'Ver comentario TODO en mobile/context/AuthContext.tsx'
-      )
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al iniciar sesión'
-      setError(msg)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loginWithGoogleIdToken = useCallback(
+    async (googleIdToken: string) => {
+      setError(null)
+      setLoading(true)
+      try {
+        const credential = GoogleAuthProvider.credential(googleIdToken)
+        const { user } = await signInWithCredential(auth, credential)
+        const firebaseToken = await user.getIdToken()
+        await SecureStore.setItemAsync('auth_token', firebaseToken)
+        const res = await axios.get(`${API_URL}/api/usuarios/me/`, {
+          headers: { Authorization: `Bearer ${firebaseToken}` },
+        })
+        setUsuario(res.data)
+        router.replace('/(tabs)')
+      } catch (err: unknown) {
+        await SecureStore.deleteItemAsync('auth_token')
+        await signOut(auth).catch(() => {})
+        if (axios.isAxiosError(err) && err.response?.status === 404) {
+          setError('Tu cuenta no está registrada en ninguna familia.')
+        } else if (axios.isAxiosError(err) && err.response?.status === 401) {
+          setError('No se pudo verificar la sesión con el servidor.')
+        } else {
+          const msg = err instanceof Error ? err.message : 'Error al iniciar sesión'
+          setError(msg)
+        }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [router]
+  )
 
   async function logout() {
     await SecureStore.deleteItemAsync('auth_token')
+    await signOut(auth).catch(() => {})
     setUsuario(null)
     router.replace('/(auth)/login')
   }
 
-  // Auto-logout tras 5 minutos de inactividad (implementar con AppState en futura iteración)
-
   return (
-    <AuthContext.Provider value={{ usuario, user: usuario, loading, error, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        usuario,
+        user: usuario,
+        loading,
+        error,
+        loginWithGoogleIdToken,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
