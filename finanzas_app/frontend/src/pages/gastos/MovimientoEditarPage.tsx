@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Input, Select, Textarea } from '@/components/ui'
 import type { SelectOption } from '@/components/ui'
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
@@ -41,12 +41,13 @@ interface FormErrors {
 function destinoTrasGuardar(m: MovimientoApi) {
   if (m.ambito === 'COMUN') return '/gastos/comunes'
   if (m.cuenta) return `/gastos/cuenta/${m.cuenta}`
-  return '/gastos'
+  return '/gastos/comunes'
 }
 
 export default function MovimientoEditarPage() {
   const { id: idParam } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const id = Number(idParam)
   const { data: categoriasData } = useCategorias()
   const { data: tarjetasData } = useTarjetas()
@@ -69,6 +70,8 @@ export default function MovimientoEditarPage() {
   const [numCuotas, setNumCuotas] = useState('')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
+  const returnToParam = searchParams.get('returnTo')
+  const returnTo = returnToParam && returnToParam.startsWith('/') ? returnToParam : null
 
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
   const tarjetas = (tarjetasData ?? []) as { id: number; nombre: string }[]
@@ -170,7 +173,7 @@ export default function MovimientoEditarPage() {
         monto: String(monto),
         comentario,
       })
-      navigate(destinoTrasGuardar(base), { replace: true })
+      navigate(returnTo ?? destinoTrasGuardar(base), { replace: true })
     } catch (err: unknown) {
       const ax = err as {
         response?: { status?: number; data?: Record<string, string | string[]> & { error?: string } }
@@ -231,7 +234,7 @@ export default function MovimientoEditarPage() {
       }
       await movimientosApi.patchMovimiento(base.id, payload)
       const actualizado = { ...base, ...payload, cuenta: payload.cuenta as number | null, ambito }
-      navigate(destinoTrasGuardar(actualizado as MovimientoApi), { replace: true })
+      navigate(returnTo ?? destinoTrasGuardar(actualizado as MovimientoApi), { replace: true })
     } catch (err: unknown) {
       const ax = err as {
         response?: { status?: number; data?: Record<string, string | string[]> & { error?: string } }
@@ -348,7 +351,12 @@ export default function MovimientoEditarPage() {
               rows={2}
             />
             <div className={styles.actions}>
-              <Button type="button" variant="ghost" disabled={loading} onClick={() => navigate(-1)}>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={loading}
+                onClick={() => navigate(returnTo ?? -1)}
+              >
                 Cancelar
               </Button>
               <Button type="submit" loading={loading} fullWidth>
@@ -508,7 +516,12 @@ export default function MovimientoEditarPage() {
             />
 
             <div className={styles.actions}>
-              <Button type="button" variant="ghost" disabled={loading} onClick={() => navigate(-1)}>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={loading}
+                onClick={() => navigate(returnTo ?? -1)}
+              >
                 Cancelar
               </Button>
               <Button type="submit" loading={loading} fullWidth>

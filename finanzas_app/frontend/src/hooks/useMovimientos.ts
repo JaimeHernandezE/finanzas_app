@@ -21,6 +21,7 @@ export function useMovimientos(filtros: MovimientoFiltros = {}) {
   }, [
     filtros.cuenta,
     filtros.ambito,
+    filtros.solo_mios,
     filtros.mes,
     filtros.anio,
     filtros.tipo,

@@ -18,9 +18,14 @@ function rolLabel(rol: string): string {
 // -----------------------------------------------------------------------------
 
 export default function PerfilPage() {
-  const { user, logout } = useAuth()
+  const { user, logout, updateNombre } = useAuth()
   const [nombreEdit, setNombreEdit] = useState(user?.nombre ?? '')
-  const nombreCambiado = user?.nombre !== nombreEdit
+  const [guardando, setGuardando] = useState(false)
+  const [mensajeError, setMensajeError] = useState<string | null>(null)
+  const [mensajeOk, setMensajeOk] = useState<string | null>(null)
+  const nombreTrim = nombreEdit.trim()
+  const nombreCambiado = user?.nombre.trim() !== nombreTrim
+  const puedeGuardar = nombreTrim.length > 0 && nombreCambiado && !guardando
 
   if (!user) {
     return (
@@ -32,9 +37,20 @@ export default function PerfilPage() {
 
   const inicial = user.nombre.trim().charAt(0).toUpperCase() || '?'
 
-  const handleGuardar = () => {
-    // TODO: conectar al backend PATCH /api/usuarios/me/
-    console.log('Guardar nombre:', nombreEdit)
+  const handleGuardar = async () => {
+    if (!puedeGuardar) return
+    setGuardando(true)
+    setMensajeError(null)
+    setMensajeOk(null)
+    try {
+      await updateNombre(nombreTrim)
+      setMensajeOk('Nombre actualizado')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo actualizar el nombre'
+      setMensajeError(msg)
+    } finally {
+      setGuardando(false)
+    }
   }
 
   return (
@@ -72,12 +88,14 @@ export default function PerfilPage() {
             <button
               type="button"
               className={styles.btnGuardar}
-              disabled={!nombreCambiado}
+              disabled={!puedeGuardar}
               onClick={handleGuardar}
             >
-              Guardar
+              {guardando ? 'Guardando...' : 'Guardar'}
             </button>
           </div>
+          {mensajeError && <p className={styles.msgError}>{mensajeError}</p>}
+          {mensajeOk && <p className={styles.msgOk}>{mensajeOk}</p>}
         </div>
       </section>
 

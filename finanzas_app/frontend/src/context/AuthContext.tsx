@@ -27,6 +27,7 @@ interface AuthContextType {
   error:    string | null
   login:    () => Promise<void>
   logout:   () => Promise<void>
+  updateNombre: (nombre: string) => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -40,10 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function verificarConBackend(firebaseUser: FirebaseUser) {
     try {
       const token = await firebaseUser.getIdToken()
+      const headers = { Authorization: `Bearer ${token}` }
+      const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+      const registroUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/registro/`
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/me/`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      const res = await fetch(meUrl, { headers })
 
       if (res.ok) {
         const data = await res.json()
@@ -51,10 +53,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUsuario(data)
         setError(null)
       } else if (res.status === 404) {
+        // Si existe invitación pendiente (o es primer usuario), el backend lo registra aquí.
+        const regRes = await fetch(registroUrl, {
+          method: 'POST',
+          headers,
+        })
+        if (regRes.ok) {
+          const data = await regRes.json()
+          localStorage.setItem('auth_token', token)
+          setUsuario(data)
+          setError(null)
+          return
+        }
+
+        const regBody = await regRes.json().catch(() => ({}))
         await signOut(auth)
         localStorage.removeItem('auth_token')
         setUsuario(null)
-        setError('Tu cuenta de Gmail no está registrada. Contacta al administrador.')
+        setError(
+          regBody?.error ||
+          'Tu cuenta de Gmail no está registrada. Contacta al administrador.'
+        )
       } else if (res.status === 401) {
         const body = await res.json().catch(() => ({}))
         const msg = body?.error || 'Sesión no válida'
@@ -139,6 +158,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate('/login', { replace: true })
   }
 
+  async function updateNombre(nombre: string) {
+    const token = localStorage.getItem('auth_token')
+    if (!token) throw new Error('Sesión no disponible')
+
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/me/`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nombre }),
+    })
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body?.error || 'No se pudo actualizar el nombre')
+    }
+
+    const data = await res.json()
+    setUsuario(prev => {
+      if (!prev) return data
+      return {
+        ...data,
+        // Si backend no envía foto por algún motivo, conservar la local.
+        foto: data?.foto ?? prev.foto ?? null,
+      }
+    })
+  }
+
   // Cierre de sesión automático tras 5 minutos de inactividad
   const logoutRef = useRef(logout)
   logoutRef.current = logout
@@ -166,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [usuario])
 
   return (
-    <AuthContext.Provider value={{ usuario, user: usuario, loading, error, login, logout }}>
+    <AuthContext.Provider value={{ usuario, user: usuario, loading, error, login, logout, updateNombre }}>
       {children}
     </AuthContext.Provider>
   )

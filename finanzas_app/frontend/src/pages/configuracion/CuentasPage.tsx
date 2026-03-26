@@ -5,6 +5,15 @@ import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './CuentasPage.module.scss'
 
+const EVENTO_CUENTAS_ACTUALIZADAS = 'cuentas:actualizadas'
+const cuentaPersonalPrimero = (a: CuentaPersonalApi, b: CuentaPersonalApi) => {
+  const aEsPersonal = a.nombre.trim().toLowerCase() === 'personal'
+  const bEsPersonal = b.nombre.trim().toLowerCase() === 'personal'
+  if (aEsPersonal && !bEsPersonal) return -1
+  if (!aEsPersonal && bEsPersonal) return 1
+  return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
+}
+
 export default function CuentasPage() {
   const { data, loading, error, refetch } = useCuentasPersonales()
   const cuentas = (data ?? []) as CuentaPersonalApi[]
@@ -21,7 +30,10 @@ export default function CuentasPage() {
   const [addVisible, setAddVisible] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  const propias = useMemo(() => cuentas.filter(c => c.es_propia), [cuentas])
+  const propias = useMemo(
+    () => cuentas.filter(c => c.es_propia).sort(cuentaPersonalPrimero),
+    [cuentas],
+  )
   const tuteladas = useMemo(() => cuentas.filter(c => !c.es_propia), [cuentas])
 
   const startEdit = (c: CuentaPersonalApi) => {
@@ -47,6 +59,7 @@ export default function CuentasPage() {
         visible_familia: editVisible,
       })
       await refetch()
+      window.dispatchEvent(new Event(EVENTO_CUENTAS_ACTUALIZADAS))
       setEditingId(null)
     } catch (e: unknown) {
       const ax = e as { response?: { data?: Record<string, unknown> } }
@@ -67,6 +80,7 @@ export default function CuentasPage() {
     try {
       await finanzasApi.deleteCuentaPersonal(id)
       await refetch()
+      window.dispatchEvent(new Event(EVENTO_CUENTAS_ACTUALIZADAS))
       setDeletingId(null)
     } catch (e: unknown) {
       const ax = e as { response?: { data?: { error?: string } } }
@@ -101,6 +115,7 @@ export default function CuentasPage() {
         visible_familia: addVisible,
       })
       await refetch()
+      window.dispatchEvent(new Event(EVENTO_CUENTAS_ACTUALIZADAS))
       setAddingCuenta(false)
     } catch (e: unknown) {
       const ax = e as { response?: { data?: Record<string, unknown> } }

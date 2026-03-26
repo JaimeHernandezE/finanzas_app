@@ -44,14 +44,14 @@ export default function MovimientoFormPage() {
   const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
 
   const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
-  const [ambito,    setAmbito]    = useState<Ambito>(() =>
-    searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL',
-  )
+  const ambito: Ambito = searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL'
   const [metodo,    setMetodo]    = useState<Metodo>('EFECTIVO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
   const [loading,   setLoading]   = useState(false)
   const [errors,    setErrors]    = useState<FormErrors>({})
+  const returnToParam = searchParams.get('returnTo')
+  const returnTo = returnToParam && returnToParam.startsWith('/') ? returnToParam : null
   const categoriaOpciones: SelectOption[] = useMemo(() => {
     const filtradas = categorias.filter(c => c.tipo === tipo)
     return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
@@ -119,7 +119,8 @@ export default function MovimientoFormPage() {
       const cuentaQ = searchParams.get('cuenta')
       const primeraPropia = cuentasData?.find(c => c.es_propia)
       let dest = '/configuracion/cuentas'
-      if (ambito === 'COMUN') dest = '/gastos/comunes'
+      if (returnTo) dest = returnTo
+      else if (ambito === 'COMUN') dest = '/gastos/comunes'
       else if (cuentaQ) dest = `/gastos/cuenta/${encodeURIComponent(cuentaQ)}`
       else if (primeraPropia) dest = `/gastos/cuenta/${primeraPropia.id}`
       navigate(dest, { replace: true })
@@ -155,7 +156,7 @@ export default function MovimientoFormPage() {
             </div>
           )}
 
-          {/* Tipo / Ámbito */}
+          {/* Tipo */}
           <div className={styles.row}>
             <div className={styles.field}>
               <span className={styles.label}>Tipo</span>
@@ -173,26 +174,6 @@ export default function MovimientoFormPage() {
                   onClick={() => setTipo('INGRESO')}
                 >
                   Ingreso
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.field}>
-              <span className={styles.label}>Ámbito</span>
-              <div className={styles.segmented}>
-                <button
-                  type="button"
-                  className={`${styles.segment} ${ambito === 'PERSONAL' ? styles.segmentActive : ''}`}
-                  onClick={() => setAmbito('PERSONAL')}
-                >
-                  Personal
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.segment} ${ambito === 'COMUN' ? styles.segmentActive : ''}`}
-                  onClick={() => setAmbito('COMUN')}
-                >
-                  Común
                 </button>
               </div>
             </div>
@@ -246,25 +227,27 @@ export default function MovimientoFormPage() {
             required
           />
 
-          {/* Método de pago */}
-          <div className={styles.field}>
-            <span className={styles.label}>Método de pago</span>
-            <div className={styles.metodoBtns}>
-              {(['EFECTIVO', 'DEBITO', 'CREDITO'] as Metodo[]).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  className={`${styles.metodoBtn} ${metodo === m ? styles.metodoBtnActive : ''}`}
-                  onClick={() => setMetodo(m)}
-                >
-                  {m === 'EFECTIVO' ? 'Efectivo' : m === 'DEBITO' ? 'Débito' : 'Crédito'}
-                </button>
-              ))}
+          {/* Método de pago (solo egreso) */}
+          {tipo === 'EGRESO' && (
+            <div className={styles.field}>
+              <span className={styles.label}>Método de pago</span>
+              <div className={styles.metodoBtns}>
+                {(['EFECTIVO', 'DEBITO', 'CREDITO'] as Metodo[]).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`${styles.metodoBtn} ${metodo === m ? styles.metodoBtnActive : ''}`}
+                    onClick={() => setMetodo(m)}
+                  >
+                    {m === 'EFECTIVO' ? 'Efectivo' : m === 'DEBITO' ? 'Débito' : 'Crédito'}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Panel crédito */}
-          {metodo === 'CREDITO' && (
+          {/* Panel crédito (solo egreso) */}
+          {tipo === 'EGRESO' && metodo === 'CREDITO' && (
             <div className={styles.creditoPanel}>
               <div className={styles.row}>
                 <Select
@@ -323,7 +306,7 @@ export default function MovimientoFormPage() {
               type="button"
               variant="ghost"
               disabled={loading}
-              onClick={() => navigate('/gastos')}
+              onClick={() => navigate(returnTo ?? '/gastos/comunes')}
             >
               Cancelar
             </Button>

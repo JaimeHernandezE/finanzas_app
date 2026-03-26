@@ -343,6 +343,7 @@ def movimientos(request):
 
         cuenta = request.GET.get('cuenta')
         ambito = request.GET.get('ambito')
+        solo_mios = request.GET.get('solo_mios')
         mes = request.GET.get('mes')
         anio = request.GET.get('anio')
         tipo = request.GET.get('tipo')
@@ -354,6 +355,8 @@ def movimientos(request):
             qs = qs.filter(cuenta_id=cuenta)
         if ambito:
             qs = qs.filter(ambito=ambito)
+        if solo_mios in ('1', 'true', 'True', 'yes', 'on'):
+            qs = qs.filter(usuario=usuario)
         if mes and anio:
             qs = qs.filter(fecha__month=mes, fecha__year=anio)
         elif mes:

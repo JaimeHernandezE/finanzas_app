@@ -46,6 +46,10 @@ function toPesos(n: unknown): number {
   return Number.isFinite(x) ? Math.round(x) : 0
 }
 
+function montoAbs(n: unknown): number {
+  return Math.abs(toPesos(n))
+}
+
 const fechaCorta = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString('es-CL', {
@@ -133,9 +137,10 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const monto = montoAbs(mov.monto)
   const montoFmt  = esIngreso
-    ? formatMonto(toPesos(mov.monto))
-    : `−${formatMonto(toPesos(mov.monto))}`
+    ? formatMonto(monto)
+    : `−${formatMonto(monto)}`
 
   return (
     <div className={styles.movItem}>
@@ -172,6 +177,7 @@ function MovimientosList({
   verTodosTo?:  string
 }) {
   const [expandido, setExpandido] = useState(true)
+  const movimientosRecientes = useMemo(() => movimientos.slice(0, 10), [movimientos])
 
   return (
     <div className={styles.listaCard}>
@@ -182,7 +188,7 @@ function MovimientosList({
         <span className={styles.listaTitulo}>{titulo}</span>
         <div className={styles.listaHeaderRight}>
           <span className={styles.listaCuenta}>
-            {movimientos.length} movimiento{movimientos.length !== 1 ? 's' : ''}
+            {movimientosRecientes.length} movimiento{movimientosRecientes.length !== 1 ? 's' : ''}
           </span>
           <span className={`${styles.chevron} ${expandido ? styles.chevronOpen : ''}`}>
             ▾
@@ -192,11 +198,11 @@ function MovimientosList({
 
       {expandido && (
         <div className={styles.listaCuerpo}>
-          {movimientos.length === 0 ? (
+          {movimientosRecientes.length === 0 ? (
             <p className={styles.listaVacia}>Sin movimientos este mes.</p>
           ) : (
             <>
-              {movimientos.map(m => (
+              {movimientosRecientes.map(m => (
                 <MovimientoItem key={m.id} mov={m} />
               ))}
               {verTodosTo && (
@@ -225,6 +231,8 @@ export default function DashboardPage() {
   const { movimientos: movimientosRaw, loading, error } = useMovimientos({
     mes: mes + 1,
     anio,
+    ambito: 'PERSONAL',
+    solo_mios: true,
   })
   const movimientos = (movimientosRaw ?? []) as MovimientoApi[]
 
@@ -264,15 +272,12 @@ export default function DashboardPage() {
         .filter(m => m.metodo_pago_tipo !== 'CREDITO')
         .reduce(
           (acc, m) =>
-            acc + (m.tipo === 'INGRESO' ? toPesos(m.monto) : -toPesos(m.monto)),
+            acc + (m.tipo === 'INGRESO' ? montoAbs(m.monto) : -montoAbs(m.monto)),
           0,
         ),
     [movimientos],
   )
   const saldo = efectivo - deudaTc
-
-  const personales = useMemo(() => movimientos.filter(m => m.ambito === 'PERSONAL'), [movimientos])
-  const comunes    = useMemo(() => movimientos.filter(m => m.ambito === 'COMUN'), [movimientos])
 
   // Categorías (solo egresos) ordenadas de mayor a menor
   const categoriasSorted = useMemo(() => {
@@ -280,7 +285,7 @@ export default function DashboardPage() {
     for (const m of movimientos) {
       if (m.tipo !== 'EGRESO') continue
       const name = m.categoria_nombre || 'Otros'
-      byCat.set(name, (byCat.get(name) ?? 0) + toPesos(m.monto))
+      byCat.set(name, (byCat.get(name) ?? 0) + montoAbs(m.monto))
     }
     return Array.from(byCat.entries())
       .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
@@ -344,13 +349,8 @@ export default function DashboardPage() {
         <div className={styles.listas}>
           <MovimientosList
             titulo="Gastos personales"
-            movimientos={personales}
+            movimientos={movimientos}
             verTodosTo={linkListadoPersonales}
-          />
-          <MovimientosList
-            titulo="Gastos comunes"
-            movimientos={comunes}
-            verTodosTo="/gastos/comunes"
           />
         </div>
 

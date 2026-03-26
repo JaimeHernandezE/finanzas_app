@@ -19,6 +19,7 @@ interface IngresoMes {
   monto: number
   mes: number
   anio: number
+  fechaIso: string
 }
 
 const COLORES_MIEMBRO = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860']
@@ -33,6 +34,31 @@ const MESES = [
 ]
 
 const pct = (n: number) => `${n.toFixed(1)}%`
+
+const formatearFecha = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return 'Fecha no disponible'
+  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`
+}
+
+const parseMesAnio = (valorMes: string | undefined, fallbackMes: number, fallbackAnio: number) => {
+  if (!valorMes) return { mes: fallbackMes, anio: fallbackAnio }
+
+  const match = /^(\d{4})-(\d{2})/.exec(valorMes)
+  if (match) {
+    const anioNum = Number(match[1])
+    const mesNum = Number(match[2]) - 1
+    return {
+      mes: Number.isFinite(mesNum) ? Math.max(0, Math.min(11, mesNum)) : fallbackMes,
+      anio: Number.isFinite(anioNum) ? anioNum : fallbackAnio,
+    }
+  }
+
+  // Fallback para formatos distintos, evitando romper render si el backend cambia.
+  const d = new Date(valorMes)
+  if (Number.isNaN(d.getTime())) return { mes: fallbackMes, anio: fallbackAnio }
+  return { mes: d.getMonth(), anio: d.getFullYear() }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-componentes
@@ -105,6 +131,8 @@ function FilaTotalFamiliar({ monto }: { monto: number }) {
 export default function SueldosPage() {
   const { formatMonto } = useConfig()
   const hoy = new Date()
+  const mesActual = hoy.getMonth()
+  const anioActual = hoy.getFullYear()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [mostrarFormNuevo, setMostrarFormNuevo] = useState(false)
@@ -121,18 +149,20 @@ export default function SueldosPage() {
   const ingresos: IngresoMes[] = useMemo(() => {
     const list = (ingresosRaw ?? []) as { id: number; mes: string; monto: string; origen: string; usuario: number; autor_nombre: string }[]
     return list.map(i => {
-      const d = i.mes ? new Date(i.mes) : new Date()
+      const { mes, anio } = parseMesAnio(i.mes, mesActual, anioActual)
+      const fechaIso = `${anio}-${String(mes + 1).padStart(2, '0')}-01`
       return {
         id: i.id,
         usuarioId: String(i.usuario),
         nombre: i.autor_nombre ?? '',
         origen: i.origen,
         monto: Number(i.monto) || 0,
-        mes: d.getMonth(),
-        anio: d.getFullYear(),
+        mes,
+        anio,
+        fechaIso,
       }
     })
-  }, [ingresosRaw])
+  }, [ingresosRaw, mesActual, anioActual])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -333,7 +363,14 @@ export default function SueldosPage() {
               <ul className={styles.listaIngresosSoloLectura}>
                 {lista.map(ing => (
                   <li key={ing.id} className={styles.filaSoloLectura}>
-                    <span className={styles.filaOrigen}>{ing.origen}</span>
+                    <div className={styles.filaContenido}>
+                      <span className={styles.filaOrigen}>{ing.origen}</span>
+                      <span className={styles.filaMeta}>
+                        <span className={styles.filaUsuario}>{ing.nombre || 'Sin nombre'}</span>
+                        <span aria-hidden="true">•</span>
+                        <span className={styles.filaFecha}>{formatearFecha(ing.fechaIso)}</span>
+                      </span>
+                    </div>
                     <span className={styles.filaMonto}>{formatMonto(ing.monto)}</span>
                   </li>
                 ))}
@@ -410,7 +447,14 @@ function FilaIngreso({
   const { formatMonto } = useConfig()
   return (
     <li className={styles.filaIngreso}>
-      <span className={styles.filaOrigen}>{ingreso.origen}</span>
+      <div className={styles.filaContenido}>
+        <span className={styles.filaOrigen}>{ingreso.origen}</span>
+        <span className={styles.filaMeta}>
+          <span className={styles.filaUsuario}>{ingreso.nombre || 'Sin nombre'}</span>
+          <span aria-hidden="true">•</span>
+          <span className={styles.filaFecha}>{formatearFecha(ingreso.fechaIso)}</span>
+        </span>
+      </div>
       <span className={styles.filaMonto}>{formatMonto(ingreso.monto)}</span>
       <button type="button" className={styles.btnIcon} onClick={onEditar} title="Editar">
         ✎

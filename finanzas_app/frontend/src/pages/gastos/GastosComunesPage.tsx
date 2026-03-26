@@ -389,8 +389,9 @@ export default function GastosComunesPage() {
     setMovimientoAEliminar(null)
   }
 
-  const irNuevo  = () => navigate('/gastos/nuevo?ambito=COMUN')
-  const irEditar = (id: number) => navigate(`/gastos/${id}/editar`)
+  const returnTo = '/gastos/comunes'
+  const irNuevo  = () => navigate(`/gastos/nuevo?ambito=COMUN&returnTo=${encodeURIComponent(returnTo)}`)
+  const irEditar = (id: number) => navigate(`/gastos/${id}/editar?returnTo=${encodeURIComponent(returnTo)}`)
 
   const movimientosFiltrados = useMemo(() => {
     return movimientosTyped.filter(m => {

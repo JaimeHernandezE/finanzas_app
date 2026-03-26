@@ -31,7 +31,21 @@ def obtener_usuario_desde_token(request):
         return None, str(e)
 
 
-@api_view(['GET'])
+def _payload_me(usuario: Usuario, decoded: dict | None = None):
+    return {
+        'id': usuario.id,
+        'email': usuario.email,
+        'nombre': usuario.get_full_name() or usuario.username,
+        'rol': usuario.rol,
+        'foto': (decoded or {}).get('picture'),
+        'familia': {
+            'id': usuario.familia.id,
+            'nombre': usuario.familia.nombre,
+        } if usuario.familia else None,
+    }
+
+
+@api_view(['GET', 'PATCH'])
 @authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
 @permission_classes([AllowAny])
 def me(request):
@@ -45,7 +59,7 @@ def me(request):
         print(f'[Firebase] /me/ 401: {error}')
         return Response({'error': error}, status=status.HTTP_401_UNAUTHORIZED)
 
-    email = decoded.get('email')
+    email = (decoded.get('email') or '').strip()
     uid = decoded.get('uid')
 
     try:
@@ -55,17 +69,23 @@ def me(request):
             usuario.firebase_uid = uid
             usuario.save(update_fields=['firebase_uid'])
 
-        return Response({
-            'id': usuario.id,
-            'email': usuario.email,
-            'nombre': usuario.get_full_name() or usuario.username,
-            'rol': usuario.rol,
-            'foto': decoded.get('picture'),
-            'familia': {
-                'id': usuario.familia.id,
-                'nombre': usuario.familia.nombre,
-            } if usuario.familia else None,
-        })
+        if request.method == 'PATCH':
+            nombre_raw = (request.data.get('nombre') or '').strip()
+            if not nombre_raw:
+                return Response(
+                    {'error': 'El nombre no puede estar vacío.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            partes = nombre_raw.split(maxsplit=1)
+            first_name = partes[0][:150]
+            last_name = (partes[1] if len(partes) > 1 else '')[:150]
+
+            usuario.first_name = first_name
+            usuario.last_name = last_name
+            usuario.save(update_fields=['first_name', 'last_name'])
+
+        return Response(_payload_me(usuario, decoded))
 
     except Usuario.DoesNotExist:
         return Response(

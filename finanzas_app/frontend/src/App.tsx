@@ -8,7 +8,6 @@ import { RutaProtegida } from '@/components/auth/RutaProtegida'
 import LandingPage from '@/pages/public/LandingPage'
 import LoginPage from '@/pages/login/LoginPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
-import MovimientosPage from '@/pages/gastos/MovimientosPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
 import MovimientoEditarPage from '@/pages/gastos/MovimientoEditarPage'
 import CuentaPage from '@/pages/gastos/CuentaPage'
@@ -57,7 +56,7 @@ function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
 
         <Route path="gastos">
-          <Route index element={<MovimientosPage />} />
+          <Route index element={<Navigate to="/gastos/comunes" replace />} />
           <Route path="comunes" element={<GastosComunesPage />} />
           <Route path="cuenta/:id" element={<CuentaPage />} />
           <Route path="nuevo" element={<MovimientoFormPage />} />

@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useViaje } from '@/context/ViajeContext'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import styles from './MainLayout.module.scss'
@@ -39,6 +39,15 @@ const BOTTOM_NAV = [
   { icon: '⊕', label: 'Gastos comunes', to: '/gastos/comunes', end: false },
   { icon: '⇄', label: 'Resumen común',  to: '/liquidacion',    end: false },
 ] as const
+
+const EVENTO_CUENTAS_ACTUALIZADAS = 'cuentas:actualizadas'
+const cuentaPersonalPrimero = (a: CuentaNav, b: CuentaNav) => {
+  const aEsPersonal = a.nombre.trim().toLowerCase() === 'personal'
+  const bEsPersonal = b.nombre.trim().toLowerCase() === 'personal'
+  if (aEsPersonal && !bEsPersonal) return -1
+  if (!aEsPersonal && bEsPersonal) return 1
+  return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-componentes internos
@@ -99,7 +108,15 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const { user, loading, logout } = useAuth()
   const { viajeActivo } = useViaje()
-  const { data: cuentasApi } = useCuentasPersonales()
+  const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
+
+  useEffect(() => {
+    const onCuentasActualizadas = () => {
+      void refetchCuentas()
+    }
+    window.addEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
+    return () => window.removeEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
+  }, [refetchCuentas])
 
   const { propias, tuteladas } = useMemo(() => {
     const list = (cuentasApi ?? []).map(
@@ -113,7 +130,7 @@ export default function MainLayout() {
       }),
     )
     return {
-      propias: list.filter(c => c.esPropia),
+      propias: list.filter(c => c.esPropia).sort(cuentaPersonalPrimero),
       tuteladas: list.filter(c => !c.esPropia),
     }
   }, [cuentasApi])

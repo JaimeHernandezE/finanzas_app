@@ -67,6 +67,11 @@ const hoyISO = () => {
   return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`
 }
 
+const montoSeguro = (valor: unknown) => {
+  const n = typeof valor === 'number' ? valor : Number(valor)
+  return Number.isFinite(n) ? n : 0
+}
+
 function groupByDate(movimientos: Movimiento[]): GrupoFecha[] {
   const today = hoyISO()
   const map = new Map<string, Movimiento[]>()
@@ -210,6 +215,7 @@ function MovimientoRow({
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const monto = montoSeguro(mov.monto)
 
   return (
     <div className={styles.movRow}>
@@ -226,7 +232,7 @@ function MovimientoRow({
         className={styles.movMonto}
         style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
       >
-        {esIngreso ? '+' : '−'}{formatMonto(mov.monto)}
+        {esIngreso ? '+' : '−'}{formatMonto(monto)}
       </span>
 
       <span
@@ -265,16 +271,23 @@ function DateGroup({
   onDelete: (mov: Movimiento) => void
 }) {
   const { formatMonto } = useConfig()
-  const subtotal = grupo.movimientos.reduce(
-    (acc, m) => acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto), 0,
-  )
+  // El resumen diario representa gasto del día; no descuenta ingresos.
+  const subtotalEgresos = grupo.movimientos.reduce((acc, m) => {
+    if (m.tipo !== 'EGRESO') return acc
+    return acc + montoSeguro(m.monto)
+  }, 0)
+  const mostrarSubtotal = subtotalEgresos > 0
 
   return (
     <div className={styles.grupo}>
       <div className={styles.grupoHeader}>
         <span className={styles.grupoLabel}>{grupo.label.toUpperCase()}</span>
-        <span className={styles.grupoSep}> — </span>
-        <span className={styles.grupoSubtotal}>{formatMonto(subtotal)}</span>
+        {mostrarSubtotal && (
+          <>
+            <span className={styles.grupoSep}> — </span>
+            <span className={styles.grupoSubtotal}>{formatMonto(subtotalEgresos)}</span>
+          </>
+        )}
       </div>
       {grupo.movimientos.map(m => (
         <MovimientoRow
@@ -314,6 +327,7 @@ function DeleteModal({
   onConfirm: () => void
 }) {
   const { formatMonto } = useConfig()
+  const monto = montoSeguro(mov.monto)
   return (
     <div className={styles.modalOverlay} onClick={onCancel}>
       <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
@@ -321,7 +335,7 @@ function DeleteModal({
         <p className={styles.modalTexto}>
           ¿Eliminar{' '}
           <strong>"{mov.comentario || '—'}"</strong>{' '}
-          por <strong>{formatMonto(mov.monto)}</strong>?
+          por <strong>{formatMonto(monto)}</strong>?
           <br />
           Esta acción no se puede deshacer.
         </p>
@@ -419,8 +433,11 @@ export default function CuentaPage() {
     setMovimientoAEliminar(null)
   }
 
-  const irNuevo = () => navigate(`/gastos/nuevo?cuenta=${id}`)
-  const irEditar = (movId: number) => navigate(`/gastos/${movId}/editar`)
+  const returnTo = `/gastos/cuenta/${id}`
+  const irNuevo = () =>
+    navigate(`/gastos/nuevo?ambito=PERSONAL&cuenta=${id}&returnTo=${encodeURIComponent(returnTo)}`)
+  const irEditar = (movId: number) =>
+    navigate(`/gastos/${movId}/editar?returnTo=${encodeURIComponent(returnTo)}`)
 
   const movimientosFiltrados = useMemo(() => {
     return movimientosTyped.filter(m => {

@@ -3,6 +3,7 @@ import client from './client'
 export interface MovimientoFiltros {
   cuenta?: number
   ambito?: 'PERSONAL' | 'COMUN'
+  solo_mios?: boolean
   mes?: number
   anio?: number
   tipo?: 'INGRESO' | 'EGRESO'
