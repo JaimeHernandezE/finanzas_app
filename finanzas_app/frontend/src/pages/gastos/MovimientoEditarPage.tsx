@@ -355,7 +355,13 @@ export default function MovimientoEditarPage() {
                 type="button"
                 variant="ghost"
                 disabled={loading}
-                onClick={() => navigate(returnTo ?? -1)}
+                onClick={() => {
+                  if (returnTo) {
+                    navigate(returnTo)
+                    return
+                  }
+                  navigate(-1)
+                }}
               >
                 Cancelar
               </Button>
@@ -520,7 +526,13 @@ export default function MovimientoEditarPage() {
                 type="button"
                 variant="ghost"
                 disabled={loading}
-                onClick={() => navigate(returnTo ?? -1)}
+                onClick={() => {
+                  if (returnTo) {
+                    navigate(returnTo)
+                    return
+                  }
+                  navigate(-1)
+                }}
               >
                 Cancelar
               </Button>
