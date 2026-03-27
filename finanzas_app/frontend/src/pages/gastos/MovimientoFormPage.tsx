@@ -45,7 +45,7 @@ export default function MovimientoFormPage() {
 
   const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
   const ambito: Ambito = searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL'
-  const [metodo,    setMetodo]    = useState<Metodo>('EFECTIVO')
+  const [metodo,    setMetodo]    = useState<Metodo>('DEBITO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
   const [loading,   setLoading]   = useState(false)
@@ -232,7 +232,7 @@ export default function MovimientoFormPage() {
             <div className={styles.field}>
               <span className={styles.label}>Método de pago</span>
               <div className={styles.metodoBtns}>
-                {(['EFECTIVO', 'DEBITO', 'CREDITO'] as Metodo[]).map(m => (
+                {(['DEBITO', 'EFECTIVO', 'CREDITO'] as Metodo[]).map(m => (
                   <button
                     key={m}
                     type="button"

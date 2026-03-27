@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.db.models import Q, Sum, OuterRef, Subquery
+from django.utils import timezone
 from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -504,24 +505,37 @@ def cuotas(request):
 @permission_classes([AllowAny])
 def cuotas_deuda_pendiente(request):
     """
-    Suma de montos de cuotas de tarjeta aún no pagadas (toda la familia).
-    Útil para el dashboard (saldo proyectado vs efectivo).
+    Suma del gasto personal con tarjeta de crédito del usuario autenticado
+    para el mes actual, considerando solo movimientos hasta el día de
+    facturación de cada tarjeta.
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
 
-    if not usuario.familia_id:
+    hoy = timezone.localdate()
+    tarjetas = Tarjeta.objects.filter(usuario=usuario).only('id', 'dia_facturacion')
+    if not tarjetas.exists():
         return Response({'total': '0'})
 
-    total = (
-        Cuota.objects.filter(movimiento__familia_id=usuario.familia_id)
-        .exclude(estado='PAGADO')
-        .aggregate(t=Sum('monto'))
-        .get('t')
+    total = Decimal('0')
+    base_qs = Movimiento.objects.filter(
+        usuario=usuario,
+        tipo='EGRESO',
+        ambito='PERSONAL',
+        oculto=False,
+        metodo_pago__tipo='CREDITO',
+        fecha__year=hoy.year,
+        fecha__month=hoy.month,
     )
-    if total is None:
-        total = 0
+
+    for tarjeta in tarjetas:
+        qs_tarjeta = base_qs.filter(tarjeta_id=tarjeta.id)
+        if tarjeta.dia_facturacion:
+            qs_tarjeta = qs_tarjeta.filter(fecha__day__lte=tarjeta.dia_facturacion)
+        subtotal = qs_tarjeta.aggregate(t=Sum('monto')).get('t') or Decimal('0')
+        total += subtotal
+
     return Response({'total': str(total)})
 
 
@@ -675,7 +689,7 @@ def _puede_editar_presupuesto(usuario, presupuesto):
 @permission_classes([AllowAny])
 def presupuesto_mes(request):
     """
-    GET ?mes=3&anio=2026&ambito=FAMILIAR|PERSONAL
+    GET ?mes=3&anio=2026&ambito=FAMILIAR|PERSONAL[&cuenta=ID]
     Lista categorías con presupuesto y/o gastos del mes (egresos COMUN o PERSONAL).
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
@@ -693,6 +707,7 @@ def presupuesto_mes(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     ambito = (request.GET.get('ambito') or 'FAMILIAR').upper()
+    cuenta_id = request.GET.get('cuenta')
     if ambito not in ('FAMILIAR', 'PERSONAL'):
         return Response(
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
@@ -735,6 +750,20 @@ def presupuesto_mes(request):
             ambito='PERSONAL',
             oculto=False,
         )
+        if cuenta_id:
+            try:
+                cuenta_int = int(cuenta_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': 'cuenta debe ser numérica.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not CuentaPersonal.objects.filter(pk=cuenta_int, usuario=usuario).exists():
+                return Response(
+                    {'error': 'Cuenta personal no válida.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            mov_qs = mov_qs.filter(cuenta_id=cuenta_int)
 
     gastos_por_cat = {
         row['categoria_id']: row['t'] or 0

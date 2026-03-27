@@ -57,7 +57,7 @@ class CuotaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Cuota
         fields = [
-            'id', 'numero', 'monto', 'mes_facturacion',
+            'id', 'movimiento', 'numero', 'monto', 'mes_facturacion',
             'estado', 'incluir'
         ]
 
@@ -142,6 +142,9 @@ class MovimientoListSerializer(serializers.ModelSerializer):
     tarjeta_nombre = serializers.CharField(
         source='tarjeta.nombre', read_only=True, allow_null=True
     )
+    cuenta_nombre = serializers.CharField(
+        source='cuenta.nombre', read_only=True, allow_null=True
+    )
     autor_nombre = serializers.CharField(source='usuario.first_name', read_only=True)
     ingreso_comun = serializers.SerializerMethodField()
 
@@ -149,6 +152,7 @@ class MovimientoListSerializer(serializers.ModelSerializer):
         model = Movimiento
         fields = [
             'id', 'fecha', 'tipo', 'ambito', 'monto', 'comentario',
+            'cuenta', 'cuenta_nombre',
             'categoria', 'categoria_nombre',
             'metodo_pago', 'metodo_pago_tipo',
             'tarjeta', 'tarjeta_nombre',

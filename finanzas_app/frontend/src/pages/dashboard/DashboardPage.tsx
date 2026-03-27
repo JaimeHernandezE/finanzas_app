@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
-import { movimientosApi } from '@/api'
+import { finanzasApi, movimientosApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
+import { useAuth } from '@/context/AuthContext'
 import styles from './DashboardPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,6 +18,8 @@ interface MovimientoApi {
   fecha: string
   tipo: 'EGRESO' | 'INGRESO'
   ambito: 'PERSONAL' | 'COMUN'
+  cuenta: number | null
+  cuenta_nombre?: string | null
   monto: number
   comentario: string
   categoria_nombre: string
@@ -27,6 +30,11 @@ interface CategoriaGasto {
   categoria: string
   monto: number
   color: string
+}
+
+interface LiquidacionApi {
+  ingresos: Array<{ usuario_id: number; total: string }>
+  gastos_comunes: Array<{ usuario_id: number; total: string }>
 }
 
 const COLORS = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860', '#60f0c8', '#c860f0']
@@ -224,6 +232,7 @@ function MovimientosList({
 
 export default function DashboardPage() {
   const { formatMonto } = useConfig()
+  const { user } = useAuth()
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -240,17 +249,40 @@ export default function DashboardPage() {
     () => movimientosApi.getCuotasDeudaPendiente(),
     [],
   )
+  const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion } = useApi<LiquidacionApi>(
+    () => finanzasApi.getLiquidacion(mes + 1, anio),
+    [mes, anio],
+  )
   const { data: cuentasData } = useCuentasPersonales()
+  const cuentasPropias = useMemo(
+    () =>
+      (cuentasData ?? [])
+        .filter(c => c.es_propia)
+        .sort((a, b) => {
+          const aPersonal = a.nombre.trim().toLowerCase() === 'personal'
+          const bPersonal = b.nombre.trim().toLowerCase() === 'personal'
+          if (aPersonal && !bPersonal) return -1
+          if (!aPersonal && bPersonal) return 1
+          return a.nombre.localeCompare(b.nombre, 'es')
+        }),
+    [cuentasData],
+  )
+  const [cuentaTab, setCuentaTab] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!cuentasPropias.length) {
+      setCuentaTab(null)
+      return
+    }
+    if (cuentaTab === null || !cuentasPropias.some(c => c.id === cuentaTab)) {
+      setCuentaTab(cuentasPropias[0].id)
+    }
+  }, [cuentasPropias, cuentaTab])
 
   const deudaTc = useMemo(() => {
     const t = deudaRes?.total
     return Math.round(Number(t) || 0)
   }, [deudaRes])
-
-  const linkListadoPersonales = useMemo(() => {
-    const p = (cuentasData ?? []).find(c => c.es_propia)
-    return p ? `/gastos/cuenta/${p.id}` : '/configuracion/cuentas'
-  }, [cuentasData])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -277,12 +309,43 @@ export default function DashboardPage() {
         ),
     [movimientos],
   )
-  const saldo = efectivo - deudaTc
+  const ajusteLiquidacionComun = useMemo(() => {
+    if (!liquidacionRes || !user) return 0
+    const totalIngresos = (liquidacionRes.ingresos ?? []).reduce(
+      (acc, i) => acc + toPesos(i.total),
+      0,
+    )
+    const totalGastosComunes = (liquidacionRes.gastos_comunes ?? []).reduce(
+      (acc, g) => acc + toPesos(g.total),
+      0,
+    )
+    if (totalIngresos <= 0 || totalGastosComunes <= 0) return 0
+
+    const ingresoUsuario = (liquidacionRes.ingresos ?? [])
+      .filter(i => i.usuario_id === user.id)
+      .reduce((acc, i) => acc + toPesos(i.total), 0)
+
+    // Lo que "debería" cubrir según prorrateo por ingresos.
+    const aporteEsperado = (ingresoUsuario / totalIngresos) * totalGastosComunes
+    // Lo que efectivamente pagó en gastos comunes.
+    const pagadoPorUsuario = (liquidacionRes.gastos_comunes ?? [])
+      .filter(g => g.usuario_id === user.id)
+      .reduce((acc, g) => acc + toPesos(g.total), 0)
+
+    // > 0: le deben al usuario (se suma al saldo). < 0: el usuario debe (se resta).
+    return Math.round(pagadoPorUsuario - aporteEsperado)
+  }, [liquidacionRes, user])
+  const saldo = efectivo - deudaTc + ajusteLiquidacionComun
+
+  const movimientosCuentaSeleccionada = useMemo(() => {
+    if (cuentaTab === null) return movimientos
+    return movimientos.filter(m => m.cuenta === cuentaTab)
+  }, [movimientos, cuentaTab])
 
   // Categorías (solo egresos) ordenadas de mayor a menor
   const categoriasSorted = useMemo(() => {
     const byCat = new Map<string, number>()
-    for (const m of movimientos) {
+    for (const m of movimientosCuentaSeleccionada) {
       if (m.tipo !== 'EGRESO') continue
       const name = m.categoria_nombre || 'Otros'
       byCat.set(name, (byCat.get(name) ?? 0) + montoAbs(m.monto))
@@ -290,12 +353,18 @@ export default function DashboardPage() {
     return Array.from(byCat.entries())
       .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
       .sort((a, b) => b.monto - a.monto)
-  }, [movimientos])
+  }, [movimientosCuentaSeleccionada])
   const maxCat = categoriasSorted[0]?.monto ?? 1
   const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
 
-  if (loading || loadingDeuda) return <Cargando />
-  if (error) return <ErrorCarga mensaje={error} />
+  const linkListadoCuentaActiva = useMemo(() => {
+    if (cuentaTab !== null) return `/gastos/cuenta/${cuentaTab}`
+    const p = (cuentasData ?? []).find(c => c.es_propia)
+    return p ? `/gastos/cuenta/${p.id}` : '/configuracion/cuentas'
+  }, [cuentaTab, cuentasData])
+
+  if (loading || loadingDeuda || loadingLiquidacion) return <Cargando />
+  if (error || errorLiquidacion) return <ErrorCarga mensaje={error || errorLiquidacion || 'Error al cargar datos.'} />
 
   return (
     <div className={styles.page}>
@@ -329,6 +398,21 @@ export default function DashboardPage() {
         <MetricCard label="Saldo proyectado"     valor={saldo}         variant="dark"    delay={160} />
       </div>
 
+      {cuentasPropias.length > 0 && (
+        <div className={styles.tabsWrap}>
+          {cuentasPropias.map(c => (
+            <button
+              key={c.id}
+              type="button"
+              className={`${styles.tabBtn} ${cuentaTab === c.id ? styles.tabBtnActive : ''}`}
+              onClick={() => setCuentaTab(c.id)}
+            >
+              {c.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Grid inferior ── */}
       <div className={styles.grid}>
 
@@ -349,8 +433,8 @@ export default function DashboardPage() {
         <div className={styles.listas}>
           <MovimientosList
             titulo="Gastos personales"
-            movimientos={movimientos}
-            verTodosTo={linkListadoPersonales}
+            movimientos={movimientosCuentaSeleccionada}
+            verTodosTo={linkListadoCuentaActiva}
           />
         </div>
 

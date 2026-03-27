@@ -8,6 +8,7 @@ import {
 } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import * as Google from 'expo-auth-session/providers/google'
+import * as AuthSession from 'expo-auth-session'
 import { useAuth } from '../../context/AuthContext'
 
 WebBrowser.maybeCompleteAuthSession()
@@ -18,9 +19,18 @@ export default function LoginScreen() {
   const [localError, setLocalError] = useState<string | null>(null)
 
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? ''
+  const androidClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? webClientId
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? webClientId
+  const redirectUri = AuthSession.makeRedirectUri({
+    scheme: 'com.hernandezValle.finanzas',
+  })
 
   const [, response, promptAsync] = Google.useIdTokenAuthRequest({
-    webClientId: webClientId || 'placeholder-needs-env.apps.googleusercontent.com',
+    webClientId,
+    androidClientId,
+    iosClientId,
+    redirectUri,
   })
 
   useEffect(() => {
@@ -41,6 +51,18 @@ export default function LoginScreen() {
     if (!webClientId) {
       setLocalError(
         'Falta EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID en .env (OAuth Web Client ID de Google Cloud / Firebase).'
+      )
+      return
+    }
+    if (Platform.OS === 'android' && !androidClientId) {
+      setLocalError(
+        'Falta EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID en .env para iniciar sesión en Android.'
+      )
+      return
+    }
+    if (Platform.OS === 'ios' && !iosClientId) {
+      setLocalError(
+        'Falta EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID en .env para iniciar sesión en iOS.'
       )
       return
     }
@@ -81,7 +103,9 @@ export default function LoginScreen() {
 
       <Text className="text-white/30 text-xs text-center mt-8">
         Solo miembros de la familia pueden acceder.
-        {Platform.OS === 'android' ? ' Expo Go + Google requien el Web Client ID.' : ''}
+        {Platform.OS === 'android'
+          ? ' En Android necesitas EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID (si no existe, usa el Web Client ID).'
+          : ''}
       </Text>
     </View>
   )

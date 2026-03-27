@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
 import { useApi } from '@/hooks/useApi'
 import { useCategorias } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import { useConfig } from '@/context/ConfigContext'
@@ -284,6 +285,29 @@ export default function PresupuestoPage() {
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>('FAMILIAR')
+  const { data: cuentasData } = useCuentasPersonales()
+  const cuentasPropias = useMemo(
+    () =>
+      (cuentasData ?? [])
+        .filter(c => c.es_propia)
+        .sort((a, b) => {
+          const aPersonal = a.nombre.trim().toLowerCase() === 'personal'
+          const bPersonal = b.nombre.trim().toLowerCase() === 'personal'
+          if (aPersonal && !bPersonal) return -1
+          if (!aPersonal && bPersonal) return 1
+          return a.nombre.localeCompare(b.nombre, 'es')
+        }),
+    [cuentasData],
+  )
+  const [cuentaPersonalId, setCuentaPersonalId] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (ambito !== 'PERSONAL') return
+    if (!cuentasPropias.length) return
+    if (cuentaPersonalId === null || !cuentasPropias.some(c => c.id === cuentaPersonalId)) {
+      setCuentaPersonalId(cuentasPropias[0].id)
+    }
+  }, [ambito, cuentasPropias, cuentaPersonalId])
 
   const { data: rawFilas, loading, error, refetch } = useApi<PresupuestoMesFila[]>(
     () =>
@@ -291,8 +315,9 @@ export default function PresupuestoPage() {
         mes: mes + 1,
         anio,
         ambito,
+        cuenta: ambito === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
       }),
-    [mes, anio, ambito],
+    [mes, anio, ambito, cuentaPersonalId],
   )
 
   const { data: categoriasData } = useCategorias()
@@ -495,6 +520,20 @@ export default function PresupuestoPage() {
             Personal
           </button>
         </div>
+        {ambito === 'PERSONAL' && cuentasPropias.length > 0 && (
+          <div className={styles.cuentasTabs}>
+            {cuentasPropias.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                className={`${styles.cuentaTab} ${cuentaPersonalId === c.id ? styles.cuentaTabActive : ''}`}
+                onClick={() => setCuentaPersonalId(c.id)}
+              >
+                {c.nombre}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {actionError && (

@@ -46,7 +46,7 @@ Más comandos y contexto: [docs/DEPLOYMENT.md — Comandos rápidos](../DEPLOYME
 | GET | `/api/finanzas/cuentas-personales/` | Cuentas propias + tuteladas del usuario (Firebase Bearer). |
 | POST | `/api/finanzas/cuentas-personales/` | Crea cuenta propia (`nombre`, `descripcion`, `visible_familia`). |
 | GET/PATCH/DELETE | `/api/finanzas/cuentas-personales/<id>/` | Detalle; editar/eliminar solo si eres dueño. |
-| GET | `/api/finanzas/cuotas/deuda-pendiente/` | Suma de cuotas TC no pagadas (`PENDIENTE`/`FACTURADO`) de la familia → `{ total }`. |
+| GET | `/api/finanzas/cuotas/deuda-pendiente/` | Suma del gasto personal en TC del usuario autenticado para el mes actual, hasta el `dia_facturacion` de cada tarjeta → `{ total }`. |
 | GET | `/api/finanzas/presupuesto-mes/` | Query: `mes`, `anio`, `ambito` = `FAMILIAR` o `PERSONAL`. |
 | POST | `/api/finanzas/presupuestos/` | Body: `categoria`, `mes` (YYYY-MM-01), `monto`, `ambito`. |
 | PATCH/DELETE | `/api/finanzas/presupuestos/<id>/` | Actualizar monto o borrar presupuesto. |

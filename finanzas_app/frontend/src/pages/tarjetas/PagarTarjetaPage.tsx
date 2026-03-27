@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
@@ -25,6 +25,7 @@ interface Tarjeta {
 
 interface Cuota {
   id: number
+  movimiento?: number
   numero?: number
   monto: number
   mes_facturacion?: string
@@ -43,7 +44,22 @@ interface CargoAdicional {
   monto: number
 }
 
-type FiltroEstado = 'Pendiente' | 'Facturado' | 'Pagado' | 'Todos'
+interface MovimientoAsociado {
+  id: number
+  fecha: string
+  comentario: string
+  categoria_nombre: string
+  monto: number
+  ambito: 'PERSONAL' | 'COMUN'
+  metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+  cuenta: number | null
+  cuenta_nombre?: string | null
+  tarjeta: number | null
+  autor_nombre?: string
+  deudaEstado?: 'ACTIVO' | 'PAGADO'
+}
+
+type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
 
 const CATEGORIAS_EGRESO: SelectOption[] = [
   { value: 'alimentacion', label: 'Alimentación' },
@@ -65,44 +81,24 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
+const fechaCorta = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('es-CL', {
+    day: '2-digit', month: 'short',
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Subcomponentes
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SegmentedControl({
-  value,
-  onChange,
-}: {
-  value: FiltroEstado
-  onChange: (v: FiltroEstado) => void
-}) {
-  const opts: { value: FiltroEstado; label: string }[] = [
-    { value: 'Pendiente', label: 'Pendiente' },
-    { value: 'Facturado', label: 'Facturado' },
-    { value: 'Pagado', label: 'Pagado' },
-    { value: 'Todos', label: 'Todos' },
-  ]
-  return (
-    <div className={styles.segmented}>
-      {opts.map(o => (
-        <button
-          key={o.value}
-          type="button"
-          className={`${styles.segBtn} ${value === o.value ? styles.segBtnActive : ''}`}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function CuotaRow({
   cuota,
+  totalCuotas,
   onToggleIncluir,
 }: {
   cuota: Cuota
+  totalCuotas?: number
   onToggleIncluir: (id: number) => void
 }) {
   const { formatMonto } = useConfig()
@@ -121,14 +117,14 @@ function CuotaRow({
         checked={cuota.incluir}
         disabled={deshabilitado}
         onChange={() => onToggleIncluir(cuota.id)}
-        aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''} en el pago`}
+        aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''}${totalCuotas ? ` de ${totalCuotas}` : ''} en el pago`}
       />
       <div className={styles.cuotaContent}>
         <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
-          Cuota {cuota.numero ?? cuota.numeroCuota}
+          Cuota {cuota.numero ?? cuota.numeroCuota}{totalCuotas ? `/${totalCuotas}` : ''}
         </span>
         <span className={styles.cuotaMeta}>
-          cuota {cuota.numero ?? cuota.numeroCuota}
+          cuota {cuota.numero ?? cuota.numeroCuota}{totalCuotas ? ` de ${totalCuotas}` : ''}
         </span>
         <span className={`${styles.cuotaMonto} ${excluida ? styles.excluida : ''}`}>
           {formatMonto(cuota.monto)}
@@ -435,7 +431,7 @@ export default function PagarTarjetaPage() {
   }, [tarjetas, tarjetaSeleccionada])
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
-  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>('Todos')
+  const [vistaActiva, setVistaActiva] = useState<VistaTarjeta>('UTILIZADO')
   const { data: cuotasData, loading: cuotasLoading, error: cuotasError, refetch } = useApi(
     () => movimientosApi.getCuotas({
       tarjeta: tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id ?? tarjetas[0]?.id,
@@ -445,6 +441,32 @@ export default function PagarTarjetaPage() {
     [tarjetaSeleccionada, tarjetas, mes, anio],
   )
   const cuotas = (cuotasData ?? []) as Cuota[]
+  const { data: cuotasTarjetaData, loading: cuotasTarjetaLoading, error: cuotasTarjetaError, refetch: refetchCuotasTarjeta } = useApi(
+    () => movimientosApi.getCuotas({
+      tarjeta: tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id ?? tarjetas[0]?.id,
+    }),
+    [tarjetaSeleccionada, tarjetas],
+  )
+  const cuotasTarjeta = (cuotasTarjetaData ?? []) as Cuota[]
+
+  const { data: movPersonalData, loading: movPersonalLoading, error: movPersonalError } = useApi(
+    () => movimientosApi.getMovimientos({
+      tipo: 'EGRESO',
+      ambito: 'PERSONAL',
+      solo_mios: true,
+      metodo: 'CREDITO',
+    }),
+    [],
+  )
+  const { data: movComunData, loading: movComunLoading, error: movComunError } = useApi(
+    () => movimientosApi.getMovimientos({
+      tipo: 'EGRESO',
+      ambito: 'COMUN',
+      metodo: 'CREDITO',
+    }),
+    [],
+  )
+
   const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
   const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
@@ -452,25 +474,36 @@ export default function PagarTarjetaPage() {
   const [totalPagado, setTotalPagado] = useState(0)
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
 
-  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  const toMonthIndex = (fecha: string | undefined) => {
+    if (!fecha) return null
+    const [y, m] = fecha.split('-').map(Number)
+    if (!Number.isFinite(y) || !Number.isFinite(m)) return null
+    return y * 12 + (m - 1)
+  }
+  const mesSeleccionadoIdx = anio * 12 + mes
+  const maxMesActivoIdx = useMemo(() => {
+    const activos = cuotasTarjeta.filter(c => c.estado !== 'PAGADO')
+    if (activos.length === 0) return null
+    const idxs = activos
+      .map(c => toMonthIndex(c.mes_facturacion))
+      .filter((v): v is number => v !== null)
+    if (idxs.length === 0) return null
+    return Math.max(...idxs)
+  }, [cuotasTarjeta])
+  const puedeAvanzar = maxMesActivoIdx !== null && mesSeleccionadoIdx < maxMesActivoIdx
+
   const irAnterior = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
     else setMes(m => m - 1)
   }
   const irSiguiente = () => {
-    if (esActual) return
+    if (!puedeAvanzar) return
     if (mes === 11) { setMes(0); setAnio(a => a + 1) }
     else setMes(m => m + 1)
   }
 
   // Filtrado por estado (mock: todas las cuotas son del mes/tarjeta seleccionados)
-  const cuotasFiltradas = cuotas.filter(c => {
-    if (filtroEstado === 'Todos') return true
-    if (filtroEstado === 'Pendiente') return c.estado === 'PENDIENTE'
-    if (filtroEstado === 'Facturado') return c.estado === 'FACTURADO'
-    if (filtroEstado === 'Pagado') return c.estado === 'PAGADO'
-    return true
-  })
+  const cuotasFiltradas = cuotas
 
   const montoNum = (c: Cuota) => typeof c.monto === 'number' ? c.monto : Number(c.monto)
   const incluido = cuotas
@@ -512,9 +545,89 @@ export default function PagarTarjetaPage() {
   }
 
   const tarjeta = tarjetas.find(t => String(t.id) === tarjetaSeleccionada)
+  const tarjetaId = tarjeta?.id ?? null
 
-  if (cuotasLoading) return <Cargando />
-  if (cuotasError) return <ErrorCarga mensaje={cuotasError} />
+  const movimientosPersonalesTarjeta = useMemo(
+    () =>
+      ((movPersonalData ?? []) as MovimientoAsociado[])
+        .filter(m => m.tarjeta === tarjetaId)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [movPersonalData, tarjetaId],
+  )
+  const movimientosComunesTarjeta = useMemo(
+    () =>
+      ((movComunData ?? []) as MovimientoAsociado[])
+        .filter(m => m.tarjeta === tarjetaId)
+        .sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [movComunData, tarjetaId],
+  )
+
+  const estadoPorMovimiento = useMemo(() => {
+    const map = new Map<number, 'ACTIVO' | 'PAGADO'>()
+    for (const c of cuotasTarjeta) {
+      if (!c.movimiento) continue
+      const prev = map.get(c.movimiento)
+      if (c.estado !== 'PAGADO') {
+        map.set(c.movimiento, 'ACTIVO')
+      } else if (!prev) {
+        map.set(c.movimiento, 'PAGADO')
+      }
+    }
+    return map
+  }, [cuotasTarjeta])
+  const utilizadoPersonalVisible = useMemo(
+    () => movimientosPersonalesTarjeta.filter(m => estadoPorMovimiento.has(m.id)).slice(0, 10),
+    [movimientosPersonalesTarjeta, estadoPorMovimiento],
+  )
+  const utilizadoComunVisible = useMemo(
+    () => movimientosComunesTarjeta.filter(m => estadoPorMovimiento.has(m.id)).slice(0, 10),
+    [movimientosComunesTarjeta, estadoPorMovimiento],
+  )
+  const estadoFacturado = cuotas.some(c => c.estado !== 'PAGADO') ? 'PENDIENTE' : 'PAGADO'
+  const totalCuotasPorMovimiento = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const c of cuotasTarjeta) {
+      if (!c.movimiento || !c.numero) continue
+      const prev = map.get(c.movimiento) ?? 0
+      map.set(c.movimiento, Math.max(prev, c.numero))
+    }
+    return map
+  }, [cuotasTarjeta])
+  const totalDeudaActiva = useMemo(
+    () =>
+      cuotasTarjeta
+        .filter(c => c.estado !== 'PAGADO')
+        .reduce((acc, c) => acc + Number(c.monto || 0), 0),
+    [cuotasTarjeta],
+  )
+  const totalDeudaActivaPersonal = useMemo(
+    () =>
+      cuotasTarjeta
+        .filter(c => c.estado !== 'PAGADO')
+        .reduce((acc, c) => {
+          const mov = c.movimiento ? ((movPersonalData ?? []) as MovimientoAsociado[]).find(m => m.id === c.movimiento) : null
+          return acc + (mov ? Number(c.monto || 0) : 0)
+        }, 0),
+    [cuotasTarjeta, movPersonalData],
+  )
+  const totalDeudaActivaComun = Math.max(0, totalDeudaActiva - totalDeudaActivaPersonal)
+  const personalesPorCuenta = useMemo(() => {
+    const map = new Map<string, { cuentaNombre: string; total: number; movimientos: MovimientoAsociado[] }>()
+    for (const mov of utilizadoPersonalVisible) {
+      const cuentaNombre = mov.cuenta_nombre || 'Sin cuenta'
+      const key = String(mov.cuenta ?? 'sin-cuenta')
+      const entry = map.get(key) ?? { cuentaNombre, total: 0, movimientos: [] }
+      entry.total += Number(mov.monto || 0)
+      entry.movimientos.push(mov)
+      map.set(key, entry)
+    }
+    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre))
+  }, [utilizadoPersonalVisible])
+
+  if (cuotasLoading || cuotasTarjetaLoading || movPersonalLoading || movComunLoading) return <Cargando />
+  if (cuotasError || cuotasTarjetaError || movPersonalError || movComunError) {
+    return <ErrorCarga mensaje={cuotasError || cuotasTarjetaError || movPersonalError || movComunError || 'Error al cargar datos.'} />
+  }
   const cuotasIncluidasCount = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO').length
   const cuotasExcluidasCount = cuotas.filter(c => !c.incluir).length
 
@@ -534,8 +647,10 @@ export default function PagarTarjetaPage() {
               variant="ghost"
               onClick={() => {
                 setExitoPostPago(false)
-                if (mes === 11) { setMes(0); setAnio(a => a + 1) }
-                else setMes(m => m + 1)
+                if (puedeAvanzar) {
+                  if (mes === 11) { setMes(0); setAnio(a => a + 1) }
+                  else setMes(m => m + 1)
+                }
               }}
             >
               Ver otro mes
@@ -588,7 +703,7 @@ export default function PagarTarjetaPage() {
               type="button"
               className={styles.mesBtn}
               onClick={irSiguiente}
-              disabled={esActual}
+              disabled={!puedeAvanzar}
               aria-label="Mes siguiente"
             >
               ›
@@ -597,9 +712,24 @@ export default function PagarTarjetaPage() {
         </div>
       </div>
 
-      {/* Sección 2 — Barra de filtros */}
+      {/* Sección 2 — Barra de pestañas */}
       <div className={styles.filterBar}>
-        <SegmentedControl value={filtroEstado} onChange={setFiltroEstado} />
+        <div className={styles.segmented}>
+          <button
+            type="button"
+            className={`${styles.segBtn} ${vistaActiva === 'UTILIZADO' ? styles.segBtnActive : ''}`}
+            onClick={() => setVistaActiva('UTILIZADO')}
+          >
+            Utilizado
+          </button>
+          <button
+            type="button"
+            className={`${styles.segBtn} ${vistaActiva === 'FACTURADO' ? styles.segBtnActive : ''}`}
+            onClick={() => setVistaActiva('FACTURADO')}
+          >
+            Facturado
+          </button>
+        </div>
         <div className={styles.filterBarSpacer} />
         <button
           type="button"
@@ -610,71 +740,173 @@ export default function PagarTarjetaPage() {
         </button>
       </div>
 
-      {/* Sección 3 — Listado de cuotas */}
-      <div className={styles.sectionHeader}>
-        <span className={styles.sectionTitle}>CUOTAS DEL MES</span>
-      </div>
-      <div className={styles.listaCuotas}>
-        {cuotasFiltradas.length === 0 ? (
-          <EmptyStateCuotas />
-        ) : (
-          cuotasFiltradas.map(cuota => (
-            <CuotaRow
-              key={cuota.id}
-              cuota={cuota}
-              onToggleIncluir={toggleIncluir}
-            />
-          ))
-        )}
-      </div>
-
-      {/* Sección 4 — Cargos adicionales */}
-      <div className={styles.cargosSection}>
-        <div className={styles.sectionHeader}>
-          <span className={styles.sectionTitle}>CARGOS ADICIONALES</span>
-          <div className={styles.sectionHeaderAction}>
-            {!formularioCargoVisible ? (
-              <button
-                type="button"
-                className={styles.btnGhost}
-                onClick={() => setFormularioCargoVisible(true)}
-              >
-                + Agregar
-              </button>
-            ) : null}
+      {vistaActiva === 'UTILIZADO' && (
+        <>
+          <div className={styles.utilizadoCard}>
+            <div className={styles.utilizadoHeader}>
+              <span className={styles.utilizadoLabel}>Utilizado</span>
+              <span className={styles.utilizadoTotal}>{formatMonto(totalDeudaActiva)}</span>
+            </div>
+            <div className={styles.utilizadoBreakdown}>
+              <span>Personales: {formatMonto(totalDeudaActivaPersonal)}</span>
+              <span>Comunes: {formatMonto(totalDeudaActivaComun)}</span>
+            </div>
           </div>
-        </div>
-        {formularioCargoVisible && (
-          <FormCargoInline
-            onConfirm={agregarCargo}
-            onCancel={() => setFormularioCargoVisible(false)}
-          />
-        )}
-        {cargosAdicionales.map(cargo => (
-          <div key={cargo.id} className={styles.cargoRow}>
-            <span className={styles.cargoDesc}>{cargo.descripcion}</span>
-            <span className={styles.cargoCat}>Intereses TC</span>
-            <span className={styles.cargoMonto}>{formatMonto(cargo.monto)}</span>
-            <button
-              type="button"
-              className={styles.cargoDelete}
-              onClick={() => eliminarCargo(cargo.id)}
-              aria-label="Eliminar cargo"
+
+          <div className={styles.movimientosAgrupados}>
+            <div className={styles.movGrupo}>
+              <div className={styles.movGrupoHeader}>
+                <span className={styles.movGrupoTitulo}>Gastos personales</span>
+                <span className={styles.movGrupoTotal}>{formatMonto(totalDeudaActivaPersonal)}</span>
+              </div>
+              {utilizadoPersonalVisible.length === 0 ? (
+                <p className={styles.movGrupoVacio}>Sin movimientos personales para este período.</p>
+              ) : (
+                personalesPorCuenta.map(grupo => (
+                  <div key={grupo.cuentaNombre} className={styles.movSubGrupo}>
+                    <div className={styles.movSubGrupoHeader}>
+                      <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
+                      <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
+                    </div>
+                    {grupo.movimientos.slice(0, 10).map(mov => (
+                      <div key={mov.id} className={styles.movItem}>
+                        <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
+                        <div className={styles.movInfo}>
+                          <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+                          <span className={styles.movCat}>{mov.categoria_nombre}</span>
+                        </div>
+                        <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
+                          {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
+                        </span>
+                        <span className={styles.movMonto}>{formatMonto(Number(mov.monto || 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+              <div className={styles.movDetalleFooter}>
+                <Link to={(cuentasData ?? []).find(c => c.es_propia)?.id ? `/gastos/cuenta/${(cuentasData ?? []).find(c => c.es_propia)!.id}` : '/configuracion/cuentas'} className={styles.movDetalleLink}>
+                  Ver detalle
+                </Link>
+              </div>
+            </div>
+
+            <div className={styles.movGrupo}>
+              <div className={styles.movGrupoHeader}>
+                <span className={styles.movGrupoTitulo}>Gastos comunes</span>
+                <span className={styles.movGrupoTotal}>{formatMonto(totalDeudaActivaComun)}</span>
+              </div>
+              {utilizadoComunVisible.length === 0 ? (
+                <p className={styles.movGrupoVacio}>Sin movimientos comunes para este período.</p>
+              ) : (
+                utilizadoComunVisible.slice(0, 10).map(mov => (
+                  <div key={mov.id} className={styles.movItem}>
+                    <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
+                    <div className={styles.movInfo}>
+                      <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+                      <span className={styles.movCat}>
+                        {mov.categoria_nombre}
+                        {mov.autor_nombre ? ` · ${mov.autor_nombre}` : ''}
+                      </span>
+                    </div>
+                    <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
+                      {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
+                    </span>
+                    <span className={styles.movMonto}>{formatMonto(Number(mov.monto || 0))}</span>
+                  </div>
+                ))
+              )}
+              <div className={styles.movDetalleFooter}>
+                <Link to="/gastos/comunes" className={styles.movDetalleLink}>
+                  Ver detalle
+                </Link>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {vistaActiva === 'FACTURADO' && (
+        <>
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionTitle}>FACTURADO</span>
+            <span
+              className={`${styles.badgeFacturado} ${
+                estadoFacturado === 'PAGADO' ? styles.badgeFacturadoPagado : styles.badgeFacturadoPendiente
+              }`}
             >
-              🗑
-            </button>
+              {estadoFacturado === 'PAGADO' ? 'Pagado' : 'Pendiente'}
+            </span>
           </div>
-        ))}
-      </div>
 
-      {/* Sección 5 — Totales y botón Registrar pago */}
-      <TotalesPanel
-        incluido={incluido}
-        excluido={excluido}
-        cargos={cargos}
-        total={total}
-        onRegistrar={() => setModalConfirmarPago(true)}
-      />
+          {/* Sección 3 — Listado de cuotas */}
+          <div className={styles.sectionHeader}>
+            <span className={styles.sectionTitle}>CUOTAS DEL MES</span>
+          </div>
+          <div className={styles.listaCuotas}>
+            {cuotasFiltradas.length === 0 ? (
+              <EmptyStateCuotas />
+            ) : (
+              cuotasFiltradas.map(cuota => (
+                <CuotaRow
+                  key={cuota.id}
+                  cuota={cuota}
+                  totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
+                  onToggleIncluir={toggleIncluir}
+                />
+              ))
+            )}
+          </div>
+
+          {/* Sección 4 — Cargos adicionales */}
+          <div className={styles.cargosSection}>
+            <div className={styles.sectionHeader}>
+              <span className={styles.sectionTitle}>CARGOS ADICIONALES</span>
+              <div className={styles.sectionHeaderAction}>
+                {!formularioCargoVisible ? (
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    onClick={() => setFormularioCargoVisible(true)}
+                  >
+                    + Agregar
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {formularioCargoVisible && (
+              <FormCargoInline
+                onConfirm={agregarCargo}
+                onCancel={() => setFormularioCargoVisible(false)}
+              />
+            )}
+            {cargosAdicionales.map(cargo => (
+              <div key={cargo.id} className={styles.cargoRow}>
+                <span className={styles.cargoDesc}>{cargo.descripcion}</span>
+                <span className={styles.cargoCat}>Intereses TC</span>
+                <span className={styles.cargoMonto}>{formatMonto(cargo.monto)}</span>
+                <button
+                  type="button"
+                  className={styles.cargoDelete}
+                  onClick={() => eliminarCargo(cargo.id)}
+                  aria-label="Eliminar cargo"
+                >
+                  🗑
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Sección 5 — Totales y botón Registrar pago */}
+          <TotalesPanel
+            incluido={incluido}
+            excluido={excluido}
+            cargos={cargos}
+            total={total}
+            onRegistrar={() => setModalConfirmarPago(true)}
+          />
+        </>
+      )}
 
       {/* Modal de confirmación de pago */}
       {modalConfirmarPago && (
@@ -728,6 +960,7 @@ export default function PagarTarjetaPage() {
           onClose={() => setModalNuevoGasto(false)}
           onGuardar={() => {
             refetch()
+            refetchCuotasTarjeta()
             setModalNuevoGasto(false)
           }}
         />

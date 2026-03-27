@@ -111,6 +111,39 @@
   }
 }
 
+// ── Tabs por cuenta ────────────────────────────────────────────────────────────
+
+.tabsWrap {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  margin-bottom: $space-4;
+  flex-wrap: wrap;
+}
+
+.tabBtn {
+  border: 1px solid $color-border;
+  background: $color-bg-white;
+  color: $color-text-muted;
+  border-radius: $radius-full;
+  padding: 6px $space-3;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: all $transition-fast;
+
+  &:hover {
+    color: $color-text;
+    border-color: $color-border-strong;
+  }
+}
+
+.tabBtnActive {
+  background: #0f0f0f;
+  color: #fff;
+  border-color: #0f0f0f;
+}
+
 .metricCard {
   background: $color-bg-white;
   border-radius: $radius-xl;

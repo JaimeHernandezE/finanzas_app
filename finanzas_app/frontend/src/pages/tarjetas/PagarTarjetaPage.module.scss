@@ -194,6 +194,191 @@
   flex: 1;
 }
 
+/* ── Resumen utilizado + movimientos asociados ─────────────────────────────── */
+
+.utilizadoCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  padding: $space-4;
+  margin-bottom: $space-4;
+}
+
+.utilizadoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-3;
+}
+
+.utilizadoLabel {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  font-weight: $font-weight-medium;
+}
+
+.utilizadoTotal {
+  font-size: $font-size-xl;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.utilizadoBreakdown {
+  margin-top: $space-2;
+  display: flex;
+  gap: $space-4;
+  flex-wrap: wrap;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.movimientosAgrupados {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: $space-4;
+  margin-bottom: $space-5;
+}
+
+.movGrupo {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  overflow: hidden;
+}
+
+.movGrupoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid #e8e8e4;
+}
+
+.movGrupoTitulo {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.movGrupoTotal {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+}
+
+.movGrupoVacio {
+  padding: $space-4;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.movSubGrupo {
+  border-top: 1px solid #ecece8;
+}
+
+.movSubGrupoHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-3;
+  padding: $space-2 $space-4;
+  background: #fafaf8;
+  border-top: 1px solid #efefeb;
+}
+
+.movSubGrupoTitulo {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+}
+
+.movSubGrupoTotal {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.movItem {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-top: 1px solid #f0f0ec;
+
+  &:first-of-type {
+    border-top: none;
+  }
+}
+
+.movFecha {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  width: 56px;
+  flex-shrink: 0;
+}
+
+.movInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.movDesc {
+  font-size: $font-size-sm;
+  color: $color-text;
+  font-weight: $font-weight-medium;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.movCat {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.movMonto {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  white-space: nowrap;
+}
+
+.movBadgeEstado {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  padding: 2px 6px;
+  border-radius: $radius-sm;
+  white-space: nowrap;
+}
+
+.movBadgeActivo {
+  background: #fff1f1;
+  color: #dc2626;
+}
+
+.movBadgePagado {
+  background: #ecfdf3;
+  color: #15803d;
+}
+
+.movDetalleFooter {
+  display: flex;
+  justify-content: flex-end;
+  padding: $space-2 $space-4 $space-3;
+  border-top: 1px solid #f0f0ec;
+}
+
+.movDetalleLink {
+  font-size: $font-size-xs;
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: $font-weight-semibold;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
 /* ── Cabeceras de sección ────────────────────────────────────────────────────── */
 
 .sectionHeader {
@@ -214,6 +399,34 @@
 
 .sectionHeaderAction {
   flex-shrink: 0;
+}
+
+.facturadoPill {
+  display: inline-flex;
+  align-items: center;
+  padding: $space-1 $space-3;
+  border-radius: $radius-full;
+  background: #e8f4ff;
+  color: #2563eb;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+}
+
+.badgeFacturado {
+  font-size: 11px;
+  font-weight: $font-weight-bold;
+  padding: 4px 10px;
+  border-radius: $radius-full;
+}
+
+.badgeFacturadoPendiente {
+  background: #fff1f1;
+  color: #dc2626;
+}
+
+.badgeFacturadoPagado {
+  background: #ecfdf3;
+  color: #15803d;
 }
 
 /* ── Listado de cuotas ───────────────────────────────────────────────────────── */
@@ -305,8 +518,8 @@
 }
 
 .badgePendiente {
-  background: #fff8e1;
-  color: #f59e0b;
+  background: #fff1f1;
+  color: #dc2626;
 }
 
 .badgeFacturado {
@@ -634,4 +847,10 @@
   margin-top: $space-4;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .movimientosAgrupados {
+    grid-template-columns: 1fr;
+  }
 }

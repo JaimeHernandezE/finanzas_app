@@ -60,7 +60,7 @@ export default function MovimientoEditarPage() {
 
   const [tipo, setTipo] = useState<Tipo>('EGRESO')
   const [ambito, setAmbito] = useState<Ambito>('PERSONAL')
-  const [metodo, setMetodo] = useState<Metodo>('EFECTIVO')
+  const [metodo, setMetodo] = useState<Metodo>('DEBITO')
   const [monto, setMonto] = useState('')
   const [fecha, setFecha] = useState('')
   const [comentario, setComentario] = useState('')
@@ -470,7 +470,7 @@ export default function MovimientoEditarPage() {
             <div className={styles.field}>
               <span className={styles.label}>Método de pago</span>
               <div className={styles.metodoBtns}>
-                {(['EFECTIVO', 'DEBITO', 'CREDITO'] as Metodo[]).map(m => (
+                {(['DEBITO', 'EFECTIVO', 'CREDITO'] as Metodo[]).map(m => (
                   <button
                     key={m}
                     type="button"
