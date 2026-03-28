@@ -15,8 +15,8 @@ import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
-import { MobileShell } from '../../components/layout/MobileShell'
-import { useAuth } from '../../context/AuthContext'
+import { MobileShell } from '../../../components/layout/MobileShell'
+import { useAuth } from '../../../context/AuthContext'
 
 interface Movimiento {
   id: number

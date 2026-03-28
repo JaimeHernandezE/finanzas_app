@@ -12,7 +12,7 @@ import { useFocusEffect } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { finanzasApi, type PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
-import { MobileShell } from '../components/layout/MobileShell'
+import { MobileShell } from '../../components/layout/MobileShell'
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
