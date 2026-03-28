@@ -12,8 +12,8 @@ import { useFocusEffect } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { finanzasApi } from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
-import { MobileShell } from '../../components/layout/MobileShell'
-import { useAuth } from '../../context/AuthContext'
+import { MobileShell } from '../components/layout/MobileShell'
+import { useAuth } from '../context/AuthContext'
 
 interface IngresoComun {
   id: number
