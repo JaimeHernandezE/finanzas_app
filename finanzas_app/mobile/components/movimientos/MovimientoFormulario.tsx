@@ -111,7 +111,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     }>()
 
     const { data: catData } = useCategorias()
-    const { data: metData } = useMetodosPago()
+    const { data: metData, loading: loadingMetodos } = useMetodosPago()
     const { data: tarjetasData } = useTarjetas()
     const categorias = (catData as Categoria[] | null) ?? []
     const metodos = (metData as MetodoPago[] | null) ?? []
@@ -318,6 +318,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
       if (!form.categoria) {
         Alert.alert('Falta categoría', 'Selecciona una categoría.')
+        return
+      }
+      if (loadingMetodos) {
+        Alert.alert('Cargando', 'Espera un momento mientras se cargan los métodos de pago.')
         return
       }
       if (!metodoPagoId) {
@@ -668,7 +672,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         </TouchableOpacity>
         <TouchableOpacity
           onPress={guardar}
-          disabled={saving || loadingDetalle}
+          disabled={saving || loadingDetalle || loadingMetodos}
           className="flex-1 bg-dark rounded-xl py-3 items-center"
         >
           {saving ? (
