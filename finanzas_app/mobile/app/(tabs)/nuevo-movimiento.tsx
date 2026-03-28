@@ -1,7 +1,7 @@
 import { View } from 'react-native'
 import { useLocalSearchParams, Redirect } from 'expo-router'
-import { MobileShell } from '../components/layout/MobileShell'
-import { MovimientoFormulario } from '../components/movimientos/MovimientoFormulario'
+import { MobileShell } from '../../components/layout/MobileShell'
+import { MovimientoFormulario } from '../../components/movimientos/MovimientoFormulario'
 
 export default function NuevoMovimientoScreen() {
   const { cuenta, editar } = useLocalSearchParams<{ cuenta?: string; editar?: string }>()

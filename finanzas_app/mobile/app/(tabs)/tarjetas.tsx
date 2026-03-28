@@ -14,7 +14,7 @@ import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
-import { MobileShell } from '../components/layout/MobileShell'
+import { MobileShell } from '../../components/layout/MobileShell'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
