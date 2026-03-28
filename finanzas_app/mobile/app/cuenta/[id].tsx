@@ -194,7 +194,7 @@ export default function CuentaPersonalScreen() {
   }
 
   function irEditarMovimiento(movId: number) {
-    router.push(`/(tabs)/gastos?editar=${movId}` as never)
+    router.push(`/nuevo-movimiento?editar=${movId}&cuenta=${id}` as never)
   }
 
   function confirmarEliminar(mov: Movimiento) {
