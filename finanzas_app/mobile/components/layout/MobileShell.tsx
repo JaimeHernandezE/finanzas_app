@@ -26,16 +26,16 @@ const PERSONAL_FIJOS: ItemNavegacion[] = [
 
 const FAMILIA_FIJOS: ItemNavegacion[] = [
   { icon: '⊕', label: 'Gastos comunes', route: '/(tabs)/gastos', activeOn: ['/gastos'] },
-  { icon: '₪', label: 'Sueldos', activeOn: ['/sueldos'] },
+  { icon: '₪', label: 'Sueldos', route: '/sueldos', activeOn: ['/sueldos'] },
 ]
 
 const ANALISIS_ITEMS: ItemNavegacion[] = [
   { icon: '⇄', label: 'Resumen común', route: '/(tabs)/liquidacion', activeOn: ['/liquidacion'] },
-  { icon: '▤', label: 'Presupuesto', activeOn: ['/presupuesto'] },
+  { icon: '▤', label: 'Presupuesto', route: '/presupuesto', activeOn: ['/presupuesto'] },
 ]
 
 const MAS_ITEMS: ItemNavegacion[] = [
-  { icon: '▭', label: 'Tarjetas', activeOn: ['/tarjetas'] },
+  { icon: '▭', label: 'Tarjetas', route: '/tarjetas', activeOn: ['/tarjetas'] },
   { icon: '△', label: 'Inversiones', activeOn: ['/inversiones'] },
   { icon: '◎', label: 'Viajes', activeOn: ['/viajes'] },
   { icon: '⚙', label: 'Configuración', route: '/perfil', activeOn: ['/perfil'] },

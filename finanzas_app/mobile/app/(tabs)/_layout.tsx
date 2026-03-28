@@ -53,27 +53,6 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⇄</Text>,
         }}
       />
-      <Tabs.Screen
-        name="sueldos"
-        options={{
-          title: 'Sueldos',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>$</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="presupuesto"
-        options={{
-          title: 'Presupuesto',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>◎</Text>,
-        }}
-      />
-      <Tabs.Screen
-        name="tarjetas"
-        options={{
-          title: 'Tarjetas',
-          tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>▤</Text>,
-        }}
-      />
     </Tabs>
   )
 }
