@@ -52,6 +52,7 @@ export default function SueldosScreen() {
   const [formError, setFormError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [editandoId, setEditandoId] = useState<number | null>(null)
+  const [agregando, setAgregando] = useState(false)
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -98,12 +99,14 @@ export default function SueldosScreen() {
 
   function abrirNuevo() {
     setEditandoId(null)
+    setAgregando(true)
     setFormOrigen('')
     setFormMonto('')
     setFormError(null)
   }
 
   function abrirEdicion(ingreso: IngresoComun) {
+    setAgregando(false)
     setEditandoId(ingreso.id)
     setFormOrigen(ingreso.origen)
     setFormMonto(String(montoNum(ingreso.monto)))
@@ -111,6 +114,7 @@ export default function SueldosScreen() {
   }
 
   function cancelarForm() {
+    setAgregando(false)
     setEditandoId(null)
     setFormOrigen('')
     setFormMonto('')
@@ -157,8 +161,7 @@ export default function SueldosScreen() {
     )
   }
 
-  const formularioVisible = editandoId !== null || (editandoId === null && formOrigen !== '')
-  const mostrarBotonNuevo = editandoId === null && formOrigen === ''
+  const mostrarBotonNuevo = !agregando && editandoId === null
 
   return (
     <MobileShell title="Sueldos">
@@ -230,7 +233,7 @@ export default function SueldosScreen() {
               {/* Mis ingresos */}
               <Text className="text-xs font-bold text-muted uppercase tracking-wide mb-2">Mis ingresos</Text>
 
-              {misIngresos.length === 0 && !formularioVisible && (
+              {misIngresos.length === 0 && !agregando && editandoId === null && (
                 <View className="bg-white border border-border rounded-xl p-4 mb-3 items-center">
                   <Text className="text-muted text-sm">Sin ingresos registrados este mes.</Text>
                 </View>
@@ -299,7 +302,7 @@ export default function SueldosScreen() {
                 >
                   <Text className="text-muted text-sm font-semibold">+ Agregar ingreso</Text>
                 </TouchableOpacity>
-              ) : editandoId === null ? (
+              ) : agregando ? (
                 <View className="bg-white border border-border rounded-xl p-4 mb-5">
                   <Text className="text-xs font-semibold text-muted mb-2">Nuevo ingreso</Text>
                   <TextInput
@@ -308,6 +311,7 @@ export default function SueldosScreen() {
                     placeholder="Descripción (ej: Sueldo, Freelance)"
                     placeholderTextColor="#888884"
                     className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+                    autoFocus
                   />
                   <TextInput
                     value={formMonto}
