@@ -18,11 +18,16 @@ function rolLabel(rol: string): string {
 // -----------------------------------------------------------------------------
 
 export default function PerfilPage() {
-  const { user, logout, updateNombre } = useAuth()
+  const { user, logout, updateNombre, changePassword } = useAuth()
   const [nombreEdit, setNombreEdit] = useState(user?.nombre ?? '')
   const [guardando, setGuardando] = useState(false)
   const [mensajeError, setMensajeError] = useState<string | null>(null)
   const [mensajeOk, setMensajeOk] = useState<string | null>(null)
+  const [passwordNueva, setPasswordNueva] = useState('')
+  const [passwordConfirmar, setPasswordConfirmar] = useState('')
+  const [cambiandoPassword, setCambiandoPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [passwordOk, setPasswordOk] = useState<string | null>(null)
   const nombreTrim = nombreEdit.trim()
   const nombreCambiado = user?.nombre.trim() !== nombreTrim
   const puedeGuardar = nombreTrim.length > 0 && nombreCambiado && !guardando
@@ -50,6 +55,33 @@ export default function PerfilPage() {
       setMensajeError(msg)
     } finally {
       setGuardando(false)
+    }
+  }
+
+  const handleCambiarPassword = async () => {
+    setPasswordError(null)
+    setPasswordOk(null)
+
+    if (passwordNueva.trim().length < 6) {
+      setPasswordError('La nueva contraseña debe tener al menos 6 caracteres.')
+      return
+    }
+    if (passwordNueva !== passwordConfirmar) {
+      setPasswordError('La confirmación no coincide con la nueva contraseña.')
+      return
+    }
+
+    setCambiandoPassword(true)
+    try {
+      await changePassword(passwordNueva)
+      setPasswordNueva('')
+      setPasswordConfirmar('')
+      setPasswordOk('Contraseña actualizada correctamente.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'No se pudo cambiar la contraseña.'
+      setPasswordError(msg)
+    } finally {
+      setCambiandoPassword(false)
     }
   }
 
@@ -96,6 +128,45 @@ export default function PerfilPage() {
           </div>
           {mensajeError && <p className={styles.msgError}>{mensajeError}</p>}
           {mensajeOk && <p className={styles.msgOk}>{mensajeOk}</p>}
+        </div>
+      </section>
+
+      {/* Seguridad */}
+      <section className={styles.section}>
+        <h2 className={styles.groupHeader}>SEGURIDAD</h2>
+        <div className={styles.rowEdit}>
+          <label className={styles.labelInline} htmlFor="perfil-password-nueva">
+            Recuperar / cambiar contraseña
+          </label>
+          <div className={styles.inputColumn}>
+            <input
+              id="perfil-password-nueva"
+              type="password"
+              className={styles.input}
+              value={passwordNueva}
+              onChange={(e) => setPasswordNueva(e.target.value)}
+              placeholder="Nueva contraseña"
+              autoComplete="new-password"
+            />
+            <input
+              type="password"
+              className={styles.input}
+              value={passwordConfirmar}
+              onChange={(e) => setPasswordConfirmar(e.target.value)}
+              placeholder="Confirmar nueva contraseña"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              className={styles.btnGuardar}
+              disabled={cambiandoPassword}
+              onClick={handleCambiarPassword}
+            >
+              {cambiandoPassword ? 'Actualizando...' : 'Cambiar contraseña'}
+            </button>
+          </div>
+          {passwordError && <p className={styles.msgError}>{passwordError}</p>}
+          {passwordOk && <p className={styles.msgOk}>{passwordOk}</p>}
         </div>
       </section>
 

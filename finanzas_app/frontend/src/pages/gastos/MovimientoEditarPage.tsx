@@ -171,7 +171,7 @@ export default function MovimientoEditarPage() {
       await movimientosApi.patchMovimiento(base.id, {
         fecha,
         monto: String(monto),
-        comentario,
+        comentario: comentario.trim(),
       })
       navigate(returnTo ?? destinoTrasGuardar(base), { replace: true })
     } catch (err: unknown) {
@@ -225,7 +225,7 @@ export default function MovimientoEditarPage() {
         categoria: Number(categoriaId),
         cuenta: ambito === 'PERSONAL' && cuentaId ? Number(cuentaId) : null,
         monto: String(monto),
-        comentario,
+        comentario: comentario.trim(),
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && tarjetaId ? Number(tarjetaId) : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
@@ -322,7 +322,7 @@ export default function MovimientoEditarPage() {
               <Link to="/sueldos" style={{ fontWeight: 600 }}>
                 Sueldos
               </Link>
-              . Solo puedes cambiar fecha, monto y descripción (origen).
+              . Solo puedes cambiar fecha, monto y descripción (origen, opcional).
             </div>
             <Input
               name="fecha"
@@ -344,9 +344,10 @@ export default function MovimientoEditarPage() {
             />
             <Textarea
               name="comentario"
-              label="Descripción / origen"
+              label="Descripción / origen (opcional)"
               value={comentario}
               onChange={e => setComentario(e.target.value)}
+              placeholder="Puedes dejarlo vacío"
               maxLength={255}
               rows={2}
             />
@@ -514,9 +515,10 @@ export default function MovimientoEditarPage() {
 
             <Textarea
               name="comentario"
-              label="Comentario"
+              label="Comentario (opcional)"
               value={comentario}
               onChange={e => setComentario(e.target.value)}
+              placeholder="Ej: Supermercado (puedes dejarlo vacío)"
               maxLength={255}
               rows={2}
             />

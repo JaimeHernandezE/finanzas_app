@@ -152,6 +152,7 @@ class MovimientoListSerializer(serializers.ModelSerializer):
         model = Movimiento
         fields = [
             'id', 'fecha', 'tipo', 'ambito', 'monto', 'comentario',
+            'usuario',
             'cuenta', 'cuenta_nombre',
             'categoria', 'categoria_nombre',
             'metodo_pago', 'metodo_pago_tipo',

@@ -132,6 +132,14 @@
   flex-wrap: wrap;
 }
 
+.inputColumn {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+  width: 100%;
+  max-width: 400px;
+}
+
 .input {
   @include input-base;
   flex: 1;

@@ -109,7 +109,7 @@ export default function MovimientoFormPage() {
             ? Number(data.get('cuenta'))
             : null,
         monto: String(montoNum),
-        comentario: (data.get('comentario') as string) || '',
+        comentario: ((data.get('comentario') as string) ?? '').trim(),
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
@@ -294,8 +294,8 @@ export default function MovimientoFormPage() {
           {/* Comentario */}
           <Textarea
             name="comentario"
-            label="Comentario"
-            placeholder="Descripción opcional del movimiento…"
+            label="Comentario (opcional)"
+            placeholder="Ej: Supermercado (puedes dejarlo vacío)"
             helperText="Máximo 255 caracteres."
             maxLength={255}
             rows={2}

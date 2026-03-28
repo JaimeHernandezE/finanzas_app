@@ -10,6 +10,7 @@ from applications import utils as utils_auth
 from .models import Usuario, Familia, InvitacionPendiente
 
 logger = logging.getLogger(__name__)
+FIREBASE_CLOCK_SKEW_SECONDS = 60
 
 
 def obtener_usuario_desde_token(request):
@@ -24,7 +25,10 @@ def obtener_usuario_desde_token(request):
     token = auth_header.split('Bearer ')[1]
 
     try:
-        decoded = firebase_auth.verify_id_token(token)
+        decoded = firebase_auth.verify_id_token(
+            token,
+            clock_skew_seconds=FIREBASE_CLOCK_SKEW_SECONDS,
+        )
         return decoded, None
     except Exception as e:
         logger.warning('Firebase token verification failed: %s', e, exc_info=True)
@@ -179,6 +183,42 @@ def registrar_usuario(request):
 
 def _normalizar_email(s: str) -> str:
     return (s or '').strip().lower()
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def auth_check_email(request):
+    email = _normalizar_email(request.data.get('email', ''))
+    if not email or '@' not in email:
+        return Response({'error': 'Email inválido.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        user_record = firebase_auth.get_user_by_email(email)
+        provider_ids = sorted(
+            {p.provider_id for p in (user_record.provider_data or []) if getattr(p, 'provider_id', None)}
+        )
+        has_password = 'password' in provider_ids
+        has_google = 'google.com' in provider_ids
+        return Response({
+            'exists': True,
+            'has_password': has_password,
+            'requires_linking': has_google and not has_password,
+            'providers': provider_ids,
+        })
+    except firebase_auth.UserNotFoundError:
+        return Response({
+            'exists': False,
+            'has_password': False,
+            'requires_linking': False,
+            'providers': [],
+        })
+    except Exception as e:
+        logger.warning('Email check failed for %s: %s', email, e, exc_info=True)
+        return Response(
+            {'error': 'No se pudo validar el correo en este momento.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
 
 @api_view(['GET'])

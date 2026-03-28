@@ -77,6 +77,28 @@ class TestMovimientosListado:
         assert res.status_code == 200
         assert len(res.json()) == 1
 
+    def test_busqueda_por_nombre_categoria(
+        self, client, auth_header, movimiento_efectivo
+    ):
+        """Busca por palabras que aparecen solo en el nombre de la categoría."""
+        res = client.get(
+            '/api/finanzas/movimientos/?q=alimen', **auth_header
+        )
+        assert res.status_code == 200
+        assert len(res.json()) == 1
+
+    def test_busqueda_varias_palabras_en_comentario(
+        self, client, auth_header, movimiento_efectivo
+    ):
+        """Varias palabras: deben cumplirse todas (comentario y/o categoría)."""
+        movimiento_efectivo.comentario = 'Bencina estación Copec'
+        movimiento_efectivo.save(update_fields=['comentario'])
+        res = client.get(
+            '/api/finanzas/movimientos/?q=bencina+copec', **auth_header
+        )
+        assert res.status_code == 200
+        assert len(res.json()) == 1
+
     def test_busqueda_sin_resultados(
         self, client, auth_header, movimiento_efectivo
     ):

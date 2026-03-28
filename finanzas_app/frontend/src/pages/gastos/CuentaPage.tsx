@@ -493,7 +493,7 @@ export default function CuentaPage() {
         <input
           className={styles.searchInput}
           type="text"
-          placeholder="Buscar descripción..."
+          placeholder="Buscar en descripción o categoría…"
           value={busqueda}
           onChange={e => setBusqueda(e.target.value)}
         />

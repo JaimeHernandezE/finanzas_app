@@ -327,7 +327,8 @@ def movimientos(request):
            ?tipo=EGRESO     filtra por tipo (INGRESO / EGRESO)
            ?categoria=1     filtra por categoría
            ?metodo=CREDITO  filtra por tipo de método de pago
-           ?q=supermercado  búsqueda por descripción (comentario)
+           ?q=texto        búsqueda por palabras en comentario y/o nombre de categoría
+                         (varias palabras: deben aparecer todas, cada una en comentario o categoría)
 
     POST → Crea un movimiento nuevo. Si es crédito, el signal genera las cuotas.
     """
@@ -369,7 +370,15 @@ def movimientos(request):
         if metodo:
             qs = qs.filter(metodo_pago__tipo=metodo)
         if q:
-            qs = qs.filter(comentario__icontains=q)
+            tokens = [t for t in str(q).strip().split() if t]
+            if tokens:
+                combined = None
+                for token in tokens:
+                    token_q = Q(comentario__icontains=token) | Q(
+                        categoria__nombre__icontains=token
+                    )
+                    combined = token_q if combined is None else combined & token_q
+                qs = qs.filter(combined)
 
         qs = qs.filter(oculto=False)
         qs = _qs_movimientos_con_ingreso_comun(qs)
