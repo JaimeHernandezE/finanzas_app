@@ -84,6 +84,7 @@ export default function DashboardScreen() {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [cuentaTab, setCuentaTab] = useState<number | null>(null)
   const [showSelectorCuenta, setShowSelectorCuenta] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
   const [selectorY, setSelectorY] = useState(0)
@@ -92,6 +93,7 @@ export default function DashboardScreen() {
     mes: mes + 1,
     anio,
     ambito: 'PERSONAL',
+    solo_mios: true,
   })
   const movimientos = raw as Movimiento[]
 
@@ -107,6 +109,7 @@ export default function DashboardScreen() {
     useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mes + 1, anio), [mes, anio])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+
   const cuentasPersonales = useMemo(() => {
     const list = ((cuentasRes ?? []) as CuentaPersonalApi[]).filter((c) => c.es_propia)
     return list.sort((a, b) => {
@@ -118,6 +121,14 @@ export default function DashboardScreen() {
     })
   }, [cuentasRes])
 
+  // Auto-seleccionar primera cuenta
+  useEffect(() => {
+    if (!cuentasPersonales.length) { setCuentaTab(null); return }
+    if (cuentaTab === null || !cuentasPersonales.some(c => c.id === cuentaTab)) {
+      setCuentaTab(cuentasPersonales[0].id)
+    }
+  }, [cuentasPersonales, cuentaTab])
+
   const deudaTc = useMemo(() => {
     const data = deudaRes as { total?: string } | null
     return Math.round(Number(data?.total) || 0)
@@ -125,45 +136,48 @@ export default function DashboardScreen() {
 
   const ajusteLiquidacionComun = useMemo(() => {
     if (!liquidacionRes || !user) return 0
-
     const totalIngresos = (liquidacionRes.ingresos ?? []).reduce(
-      (acc, i) => acc + toPesos(i.total),
-      0
+      (acc, i) => acc + toPesos(i.total), 0
     )
     const totalGastosComunes = (liquidacionRes.gastos_comunes ?? []).reduce(
-      (acc, g) => acc + toPesos(g.total),
-      0
+      (acc, g) => acc + toPesos(g.total), 0
     )
     if (totalIngresos <= 0 || totalGastosComunes <= 0) return 0
-
     const ingresoUsuario = (liquidacionRes.ingresos ?? [])
       .filter(i => i.usuario_id === user.id)
       .reduce((acc, i) => acc + toPesos(i.total), 0)
-
     const aporteEsperado = (ingresoUsuario / totalIngresos) * totalGastosComunes
     const pagadoPorUsuario = (liquidacionRes.gastos_comunes ?? [])
       .filter(g => g.usuario_id === user.id)
       .reduce((acc, g) => acc + toPesos(g.total), 0)
-
     return Math.round(pagadoPorUsuario - aporteEsperado)
   }, [liquidacionRes, user])
 
-  const { efectivo, saldo, ultimos, categoriasSorted, maxCat, totalCat } = useMemo(() => {
-    const efectivo = movimientos
+  // Efectivo total sobre todos los movimientos personales del usuario
+  const efectivo = useMemo(() => {
+    return movimientos
       .filter(m => m.metodo_pago_tipo !== 'CREDITO')
       .reduce(
         (acc, m) => acc + (m.tipo === 'INGRESO' ? montoAbs(m.monto) : -montoAbs(m.monto)),
         0
       )
+  }, [movimientos])
 
-    const saldo = efectivo - deudaTc + ajusteLiquidacionComun
+  const saldo = efectivo - deudaTc + ajusteLiquidacionComun
 
-    const ultimos = [...movimientos]
+  // Movimientos filtrados por la cuenta seleccionada (para categorías y lista)
+  const movimientosCuenta = useMemo(() => {
+    if (cuentaTab === null) return movimientos
+    return movimientos.filter(m => m.cuenta === cuentaTab)
+  }, [movimientos, cuentaTab])
+
+  const { ultimos, categoriasSorted, maxCat, totalCat } = useMemo(() => {
+    const ultimos = [...movimientosCuenta]
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
       .slice(0, 10)
 
     const byCat = new Map<string, number>()
-    for (const m of movimientos) {
+    for (const m of movimientosCuenta) {
       if (m.tipo !== 'EGRESO') continue
       const name = m.categoria_nombre || 'Otros'
       byCat.set(name, (byCat.get(name) ?? 0) + montoAbs(m.monto))
@@ -174,26 +188,18 @@ export default function DashboardScreen() {
     const maxCat = categoriasSorted[0]?.monto ?? 1
     const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
 
-    return { efectivo, saldo, ultimos, categoriasSorted, maxCat, totalCat }
-  }, [movimientos, deudaTc, ajusteLiquidacionComun])
+    return { ultimos, categoriasSorted, maxCat, totalCat }
+  }, [movimientosCuenta])
 
   function irAnterior() {
-    if (mes === 0) {
-      setMes(11)
-      setAnio(a => a - 1)
-    } else {
-      setMes(m => m - 1)
-    }
+    if (mes === 0) { setMes(11); setAnio(a => a - 1) }
+    else setMes(m => m - 1)
   }
 
   function irSiguiente() {
     if (esActual) return
-    if (mes === 11) {
-      setMes(0)
-      setAnio(a => a + 1)
-    } else {
-      setMes(m => m + 1)
-    }
+    if (mes === 11) { setMes(0); setAnio(a => a + 1) }
+    else setMes(m => m + 1)
   }
 
   const hasError = error || errorLiquidacion
@@ -202,10 +208,7 @@ export default function DashboardScreen() {
   useEffect(() => {
     if (!showSelectorCuenta) return
     const timeout = setTimeout(() => {
-      scrollRef.current?.scrollTo({
-        y: Math.max(selectorY - 20, 0),
-        animated: true,
-      })
+      scrollRef.current?.scrollTo({ y: Math.max(selectorY - 20, 0), animated: true })
     }, 50)
     return () => clearTimeout(timeout)
   }, [showSelectorCuenta, selectorY])
@@ -244,6 +247,7 @@ export default function DashboardScreen() {
         className="flex-1 bg-surface"
         contentContainerStyle={{ padding: 20, paddingBottom: 28 }}
       >
+        {/* Encabezado + navegación de mes */}
         <View className="flex-row items-center justify-between mb-4">
           <View className="flex-row items-center">
             <Text className="text-2xl font-bold text-dark">Resumen</Text>
@@ -291,6 +295,7 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
+            {/* Tarjetas métricas */}
             <View className="gap-3 mb-6">
               <View className="bg-white rounded-2xl p-5">
                 <Text className="text-sm text-muted mb-1">Efectivo disponible</Text>
@@ -312,6 +317,26 @@ export default function DashboardScreen() {
               </View>
             </View>
 
+            {/* Tabs por cuenta personal */}
+            {cuentasPersonales.length > 0 && (
+              <View className="flex-row flex-wrap gap-2 mb-4">
+                {cuentasPersonales.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setCuentaTab(c.id)}
+                    className={`px-4 py-2 rounded-full border ${
+                      cuentaTab === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
+                    }`}
+                  >
+                    <Text className={`text-xs font-semibold ${cuentaTab === c.id ? 'text-white' : 'text-dark'}`}>
+                      {c.nombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Acciones rápidas */}
             <Text className="text-xs text-muted uppercase font-semibold mb-3">Acciones rápidas</Text>
             <View className="flex-row gap-3 mb-4">
               <TouchableOpacity
@@ -353,6 +378,7 @@ export default function DashboardScreen() {
               </View>
             )}
 
+            {/* Gastos por categoría */}
             <View className="bg-white rounded-2xl p-5 mb-4">
               <View className="flex-row items-center justify-between mb-4">
                 <Text className="text-dark font-semibold text-sm">Gastos por categoría</Text>
@@ -386,6 +412,7 @@ export default function DashboardScreen() {
               )}
             </View>
 
+            {/* Lista de movimientos */}
             <View className="bg-white rounded-2xl overflow-hidden mb-4">
               <View className="px-5 py-4 border-b border-border flex-row items-center justify-between">
                 <Text className="text-sm font-semibold text-dark">Gastos personales</Text>
@@ -439,7 +466,11 @@ export default function DashboardScreen() {
                             </View>
                             {puedeEditar && (
                               <TouchableOpacity
-                                onPress={() => router.push(`/(tabs)/gastos?editar=${item.id}` as never)}
+                                onPress={() =>
+                                  router.push(
+                                    `/nuevo-movimiento?editar=${item.id}&cuenta=${item.cuenta ?? ''}` as never
+                                  )
+                                }
                                 hitSlop={8}
                               >
                                 <Text className="text-dark text-xs font-semibold">Editar</Text>
@@ -450,10 +481,18 @@ export default function DashboardScreen() {
                       </View>
                     )
                   })}
+
+                  {cuentaTab != null && (
+                    <TouchableOpacity
+                      onPress={() => router.push(`/cuenta/${cuentaTab}` as never)}
+                      className="px-5 py-3 border-t border-border"
+                    >
+                      <Text className="text-dark text-xs font-semibold text-center">Ver todos →</Text>
+                    </TouchableOpacity>
+                  )}
                 </>
               )}
             </View>
-
           </>
         )}
       </ScrollView>

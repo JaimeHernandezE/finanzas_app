@@ -16,8 +16,10 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Modal,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
@@ -84,7 +86,7 @@ function cuentaPersonalPrimero(a: CuentaPersonalApi, b: CuentaPersonalApi) {
 export type MovimientoFormularioProps = {
   /** Modal sobre Gastos comunes vs pantalla completa desde una cuenta */
   variant: 'overlay' | 'standalone'
-  /** Margen inferior del sheet (tab bar + safe area) */
+  /** @deprecated — ya no es necesario, el overlay usa Modal nativo */
   sheetMarginBottom?: number
   refetchMovimientosComun?: () => void
   /** En standalone: id de cuenta personal fija */
@@ -93,10 +95,11 @@ export type MovimientoFormularioProps = {
 
 export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, MovimientoFormularioProps>(
   function MovimientoFormulario(
-    { variant, sheetMarginBottom = 0, refetchMovimientosComun, cuentaPersonalFija },
+    { variant, refetchMovimientosComun, cuentaPersonalFija },
     ref,
   ) {
     const router = useRouter()
+    const insets = useSafeAreaInsets()
     const esStandalone = variant === 'standalone'
     const cuentaFija =
       esStandalone && cuentaPersonalFija != null && Number.isFinite(cuentaPersonalFija)
@@ -138,6 +141,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [editingId, setEditingId] = useState<number | null>(null)
     const [vinculoIngresoComun, setVinculoIngresoComun] = useState(false)
     const [loadingDetalle, setLoadingDetalle] = useState(false)
+    const [showCategoriaPicker, setShowCategoriaPicker] = useState(false)
 
     const cerrarForm = useCallback(() => {
       if (esStandalone && cuentaFija != null) {
@@ -262,15 +266,28 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       router.replace('/(tabs)/gastos')
     }, [esStandalone, editar, router, iniciarEdicion])
 
+    // Categorías ordenadas alfabéticamente, filtradas por tipo
     const categoriasFiltradas = useMemo(
-      () => categorias.filter((c) => c.tipo === tipo),
+      () =>
+        categorias
+          .filter((c) => c.tipo === tipo)
+          .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
       [categorias, tipo],
     )
+
+    const categoriaNombre = useMemo(() => {
+      return categorias.find((c) => c.id === form.categoria)?.nombre ?? null
+    }, [categorias, form.categoria])
 
     const metodoPagoId = useMemo(() => {
       const m = metodos.find((x) => x.tipo === metodoTipo)
       return m?.id ?? null
     }, [metodos, metodoTipo])
+
+    // ¿Se debe mostrar el campo Ámbito?
+    // Se oculta cuando está predefinido por el contexto (standalone con cuenta fija = PERSONAL,
+    // o overlay = COMUN fijo desde la pantalla de gastos)
+    const mostrarAmbito = !esStandalone && !vinculoIngresoComun && !cuentaFija
 
     async function guardar() {
       setErrorGeneral(null)
@@ -399,12 +416,54 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }
     }
 
-    const visible = esStandalone || showForm
-    if (!visible) return null
-
     const tituloPrincipal =
       loadingDetalle ? 'Cargando…' : editingId != null ? 'Editar movimiento' : 'Nuevo movimiento'
 
+    // ── Picker de categorías (Modal) ──────────────────────────────────────────
+    const categoriaPicker = (
+      <Modal
+        visible={showCategoriaPicker}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoriaPicker(false)}
+        statusBarTranslucent
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-2xl" style={{ maxHeight: '70%' }}>
+            <View className="flex-row items-center justify-between px-5 py-4 border-b border-border">
+              <Text className="text-dark font-bold text-base">Seleccionar categoría</Text>
+              <TouchableOpacity onPress={() => setShowCategoriaPicker(false)}>
+                <Text className="text-muted text-2xl leading-none">×</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {categoriasFiltradas.map((cat, i) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  onPress={() => {
+                    setField('categoria', cat.id)
+                    setShowCategoriaPicker(false)
+                  }}
+                  className={`px-5 py-4 flex-row items-center justify-between ${
+                    i < categoriasFiltradas.length - 1 ? 'border-b border-border' : ''
+                  }`}
+                >
+                  <Text className={`text-sm ${form.categoria === cat.id ? 'font-bold text-dark' : 'text-dark'}`}>
+                    {cat.nombre}
+                  </Text>
+                  {form.categoria === cat.id && (
+                    <Text className="text-accent font-bold">✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <View style={{ height: Math.max(insets.bottom, 12) }} />
+          </View>
+        </View>
+      </Modal>
+    )
+
+    // ── Contenido del formulario ──────────────────────────────────────────────
     const formInner = (
       <>
         {errorGeneral && (
@@ -421,6 +480,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
+        {/* Tipo */}
         <Text className="text-xs text-muted font-semibold mb-1">Tipo</Text>
         {vinculoIngresoComun ? (
           <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
@@ -449,13 +509,19 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
-        <Text className="text-xs text-muted font-semibold mb-1">Ámbito</Text>
-        <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
-          <Text className="text-dark font-semibold">
-            {form.ambito === 'PERSONAL' ? 'Personal' : 'Común'}
-          </Text>
-        </View>
+        {/* Ámbito — solo si no está predefinido */}
+        {mostrarAmbito && (
+          <>
+            <Text className="text-xs text-muted font-semibold mb-1">Ámbito</Text>
+            <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
+              <Text className="text-dark font-semibold">
+                {form.ambito === 'PERSONAL' ? 'Personal' : 'Común'}
+              </Text>
+            </View>
+          </>
+        )}
 
+        {/* Cuenta — solo si PERSONAL y no hay cuenta fija */}
         {form.ambito === 'PERSONAL' && !vinculoIngresoComun && cuentaFija != null && (
           <>
             <Text className="text-xs text-muted font-semibold mb-2">Cuenta</Text>
@@ -488,6 +554,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </>
         )}
 
+        {/* Categoría — dropdown alfabético */}
         <Text className="text-xs text-muted font-semibold mb-2">Categoría *</Text>
         {vinculoIngresoComun ? (
           <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
@@ -496,27 +563,18 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             </Text>
           </View>
         ) : (
-          <View className="flex-row flex-wrap gap-2 mb-4">
-            {categoriasFiltradas.map((cat) => (
-              <TouchableOpacity
-                key={cat.id}
-                onPress={() => setField('categoria', cat.id)}
-                className={`px-3 py-1.5 rounded-lg border ${
-                  form.categoria === cat.id ? 'bg-dark border-dark' : 'bg-white border-border'
-                }`}
-              >
-                <Text
-                  className={`text-xs font-medium ${
-                    form.categoria === cat.id ? 'text-white' : 'text-dark'
-                  }`}
-                >
-                  {cat.nombre}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <TouchableOpacity
+            onPress={() => setShowCategoriaPicker(true)}
+            className="border border-border rounded-lg px-3 py-2.5 mb-4 bg-white flex-row items-center justify-between"
+          >
+            <Text className={categoriaNombre ? 'text-dark font-medium' : 'text-muted'}>
+              {categoriaNombre ?? 'Seleccionar categoría…'}
+            </Text>
+            <Text className="text-muted text-sm">▾</Text>
+          </TouchableOpacity>
         )}
 
+        {/* Fecha */}
         <Text className="text-xs text-muted font-semibold mb-1">Fecha</Text>
         <TextInput
           value={form.fecha}
@@ -525,6 +583,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           className="border border-border rounded-lg px-3 py-2.5 text-dark mb-4"
         />
 
+        {/* Monto */}
         <Text className="text-xs text-muted font-semibold mb-1">Monto (CLP) *</Text>
         <TextInput
           value={form.monto}
@@ -535,6 +594,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         />
         <Text className="text-[11px] text-muted mb-4">Pesos chilenos (CLP).</Text>
 
+        {/* Método de pago */}
         {tipo === 'EGRESO' && !vinculoIngresoComun && (
           <>
             <Text className="text-xs text-muted font-semibold mb-1">Método de pago</Text>
@@ -566,6 +626,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
+        {/* Tarjeta + cuotas */}
         {tipo === 'EGRESO' && metodoTipo === 'CREDITO' && !vinculoIngresoComun && (
           <View className="bg-surface border border-border rounded-xl p-3 mb-4">
             <Text className="text-xs text-muted font-semibold mb-2">Tarjeta *</Text>
@@ -616,6 +677,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
+        {/* Comentario */}
         <Text className="text-xs text-muted font-semibold mb-1">
           {vinculoIngresoComun ? 'Comentario / origen (opcional)' : 'Comentario (opcional)'}
         </Text>
@@ -632,6 +694,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       </>
     )
 
+    // ── Header ────────────────────────────────────────────────────────────────
     const headerBlock = esStandalone ? (
       <View className="px-6 pt-4 pb-3 border-b border-border">
         <Text className="text-sm text-muted">
@@ -662,8 +725,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       </View>
     )
 
+    // ── Botones ───────────────────────────────────────────────────────────────
     const buttonsRow = (
-      <View className="flex-row gap-3 px-6 pt-4 pb-4 border-t border-border">
+      <View
+        className="flex-row gap-3 px-6 pt-4 border-t border-border"
+        style={{ paddingBottom: esStandalone ? 16 : Math.max(insets.bottom + 8, 20) }}
+      >
         <TouchableOpacity
           onPress={cerrarForm}
           className="flex-1 border border-border rounded-xl py-3 items-center"
@@ -686,9 +753,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       </View>
     )
 
+    // ── Variante standalone (pantalla completa) ───────────────────────────────
     if (esStandalone) {
+      if (!showForm) return null
       return (
         <View className="flex-1 bg-white">
+          {categoriaPicker}
           {headerBlock}
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -709,24 +779,40 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       )
     }
 
+    // ── Variante overlay — Modal nativo para posicionarse sobre el tab bar ────
     return (
-      <View className="absolute inset-0 bg-black/50 justify-end">
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-          <View className="bg-white rounded-t-2xl" style={{ marginBottom: sheetMarginBottom }}>
-            {headerBlock}
-            <ScrollView className="px-6 pt-4" style={{ maxHeight: 560 }}>
-              {loadingDetalle ? (
-                <View className="py-16 items-center">
-                  <ActivityIndicator color="#0f0f0f" />
-                </View>
-              ) : (
-                formInner
-              )}
-            </ScrollView>
-            {buttonsRow}
+      <>
+        {categoriaPicker}
+        <Modal
+          visible={showForm}
+          transparent
+          animationType="slide"
+          onRequestClose={cerrarForm}
+          statusBarTranslucent
+        >
+          <View className="flex-1 bg-black/50 justify-end">
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+              <View className="bg-white rounded-t-2xl">
+                {headerBlock}
+                <ScrollView
+                  className="px-6 pt-4"
+                  style={{ maxHeight: 560 }}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {loadingDetalle ? (
+                    <View className="py-16 items-center">
+                      <ActivityIndicator color="#0f0f0f" />
+                    </View>
+                  ) : (
+                    formInner
+                  )}
+                </ScrollView>
+                {buttonsRow}
+              </View>
+            </KeyboardAvoidingView>
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </Modal>
+      </>
     )
   },
 )
