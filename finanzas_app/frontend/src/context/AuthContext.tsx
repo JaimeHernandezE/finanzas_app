@@ -13,6 +13,7 @@ import {
   GoogleAuthProvider,
   signOut,
   updatePassword,
+  reload,
   type User as FirebaseUser
 } from 'firebase/auth'
 import { auth, provider } from '../firebase'
@@ -358,20 +359,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!firebaseUser || !firebaseUser.email) {
       throw new Error('No hay una sesión activa para cambiar la contraseña.')
     }
-    if (newPassword.trim().length < 6) {
+    const trimmed = newPassword.trim()
+    if (trimmed.length < 6) {
       throw new Error('La nueva contraseña debe tener al menos 6 caracteres.')
     }
 
+    const emailNorm = firebaseUser.email.trim().toLowerCase()
+
+    function tieneProveedorPassword(user: FirebaseUser): boolean {
+      return user.providerData.some((p) => p.providerId === PASSWORD_PROVIDER_ID)
+    }
+
+    const tieneGoogle = firebaseUser.providerData.some(
+      (p) => p.providerId === GOOGLE_PROVIDER_ID
+    )
+
+    async function ejecutarCambioOEnlaces(user: FirebaseUser) {
+      if (tieneProveedorPassword(user)) {
+        await updatePassword(user, trimmed)
+        return
+      }
+      const credential = EmailAuthProvider.credential(emailNorm, trimmed)
+      await linkWithCredential(user, credential)
+    }
+
     try {
-      await updatePassword(firebaseUser, newPassword.trim())
+      await ejecutarCambioOEnlaces(firebaseUser)
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? (err as { code: string }).code : ''
       if (code === 'auth/requires-recent-login') {
-        const googleProvider = new GoogleAuthProvider()
-        googleProvider.setCustomParameters({ prompt: 'select_account' })
-        await reauthenticateWithPopup(firebaseUser, googleProvider)
-        await updatePassword(firebaseUser, newPassword.trim())
-        return
+        if (tieneGoogle) {
+          const googleProvider = new GoogleAuthProvider()
+          googleProvider.setCustomParameters({ prompt: 'select_account' })
+          await reauthenticateWithPopup(firebaseUser, googleProvider)
+          await ejecutarCambioOEnlaces(firebaseUser)
+          return
+        }
+        throw new Error(mapFirebaseError(code))
+      }
+      if (code === 'auth/provider-already-linked') {
+        await reload(firebaseUser)
+        const refreshed = auth.currentUser
+        if (refreshed && tieneProveedorPassword(refreshed)) {
+          await updatePassword(refreshed, trimmed)
+          return
+        }
+        throw new Error('La contraseña ya está vinculada. Cierra sesión y vuelve a entrar.')
       }
       if (err instanceof Error && !code) {
         throw err

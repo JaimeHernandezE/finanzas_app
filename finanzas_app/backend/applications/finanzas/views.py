@@ -42,6 +42,18 @@ def _qs_movimientos_con_ingreso_comun(qs):
     return qs.annotate(_ingreso_comun_pk=Subquery(sub))
 
 
+def _asegurar_catalogo_metodos_pago():
+    """
+    Garantiza un registro por cada tipo (EFECTIVO, DEBITO, CREDITO).
+
+    El seed antiguo solo corría si la tabla estaba vacía; si había datos parciales
+    (p. ej. sin DEBITO), el cliente móvil fallaba al usar Débito por defecto.
+    """
+    for tipo, nombre in MetodoPago.TIPO_CHOICES:
+        if not MetodoPago.objects.filter(tipo=tipo).exists():
+            MetodoPago.objects.create(nombre=nombre, tipo=tipo)
+
+
 # ── CATEGORÍAS ────────────────────────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
@@ -142,18 +154,13 @@ def metodos_pago(request):
     """
     GET → Lista todos los métodos de pago disponibles.
     Son globales del sistema, no se crean por usuario.
-    Si no existen, los crea automáticamente (seed).
+    Asegura que exista un registro por cada tipo (EFECTIVO, DEBITO, CREDITO).
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
 
-    if not MetodoPago.objects.exists():
-        MetodoPago.objects.bulk_create([
-            MetodoPago(nombre='Efectivo', tipo='EFECTIVO'),
-            MetodoPago(nombre='Débito', tipo='DEBITO'),
-            MetodoPago(nombre='Crédito', tipo='CREDITO'),
-        ])
+    _asegurar_catalogo_metodos_pago()
 
     metodos = MetodoPago.objects.all().order_by('tipo')
     return Response(MetodoPagoSerializer(metodos, many=True).data)

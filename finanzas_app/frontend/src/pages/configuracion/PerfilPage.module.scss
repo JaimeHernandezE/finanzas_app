@@ -63,6 +63,14 @@
   margin-bottom: $space-3;
 }
 
+.seguridadHint {
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+  line-height: 1.45;
+  margin: (-$space-2) 0 $space-4 0;
+  max-width: 36rem;
+}
+
 .avatarWrap {
   display: flex;
   justify-content: center;

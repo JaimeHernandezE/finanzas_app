@@ -63,6 +63,55 @@ interface Tarjeta {
 type TipoMovimiento = 'EGRESO' | 'INGRESO'
 type MetodoTipo = 'EFECTIVO' | 'DEBITO' | 'CREDITO'
 
+/** Igual que la web: el API acepta monto como string decimal (MovimientoFormPage). */
+function montoPayloadDesdeForm(montoEntero: number): string {
+  return String(montoEntero)
+}
+
+function normalizarTipoMetodo(raw: string | undefined | null): MetodoTipo | null {
+  const s = String(raw ?? '').trim().toUpperCase()
+  if (s === 'EFECTIVO' || s === 'DEBITO' || s === 'CREDITO') return s
+  return null
+}
+
+/**
+ * Resuelve el id de MetodoPago como la web (`metodos.find(x => x.tipo === metodo)`),
+ * con respaldo por nombre del catálogo sembrado en el backend (p. ej. «Débito»).
+ */
+function resolverMetodoPagoId(metodos: MetodoPago[], metodoTipo: MetodoTipo): number | null {
+  const porTipo = metodos.find((x) => normalizarTipoMetodo(x.tipo) === metodoTipo)
+  if (porTipo) return porTipo.id
+
+  const nombresPorTipo: Record<MetodoTipo, string[]> = {
+    EFECTIVO: ['Efectivo'],
+    DEBITO: ['Débito', 'Debito'],
+    CREDITO: ['Crédito', 'Credito'],
+  }
+  const candidatos = nombresPorTipo[metodoTipo]
+  const porNombre = metodos.find((x) =>
+    candidatos.some((n) => x.nombre?.trim().localeCompare(n, 'es', { sensitivity: 'base' }) === 0),
+  )
+  return porNombre?.id ?? null
+}
+
+/** Igual que inputs web: N° cuotas entre 1 y 48 (MovimientoFormPage). */
+const NUM_CUOTAS_MIN = 1
+const NUM_CUOTAS_MAX = 48
+
+/** Texto del método para el usuario (alertas); mismo criterio para Débito, Crédito y Efectivo. */
+function etiquetaMetodoPagoUsuario(metodoTipo: MetodoTipo): string {
+  switch (metodoTipo) {
+    case 'EFECTIVO':
+      return 'Efectivo'
+    case 'DEBITO':
+      return 'Débito'
+    case 'CREDITO':
+      return 'Crédito'
+    default:
+      return metodoTipo
+  }
+}
+
 // ── Helpers de formato ────────────────────────────────────────────────────────
 
 /** "25000" → "$ 25.000"  (vacío → "") */
@@ -114,7 +163,6 @@ function formInicial() {
     categoria: 0,
     tarjeta: 0,
     num_cuotas: '',
-    monto_cuota: '',
     fecha: todayDisplay(),
     ambito: 'COMUN' as 'COMUN' | 'PERSONAL',
     cuenta: 0,
@@ -189,6 +237,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [vinculoIngresoComun, setVinculoIngresoComun] = useState(false)
     const [loadingDetalle, setLoadingDetalle] = useState(false)
     const [showCategoriaPicker, setShowCategoriaPicker] = useState(false)
+    /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
+    const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
 
     const cerrarForm = useCallback(() => {
       if (esStandalone && cuentaFija != null) {
@@ -200,6 +250,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setVinculoIngresoComun(false)
       setLoadingDetalle(false)
       setErrorGeneral(null)
+      setBaseMetodoPagoId(null)
     }, [esStandalone, cuentaFija, router])
 
     function setField<K extends keyof typeof FORM_INICIAL>(key: K, val: (typeof FORM_INICIAL)[K]) {
@@ -214,6 +265,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setTipo('EGRESO')
       setMetodoTipo('DEBITO')
       setErrorGeneral(null)
+      setBaseMetodoPagoId(null)
       setShowForm(true)
     }
 
@@ -227,11 +279,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         try {
           const res = await movimientosApi.getMovimiento(id)
           const data = res.data as MovimientoApiDetalle
-          const metodo = metodos.find((x) => x.id === data.metodo_pago)
-          const mt = (metodo?.tipo as MetodoTipo | undefined) ?? 'DEBITO'
+          setBaseMetodoPagoId(data.metodo_pago)
+          const metodoInmediato = metodos.find((x) => x.id === data.metodo_pago)
+          const mtInmediato = normalizarTipoMetodo(metodoInmediato?.tipo)
           const fechaIso =
             typeof data.fecha === 'string' ? data.fecha.slice(0, 10) : String(data.fecha)
-          setMetodoTipo(mt)
+          setMetodoTipo(mtInmediato ?? 'DEBITO')
           setTipo(data.tipo as TipoMovimiento)
           setVinculoIngresoComun(Boolean(data.ingreso_comun))
           setForm({
@@ -240,10 +293,6 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             categoria: Number(data.categoria),
             tarjeta: data.tarjeta != null ? Number(data.tarjeta) : 0,
             num_cuotas: data.num_cuotas != null ? String(data.num_cuotas) : '',
-            monto_cuota:
-              data.monto_cuota != null && data.monto_cuota !== ''
-                ? String(Math.round(Number(data.monto_cuota)))
-                : '',
             fecha: isoToDisplay(fechaIso),
             ambito: data.ambito as 'COMUN' | 'PERSONAL',
             cuenta: data.cuenta != null ? Number(data.cuenta) : 0,
@@ -258,6 +307,13 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       },
       [metodos, cerrarForm],
     )
+
+    useEffect(() => {
+      if (baseMetodoPagoId == null || !metodos.length) return
+      const mp = metodos.find((m) => m.id === baseMetodoPagoId)
+      const t = normalizarTipoMetodo(mp?.tipo)
+      if (t) setMetodoTipo(t)
+    }, [baseMetodoPagoId, metodos])
 
     useImperativeHandle(ref, () => ({
       abrirNuevoComun,
@@ -276,6 +332,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setTipo('EGRESO')
         setMetodoTipo('DEBITO')
         setErrorGeneral(null)
+        setBaseMetodoPagoId(null)
         setShowForm(true)
       }
     }, [esStandalone, cuentaFija])
@@ -296,6 +353,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setTipo('EGRESO')
         setMetodoTipo('DEBITO')
         setErrorGeneral(null)
+        setBaseMetodoPagoId(null)
         setShowForm(true)
         router.replace('/(tabs)/gastos')
       }
@@ -326,10 +384,31 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       return categorias.find((c) => c.id === form.categoria)?.nombre ?? null
     }, [categorias, form.categoria])
 
-    const metodoPagoId = useMemo(() => {
-      const m = metodos.find((x) => x.tipo === metodoTipo)
-      return m?.id ?? null
-    }, [metodos, metodoTipo])
+    const metodoPagoId = useMemo(
+      () => resolverMetodoPagoId(metodos, metodoTipo),
+      [metodos, metodoTipo],
+    )
+
+    const montoEnteroForm = useMemo(
+      () => parseInt(parsearDigitos(form.monto), 10) || 0,
+      [form.monto],
+    )
+
+    /** Vista previa monto ÷ cuotas (igual que la web: solo calculado, no manual). */
+    const previewMontoCuotaCredito = useMemo(() => {
+      if (metodoTipo !== 'CREDITO' || !form.num_cuotas.trim()) return null
+      const n = parseInt(form.num_cuotas, 10)
+      if (!Number.isFinite(n) || n < NUM_CUOTAS_MIN || montoEnteroForm <= 0) return null
+      return Math.ceil(montoEnteroForm / n)
+    }, [metodoTipo, form.num_cuotas, montoEnteroForm])
+
+    function onElegirMetodoPago(m: MetodoTipo) {
+      if (metodoTipo === 'CREDITO' && m !== 'CREDITO') {
+        setField('tarjeta', 0)
+        setField('num_cuotas', '')
+      }
+      setMetodoTipo(m)
+    }
 
     // ¿Se debe mostrar el campo Ámbito?
     // Se oculta cuando está predefinido por el contexto (standalone con cuenta fija = PERSONAL,
@@ -354,7 +433,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         try {
           await movimientosApi.patchMovimiento(editingId, {
             fecha: fechaIso,
-            monto,
+            monto: montoPayloadDesdeForm(monto),
             comentario: form.comentario.trim(),
           })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
@@ -393,43 +472,74 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         Alert.alert('Cargando', 'Espera un momento mientras se cargan los métodos de pago.')
         return
       }
-      if (!metodoPagoId) {
-        Alert.alert('Falta método de pago', `No hay método ${metodoTipo} configurado.`)
-        return
+
+      // Crédito: misma validación que la web (MovimientoFormPage / MovimientoEditarPage)
+      if (tipo === 'EGRESO' && metodoTipo === 'CREDITO') {
+        if (tarjetas.length === 0) {
+          Alert.alert(
+            'Sin tarjetas',
+            'Crea al menos una tarjeta en Configuración para registrar gastos con crédito.',
+          )
+          return
+        }
+        if (!form.tarjeta) {
+          Alert.alert('Falta tarjeta', 'Selecciona una tarjeta.')
+          return
+        }
+        if (!form.num_cuotas.trim()) {
+          Alert.alert('Faltan cuotas', 'Ingresa el número de cuotas.')
+          return
+        }
+        const nc = parseInt(form.num_cuotas, 10)
+        if (
+          !Number.isFinite(nc) ||
+          nc < NUM_CUOTAS_MIN ||
+          nc > NUM_CUOTAS_MAX
+        ) {
+          Alert.alert(
+            'N° cuotas',
+            `Ingresa un número entre ${NUM_CUOTAS_MIN} y ${NUM_CUOTAS_MAX}.`,
+          )
+          return
+        }
       }
-      if (form.ambito === 'PERSONAL' && !form.cuenta) {
+
+      // Cuenta personal: la web solo exige cuenta si hay cuentas propias disponibles
+      if (form.ambito === 'PERSONAL' && cuentasPropias.length > 0 && !form.cuenta) {
         Alert.alert('Falta cuenta', 'Selecciona una cuenta personal para registrar el movimiento.')
         return
       }
-      if (tipo === 'EGRESO' && metodoTipo === 'CREDITO' && !form.tarjeta) {
-        Alert.alert('Falta tarjeta', 'Selecciona una tarjeta para pago en crédito.')
-        return
-      }
-      if (tipo === 'EGRESO' && metodoTipo === 'CREDITO' && !form.num_cuotas) {
-        Alert.alert('Faltan cuotas', 'Ingresa el número de cuotas.')
+
+      if (!metodoPagoId) {
+        const etiqueta = etiquetaMetodoPagoUsuario(metodoTipo)
+        Alert.alert('Falta método de pago', `No hay método «${etiqueta}» configurado.`)
         return
       }
 
-      const cuotas = form.num_cuotas ? parseInt(form.num_cuotas, 10) : null
-      const montoCuotaManual = form.monto_cuota ? parseInt(parsearDigitos(form.monto_cuota), 10) : null
-      const montoCuotaCalculado = cuotas && cuotas > 0 ? Math.ceil(monto / cuotas) : null
+      const cuotas =
+        tipo === 'EGRESO' && metodoTipo === 'CREDITO' && form.num_cuotas.trim()
+          ? parseInt(form.num_cuotas, 10)
+          : null
+      const montoCuotaCalculado =
+        cuotas && cuotas > 0 && monto > 0 ? Math.ceil(monto / cuotas) : null
 
       const payload = {
         tipo,
         ambito: form.ambito,
         fecha: fechaIso,
         comentario: form.comentario.trim(),
-        monto,
+        monto: montoPayloadDesdeForm(monto),
         categoria: form.categoria,
         metodo_pago: metodoPagoId,
-        cuenta: form.ambito === 'PERSONAL' ? form.cuenta : null,
+        cuenta:
+          form.ambito === 'PERSONAL' && form.cuenta > 0 ? form.cuenta : null,
         tarjeta:
           tipo === 'EGRESO' && metodoTipo === 'CREDITO' && form.tarjeta ? form.tarjeta : null,
         num_cuotas:
           tipo === 'EGRESO' && metodoTipo === 'CREDITO' && cuotas ? cuotas : null,
         monto_cuota:
-          tipo === 'EGRESO' && metodoTipo === 'CREDITO'
-            ? (montoCuotaManual ?? montoCuotaCalculado)
+          tipo === 'EGRESO' && metodoTipo === 'CREDITO' && montoCuotaCalculado
+            ? montoCuotaCalculado
             : null,
       }
 
@@ -655,7 +765,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
               {(['DEBITO', 'EFECTIVO', 'CREDITO'] as MetodoTipo[]).map((m) => (
                 <TouchableOpacity
                   key={m}
-                  onPress={() => setMetodoTipo(m)}
+                  onPress={() => onElegirMetodoPago(m)}
                   className={`flex-1 py-2.5 rounded-lg border items-center ${
                     metodoTipo === m ? 'bg-accent border-accent' : 'bg-white border-border'
                   }`}
@@ -683,41 +793,50 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         {tipo === 'EGRESO' && metodoTipo === 'CREDITO' && !vinculoIngresoComun && (
           <View className="bg-surface border border-border rounded-xl p-3 mb-4">
             <Text className="text-xs text-muted font-semibold mb-2">Tarjeta *</Text>
-            <View className="flex-row flex-wrap gap-2 mb-3">
-              {tarjetas.map((t) => (
-                <TouchableOpacity
-                  key={t.id}
-                  onPress={() => setField('tarjeta', t.id)}
-                  className={`px-3 py-1.5 rounded-lg border ${
-                    form.tarjeta === t.id ? 'bg-dark border-dark' : 'bg-white border-border'
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium ${form.tarjeta === t.id ? 'text-white' : 'text-dark'}`}
+            {tarjetas.length === 0 ? (
+              <Text className="text-sm text-muted mb-3">
+                No tienes tarjetas registradas. Añádelas desde la sección «Tarjetas» en la app (misma idea
+                que Configuración → Tarjetas en la web) y vuelve aquí.
+              </Text>
+            ) : (
+              <View className="flex-row flex-wrap gap-2 mb-3">
+                {tarjetas.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => setField('tarjeta', t.id)}
+                    className={`px-3 py-1.5 rounded-lg border ${
+                      form.tarjeta === t.id ? 'bg-dark border-dark' : 'bg-white border-border'
+                    }`}
                   >
-                    {t.nombre}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+                    <Text
+                      className={`text-xs font-medium ${form.tarjeta === t.id ? 'text-white' : 'text-dark'}`}
+                    >
+                      {t.nombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
             <Text className="text-xs text-muted font-semibold mb-1">N° cuotas *</Text>
             <TextInput
               value={form.num_cuotas}
-              onChangeText={(v) => setField('num_cuotas', v)}
+              onChangeText={(v) => setField('num_cuotas', v.replace(/\D/g, '').slice(0, 2))}
               keyboardType="numeric"
-              placeholder="Ej: 6"
-              className="border border-border rounded-lg px-3 py-2.5 text-dark mb-3 bg-white"
+              placeholder={`Ej: 12 (${NUM_CUOTAS_MIN}–${NUM_CUOTAS_MAX})`}
+              className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
             />
-
-            <Text className="text-xs text-muted font-semibold mb-1">Valor cuota (opcional)</Text>
-            <TextInput
-              value={formatearMiles(form.monto_cuota)}
-              onChangeText={(v) => setField('monto_cuota', parsearDigitos(v))}
-              keyboardType="numeric"
-              placeholder="Se calcula automáticamente"
-              className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white"
-            />
+            <Text className="text-xs text-muted mb-2">
+              Si no indicas valor de cuota, se divide monto ÷ cuotas (redondeo arriba); la diferencia de
+              centavos va a la primera cuota.
+            </Text>
+            {previewMontoCuotaCredito != null && form.num_cuotas.trim() !== '' && (
+              <Text className="text-sm text-dark font-medium">
+                {form.num_cuotas.trim()} cuota
+                {parseInt(form.num_cuotas, 10) !== 1 ? 's' : ''} de{' '}
+                {formatearMiles(String(previewMontoCuotaCredito))}
+              </Text>
+            )}
           </View>
         )}
         {tipo === 'EGRESO' && metodoTipo === 'CREDITO' && vinculoIngresoComun && (

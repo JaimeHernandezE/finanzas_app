@@ -134,9 +134,13 @@ export default function PerfilPage() {
       {/* Seguridad */}
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>SEGURIDAD</h2>
+        <p className={styles.seguridadHint}>
+          Cualquier miembro de la familia puede definir o cambiar su contraseña aquí. Si solo usas Google,
+          la primera vez se vincula una contraseña a tu cuenta para poder entrar también con email.
+        </p>
         <div className={styles.rowEdit}>
           <label className={styles.labelInline} htmlFor="perfil-password-nueva">
-            Recuperar / cambiar contraseña
+            Contraseña (email)
           </label>
           <div className={styles.inputColumn}>
             <input
