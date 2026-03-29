@@ -12,8 +12,8 @@ export function AppLock({ children }: AppLockProps) {
   const [desbloqueado, setDesbloqueado] = useState(false)
   const intentado = useRef(false)
 
-  // Esperamos a que se restaure la sesión antes de pedir la huella,
-  // así el usuario no ve el login form parpadeando bajo la pantalla de bloqueo.
+  // Esperamos a que la sesión se restaure antes de pedir el desbloqueo,
+  // para evitar que el login form parpadee bajo la pantalla de bloqueo.
   useEffect(() => {
     if (authLoading) return
     if (!intentado.current) {
@@ -23,28 +23,33 @@ export function AppLock({ children }: AppLockProps) {
   }, [authLoading])
 
   async function autenticar() {
-    const disponible = await LocalAuthentication.hasHardwareAsync()
-    const inscrito = await LocalAuthentication.isEnrolledAsync()
-    if (!disponible || !inscrito) {
-      // Dispositivo sin biometría registrada → dejar pasar
+    const nivel = await LocalAuthentication.getEnrolledLevelAsync()
+    const { SecurityLevel } = LocalAuthentication
+
+    if (nivel === SecurityLevel.NONE) {
+      // El dispositivo no tiene ningún método de bloqueo configurado → dejar pasar
       setDesbloqueado(true)
       return
     }
+
+    // Si tiene biometría (huella/cara): usarla sin fallback a PIN.
+    // Si solo tiene PIN/patrón: el sistema muestra el PIN directamente.
+    const tieneBiometria = nivel >= SecurityLevel.BIOMETRIC_WEAK
+
     const resultado = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Accede a tus finanzas',
-      disableDeviceFallback: true, // solo huella/cara, sin PIN
+      disableDeviceFallback: tieneBiometria, // con huella: solo huella; sin huella: usa PIN del equipo
       cancelLabel: 'Cancelar',
     })
+
     if (resultado.success) setDesbloqueado(true)
   }
 
   function reintentar() {
-    intentado.current = false
-    intentado.current = true
     void autenticar()
   }
 
-  // Mientras se restaura la sesión guardada → splash
+  // Splash mientras se restaura la sesión guardada
   if (authLoading) {
     return (
       <View className="flex-1 bg-dark items-center justify-center">
@@ -54,7 +59,7 @@ export function AppLock({ children }: AppLockProps) {
     )
   }
 
-  // Sesión restaurada pero biometría pendiente
+  // Pantalla de bloqueo
   if (!desbloqueado) {
     return (
       <View className="flex-1 bg-dark items-center justify-center">
@@ -64,60 +69,7 @@ export function AppLock({ children }: AppLockProps) {
           onPress={reintentar}
           className="bg-accent px-8 py-4 rounded-2xl"
         >
-          <Text className="text-dark font-bold text-base">Desbloquear con huella</Text>
-        </TouchableOpacity>
-      </View>
-    )
-  }
-
-  return <>{children}</>
-}
-
-
-  async function autenticar() {
-    const disponible = await LocalAuthentication.hasHardwareAsync()
-    const inscrito = await LocalAuthentication.isEnrolledAsync()
-    if (!disponible || !inscrito) {
-      // Dispositivo sin biometría registrada → dejar pasar
-      setDesbloqueado(true)
-      return
-    }
-    const resultado = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Accede a tus finanzas',
-      disableDeviceFallback: true, // solo huella/cara, sin PIN
-      cancelLabel: 'Cancelar',
-    })
-    if (resultado.success) setDesbloqueado(true)
-  }
-
-  function reintentar() {
-    intentado.current = false
-    setDesbloqueado(false)
-    void autenticar()
-    intentado.current = true
-  }
-
-  // Mientras se verifica la sesión guardada → splash
-  if (authLoading) {
-    return (
-      <View className="flex-1 bg-dark items-center justify-center">
-        <Text className="text-white text-2xl font-bold mb-2">Finanzas</Text>
-        <Text className="text-white/50 text-sm">Familiares</Text>
-      </View>
-    )
-  }
-
-  // Sesión existe pero todavía no desbloqueado → pantalla de huella
-  if (!desbloqueado) {
-    return (
-      <View className="flex-1 bg-dark items-center justify-center">
-        <Text className="text-white text-2xl font-bold mb-2">Finanzas</Text>
-        <Text className="text-white/50 text-sm mb-10">Familiares</Text>
-        <TouchableOpacity
-          onPress={reintentar}
-          className="bg-accent px-8 py-4 rounded-2xl"
-        >
-          <Text className="text-dark font-bold text-base">Desbloquear con huella</Text>
+          <Text className="text-dark font-bold text-base">Desbloquear</Text>
         </TouchableOpacity>
       </View>
     )
