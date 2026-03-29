@@ -1,38 +1,51 @@
 import axios from 'axios'
+import { getApiBaseUrl } from './baseUrl'
 
-// Detectar si estamos en React Native o web
-const isNative =
-  typeof navigator !== 'undefined' && navigator.product === 'ReactNative'
-
+/**
+ * Lee el JWT: primero SecureStore (Expo / RN), luego localStorage (Vite).
+ * No usar `navigator.product === 'ReactNative'`: en RN moderno deja de cumplirse
+ * y el cliente caía en localStorage → peticiones sin Authorization.
+ */
 async function getToken(): Promise<string | null> {
-  if (isNative) {
-    // En React Native usar SecureStore (importación dinámica para no romper el web)
+  try {
     const SecureStore = await import('expo-secure-store')
-    return SecureStore.getItemAsync('auth_token')
+    const fromSecure = await SecureStore.getItemAsync('auth_token')
+    if (fromSecure != null && fromSecure !== '') return fromSecure
+  } catch {
+    // Sin Expo (p. ej. solo frontend Vite): el import falla o no aplica.
   }
-  return localStorage.getItem('auth_token')
+  if (typeof localStorage !== 'undefined') {
+    try {
+      return localStorage.getItem('auth_token')
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 async function removeToken(): Promise<void> {
-  if (isNative) {
+  try {
     const SecureStore = await import('expo-secure-store')
     await SecureStore.deleteItemAsync('auth_token')
-  } else {
-    localStorage.removeItem('auth_token')
+  } catch {
+    /* sin expo-secure-store */
+  }
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem('auth_token')
+    } catch {
+      /* */
+    }
   }
 }
 
 const client = axios.create({
-  baseURL:
-    (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ??
-    (typeof import.meta !== 'undefined'
-      ? (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL
-      : undefined) ??
-    'http://localhost:8000',
   headers: { 'Content-Type': 'application/json' },
 })
 
 client.interceptors.request.use(async (config) => {
+  config.baseURL = getApiBaseUrl()
   const token = await getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
@@ -45,7 +58,11 @@ client.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       await removeToken()
-      if (!isNative) {
+      if (
+        typeof window !== 'undefined' &&
+        typeof window.location !== 'undefined' &&
+        typeof window.location.href === 'string'
+      ) {
         const onLogin = /\/login\/?$/.test(window.location.pathname)
         if (!onLogin) window.location.href = '/login'
       }

@@ -7,9 +7,12 @@ interface AppLockProps {
 }
 
 export function AppLock({ children }: AppLockProps) {
-  const [desbloqueado, setDesbloqueado] = useState(false)
+  // En desarrollo (expo start + emulador) no pedimos huella para poder depurar.
+  // En release/APK __DEV__ es false: siempre aplica el cierre con huella o PIN.
+  const [desbloqueado, setDesbloqueado] = useState(__DEV__)
 
   useEffect(() => {
+    if (__DEV__) return
     autenticar()
   }, [])
 

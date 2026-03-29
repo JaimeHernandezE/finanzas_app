@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useEffect, useState } from 'react'
 import axios from 'axios'
+import { getApiBaseUrl } from '../api/baseUrl'
 
 interface MonedaConfig {
   codigo:              string   // 'CLP'
@@ -45,13 +46,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const cargar = async () => {
       try {
-        const baseURL =
-          (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) ??
-          (typeof import.meta !== 'undefined'
-            ? (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL
-            : undefined) ??
-          'http://localhost:8000'
-        const res = await axios.get(`${baseURL}/api/usuarios/config/`)
+        const res = await axios.get(`${getApiBaseUrl()}/api/usuarios/config/`)
         setConfig(res.data)
       } catch {
         // Usar configuración por defecto si falla

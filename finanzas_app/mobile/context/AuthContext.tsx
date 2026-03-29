@@ -15,7 +15,8 @@ import {
   type User,
 } from 'firebase/auth'
 import { FirebaseError } from 'firebase/app'
-import { auth } from '../lib/firebase'
+import { getFirebaseAuth } from '../lib/firebase'
+import { API_BASE_URL } from '../lib/apiConfig'
 
 export interface Usuario {
   id:      number
@@ -53,7 +54,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 const GOOGLE_PROVIDER_ID = GoogleAuthProvider.PROVIDER_ID
 const PASSWORD_PROVIDER_ID = EmailAuthProvider.PROVIDER_ID
 
@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sincronizarSesionBackend = useCallback(
     async (firebaseToken: string, redirectToTabs = true) => {
       await SecureStore.setItemAsync('auth_token', firebaseToken)
-      const res = await axios.get(`${API_URL}/api/usuarios/me/`, {
+      const res = await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
         headers: { Authorization: `Bearer ${firebaseToken}` },
       })
       setUsuario(res.data)
@@ -172,13 +172,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = await SecureStore.getItemAsync('auth_token')
       if (!token) return
-      const res = await axios.get(`${API_URL}/api/usuarios/me/`, {
+      const res = await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       setUsuario(res.data)
     } catch {
       await SecureStore.deleteItemAsync('auth_token')
-      await signOut(auth).catch(() => {})
+      await signOut(getFirebaseAuth()).catch(() => {})
     } finally {
       setLoading(false)
     }
@@ -190,11 +190,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       try {
         const credential = GoogleAuthProvider.credential(googleIdToken)
-        const { user } = await signInWithCredential(auth, credential)
+        const { user } = await signInWithCredential(getFirebaseAuth(), credential)
         await sincronizarDesdeUsuarioFirebase(user)
       } catch (err: unknown) {
         await SecureStore.deleteItemAsync('auth_token')
-        await signOut(auth).catch(() => {})
+        await signOut(getFirebaseAuth()).catch(() => {})
         handleAuthError(err, 'Error al iniciar sesión con Google.')
       } finally {
         setLoading(false)
@@ -209,7 +209,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       try {
         const emailNormalizado = email.trim().toLowerCase()
-        const { user } = await signInWithEmailAndPassword(auth, emailNormalizado, password)
+        const { user } = await signInWithEmailAndPassword(
+          getFirebaseAuth(),
+          emailNormalizado,
+          password
+        )
         await sincronizarDesdeUsuarioFirebase(user)
       } catch (err: unknown) {
         await SecureStore.deleteItemAsync('auth_token')
@@ -227,7 +231,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(true)
       try {
         const emailNormalizado = email.trim().toLowerCase()
-        const { user } = await createUserWithEmailAndPassword(auth, emailNormalizado, password)
+        const { user } = await createUserWithEmailAndPassword(
+          getFirebaseAuth(),
+          emailNormalizado,
+          password
+        )
         await sincronizarDesdeUsuarioFirebase(user)
         return { requiresLinking: false }
       } catch (err: unknown) {
@@ -235,7 +243,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const emailNormalizado = email.trim().toLowerCase()
         if (code === 'auth/email-already-in-use' || code === 'auth/account-exists-with-different-credential') {
           try {
-            const methods = await fetchSignInMethodsForEmail(auth, emailNormalizado)
+            const methods = await fetchSignInMethodsForEmail(
+              getFirebaseAuth(),
+              emailNormalizado
+            )
             const tienePassword = methods.includes(PASSWORD_PROVIDER_ID)
             const sugiereGoogle = methods.length === 0 || methods.includes(GOOGLE_PROVIDER_ID)
 
@@ -280,7 +291,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const emailNormalizado = email.trim().toLowerCase()
         const googleCredential = GoogleAuthProvider.credential(googleIdToken)
-        const googleSession = await signInWithCredential(auth, googleCredential)
+        const googleSession = await signInWithCredential(
+          getFirebaseAuth(),
+          googleCredential
+        )
         const emailGoogle = (googleSession.user.email ?? '').trim().toLowerCase()
 
         if (!emailGoogle || emailGoogle !== emailNormalizado) {
@@ -311,13 +325,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     await SecureStore.deleteItemAsync('auth_token')
-    await signOut(auth).catch(() => {})
+    await signOut(getFirebaseAuth()).catch(() => {})
     setUsuario(null)
     router.replace('/(auth)/login')
   }
 
   async function changePassword(newPassword: string) {
-    const firebaseUser = auth.currentUser
+    const firebaseUser = getFirebaseAuth().currentUser
     if (!firebaseUser) {
       throw new Error('No hay una sesión activa para cambiar la contraseña.')
     }
@@ -351,7 +365,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const res = await axios.patch(
-      `${API_URL}/api/usuarios/me/`,
+      `${API_BASE_URL}/api/usuarios/me/`,
       { nombre: nombreLimpio },
       { headers: { Authorization: `Bearer ${token}` } }
     )
