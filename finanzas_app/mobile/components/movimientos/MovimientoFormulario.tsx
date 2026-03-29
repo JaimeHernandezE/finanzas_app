@@ -63,17 +63,64 @@ interface Tarjeta {
 type TipoMovimiento = 'EGRESO' | 'INGRESO'
 type MetodoTipo = 'EFECTIVO' | 'DEBITO' | 'CREDITO'
 
-const FORM_INICIAL = {
-  comentario: '',
-  monto: '',
-  categoria: 0,
-  tarjeta: 0,
-  num_cuotas: '',
-  monto_cuota: '',
-  fecha: new Date().toISOString().slice(0, 10),
-  ambito: 'COMUN' as 'COMUN' | 'PERSONAL',
-  cuenta: 0,
+// ── Helpers de formato ────────────────────────────────────────────────────────
+
+/** "25000" → "$ 25.000"  (vacío → "") */
+function formatearMiles(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (!digits) return ''
+  return '$ ' + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
+
+/** "$ 25.000" → "25000" */
+function parsearDigitos(display: string): string {
+  return display.replace(/\D/g, '')
+}
+
+/** "2025-03-15" → "15/03/2025" */
+function isoToDisplay(iso: string): string {
+  const [y, m, d] = iso.split('-')
+  if (!y || !m || !d) return iso
+  return `${d}/${m}/${y}`
+}
+
+/** "15/03/2025" → "2025-03-15"  (retorna '' si inválida) */
+function displayToIso(display: string): string {
+  const parts = display.split('/')
+  if (parts.length !== 3) return ''
+  const [d, m, y] = parts
+  if (!d || !m || !y || y.length !== 4) return ''
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+}
+
+function todayDisplay(): string {
+  return isoToDisplay(new Date().toISOString().slice(0, 10))
+}
+
+/** Mientras el usuario escribe dd/mm/aaaa, auto-inserta barras */
+function autoFormatFecha(text: string): string {
+  const digits = text.replace(/\D/g, '').slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formInicial() {
+  return {
+    comentario: '',
+    monto: '',
+    categoria: 0,
+    tarjeta: 0,
+    num_cuotas: '',
+    monto_cuota: '',
+    fecha: todayDisplay(),
+    ambito: 'COMUN' as 'COMUN' | 'PERSONAL',
+    cuenta: 0,
+  }
+}
+const FORM_INICIAL = formInicial()
 
 function cuentaPersonalPrimero(a: CuentaPersonalApi, b: CuentaPersonalApi) {
   const ap = a.nombre.trim().toLowerCase() === 'personal'
@@ -163,7 +210,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setLoadingDetalle(false)
       setEditingId(null)
       setVinculoIngresoComun(false)
-      setForm(FORM_INICIAL)
+      setForm(formInicial())
       setTipo('EGRESO')
       setMetodoTipo('DEBITO')
       setErrorGeneral(null)
@@ -182,22 +229,22 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           const data = res.data as MovimientoApiDetalle
           const metodo = metodos.find((x) => x.id === data.metodo_pago)
           const mt = (metodo?.tipo as MetodoTipo | undefined) ?? 'DEBITO'
-          const fechaStr =
+          const fechaIso =
             typeof data.fecha === 'string' ? data.fecha.slice(0, 10) : String(data.fecha)
           setMetodoTipo(mt)
           setTipo(data.tipo as TipoMovimiento)
           setVinculoIngresoComun(Boolean(data.ingreso_comun))
           setForm({
             comentario: data.comentario ?? '',
-            monto: String(Number(data.monto)),
+            monto: String(Math.round(Number(data.monto))),
             categoria: Number(data.categoria),
             tarjeta: data.tarjeta != null ? Number(data.tarjeta) : 0,
             num_cuotas: data.num_cuotas != null ? String(data.num_cuotas) : '',
             monto_cuota:
               data.monto_cuota != null && data.monto_cuota !== ''
-                ? String(Number(data.monto_cuota))
+                ? String(Math.round(Number(data.monto_cuota)))
                 : '',
-            fecha: fechaStr,
+            fecha: isoToDisplay(fechaIso),
             ambito: data.ambito as 'COMUN' | 'PERSONAL',
             cuenta: data.cuenta != null ? Number(data.cuenta) : 0,
           })
@@ -222,7 +269,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setEditingId(null)
         setVinculoIngresoComun(false)
         setForm({
-          ...FORM_INICIAL,
+          ...formInicial(),
           ambito: 'PERSONAL',
           cuenta: cuentaFija,
         })
@@ -242,7 +289,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setEditingId(null)
         setVinculoIngresoComun(false)
         setForm({
-          ...FORM_INICIAL,
+          ...formInicial(),
           ambito: ambitoForm,
           cuenta: ambitoForm === 'PERSONAL' ? cuentaId : 0,
         })
@@ -291,9 +338,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
     async function guardar() {
       setErrorGeneral(null)
-      const monto = parseFloat(form.monto)
+      const monto = parseInt(parsearDigitos(form.monto), 10)
       if (!monto || monto <= 0) {
         Alert.alert('Monto inválido', 'Ingresa un monto mayor a 0.')
+        return
+      }
+      const fechaIso = displayToIso(form.fecha)
+      if (!fechaIso) {
+        Alert.alert('Fecha inválida', 'Ingresa la fecha en formato DD/MM/AAAA.')
         return
       }
 
@@ -301,7 +353,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setSaving(true)
         try {
           await movimientosApi.patchMovimiento(editingId, {
-            fecha: form.fecha,
+            fecha: fechaIso,
             monto,
             comentario: form.comentario.trim(),
           })
@@ -359,13 +411,13 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }
 
       const cuotas = form.num_cuotas ? parseInt(form.num_cuotas, 10) : null
-      const montoCuotaManual = form.monto_cuota ? parseFloat(form.monto_cuota) : null
+      const montoCuotaManual = form.monto_cuota ? parseInt(parsearDigitos(form.monto_cuota), 10) : null
       const montoCuotaCalculado = cuotas && cuotas > 0 ? Math.ceil(monto / cuotas) : null
 
       const payload = {
         tipo,
         ambito: form.ambito,
-        fecha: form.fecha,
+        fecha: fechaIso,
         comentario: form.comentario.trim(),
         monto,
         categoria: form.categoria,
@@ -578,21 +630,22 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         <Text className="text-xs text-muted font-semibold mb-1">Fecha</Text>
         <TextInput
           value={form.fecha}
-          onChangeText={(v) => setField('fecha', v)}
-          placeholder="YYYY-MM-DD"
+          onChangeText={(v) => setField('fecha', autoFormatFecha(v))}
+          placeholder="DD/MM/AAAA"
+          keyboardType="numeric"
+          maxLength={10}
           className="border border-border rounded-lg px-3 py-2.5 text-dark mb-4"
         />
 
         {/* Monto */}
         <Text className="text-xs text-muted font-semibold mb-1">Monto (CLP) *</Text>
         <TextInput
-          value={form.monto}
-          onChangeText={(v) => setField('monto', v)}
-          placeholder="Ej: 25000"
+          value={formatearMiles(form.monto)}
+          onChangeText={(v) => setField('monto', parsearDigitos(v))}
+          placeholder="$ 0"
           keyboardType="numeric"
-          className="border border-border rounded-lg px-3 py-2.5 text-dark mb-1"
+          className="border border-border rounded-lg px-3 py-2.5 text-dark mb-4"
         />
-        <Text className="text-[11px] text-muted mb-4">Pesos chilenos (CLP).</Text>
 
         {/* Método de pago */}
         {tipo === 'EGRESO' && !vinculoIngresoComun && (
@@ -659,8 +712,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
             <Text className="text-xs text-muted font-semibold mb-1">Valor cuota (opcional)</Text>
             <TextInput
-              value={form.monto_cuota}
-              onChangeText={(v) => setField('monto_cuota', v)}
+              value={formatearMiles(form.monto_cuota)}
+              onChangeText={(v) => setField('monto_cuota', parsearDigitos(v))}
               keyboardType="numeric"
               placeholder="Se calcula automáticamente"
               className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white"
