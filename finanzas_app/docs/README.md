@@ -23,5 +23,7 @@ Regla práctica:
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Despliegue del backend con Docker y comandos rápidos de docker-compose. |
 | [backend/README.md](backend/README.md) | Resumen del backend, estructura de apps y enlaces al resto de docs del backend. |
 | [backend/TESTING.md](backend/TESTING.md) | Pruebas del backend (pytest): fixtures, tests de catálogos, comandos y cobertura. |
+| [frontend/README.md](frontend/README.md) | App Expo (RN): comandos rápidos de variables EAS y builds. |
+| [frontend/GUIA-EAS-EXPO-REPLICABLE.md](frontend/GUIA-EAS-EXPO-REPLICABLE.md) | **Guía reproducible:** decisiones, checklist y diagnóstico para replicar el flujo en otras apps. |
 
-*(Se irán añadiendo aquí `docs/frontend/README.md` y más archivos según avance el proyecto.)*
+*(Se irán añadiendo más archivos en `docs/frontend/` según avance el proyecto.)*

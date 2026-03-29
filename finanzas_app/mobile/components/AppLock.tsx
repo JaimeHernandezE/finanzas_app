@@ -9,12 +9,16 @@ interface AppLockProps {
 
 export function AppLock({ children }: AppLockProps) {
   const { loading: authLoading } = useAuth()
-  const [desbloqueado, setDesbloqueado] = useState(false)
+
+  // En desarrollo (expo start + emulador) no pedimos huella para poder depurar.
+  // En release/APK __DEV__ es false: siempre aplica el cierre con huella o PIN.
+  const [desbloqueado, setDesbloqueado] = useState(__DEV__)
   const intentado = useRef(false)
 
   // Esperamos a que la sesión se restaure antes de pedir el desbloqueo,
   // para evitar que el login form parpadee bajo la pantalla de bloqueo.
   useEffect(() => {
+    if (__DEV__) return
     if (authLoading) return
     if (!intentado.current) {
       intentado.current = true
@@ -33,12 +37,12 @@ export function AppLock({ children }: AppLockProps) {
     }
 
     // Si tiene biometría (huella/cara): usarla sin fallback a PIN.
-    // Si solo tiene PIN/patrón: el sistema muestra el PIN directamente.
+    // Si solo tiene PIN/patrón/contraseña: el sistema muestra el PIN directamente.
     const tieneBiometria = nivel >= SecurityLevel.BIOMETRIC_WEAK
 
     const resultado = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Accede a tus finanzas',
-      disableDeviceFallback: tieneBiometria, // con huella: solo huella; sin huella: usa PIN del equipo
+      disableDeviceFallback: tieneBiometria,
       cancelLabel: 'Cancelar',
     })
 
@@ -50,7 +54,7 @@ export function AppLock({ children }: AppLockProps) {
   }
 
   // Splash mientras se restaura la sesión guardada
-  if (authLoading) {
+  if (!__DEV__ && authLoading) {
     return (
       <View className="flex-1 bg-dark items-center justify-center">
         <Text className="text-white text-2xl font-bold mb-2">Finanzas</Text>

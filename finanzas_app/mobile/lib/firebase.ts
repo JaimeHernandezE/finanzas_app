@@ -16,18 +16,43 @@ const firebaseConfig = {
   appId:             process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 }
 
+/**
+ * Indica si el bundle incluye la config mínima de Firebase.
+ * En builds EAS, las EXPO_PUBLIC_* deben definirse como secretos del proyecto
+ * (no se sube `.env` al servidor de build).
+ */
+export function isFirebaseConfigured(): boolean {
+  return Boolean(
+    firebaseConfig.apiKey &&
+      firebaseConfig.projectId &&
+      firebaseConfig.appId
+  )
+}
+
+let appInstance: FirebaseApp | null = null
+let authInstance: Auth | null = null
+
 function getAppInstance(): FirebaseApp {
-  return getApps().length ? getApp() : initializeApp(firebaseConfig)
+  if (appInstance) return appInstance
+  if (!isFirebaseConfigured()) {
+    throw new Error(
+      'Firebase no está configurado. Añade las variables EXPO_PUBLIC_FIREBASE_* en EAS (Project → Secrets) y vuelve a generar el APK.'
+    )
+  }
+  appInstance = getApps().length ? getApp() : initializeApp(firebaseConfig)
+  return appInstance
 }
 
 /** Auth con persistencia en AsyncStorage (sesión sobrevive cierres de app). */
-export const auth: Auth = (() => {
+export function getFirebaseAuth(): Auth {
+  if (authInstance) return authInstance
   const app = getAppInstance()
   try {
-    return initializeAuth(app, {
+    authInstance = initializeAuth(app, {
       persistence: getReactNativePersistence(AsyncStorage),
     })
   } catch {
-    return getAuth(app)
+    authInstance = getAuth(app)
   }
-})()
+  return authInstance
+}
