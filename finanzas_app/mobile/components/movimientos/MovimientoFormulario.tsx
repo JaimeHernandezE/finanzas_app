@@ -133,21 +133,12 @@ function parsearDigitos(display: string): string {
 
 /** "30000.50" -> "30000.50" (max 2 decimales). Devuelve '' si inválido/vacío. */
 function parsearMontoDecimal(raw: string): string {
-  const filtered = raw.trim().replace(/,/g, '.').replace(/[^0-9.]/g, '')
-  if (!filtered) return ''
-  const parts = filtered.split('.').filter((p) => p.length > 0)
-  if (!parts.length) return ''
-  if (parts.length === 1) return parts[0]
-
-  const last = parts[parts.length - 1]
-  const intDigits = parts.slice(0, -1).join('')
-
-  // Heurística: si el último grupo tiene 3 dígitos, tratamos el punto como separador de miles.
-  if (last.length === 3) return parts.join('')
-
-  // Si no, tratamos el último grupo como parte decimal (máximo 2).
-  const decDigits = last.slice(0, 2).padEnd(2, '0')
-  return decDigits ? `${intDigits}.${decDigits}` : intDigits
+  // En UI el valor de cuota se maneja como entero (sin decimales).
+  // API suele devolver string tipo "30000.00", así que descartamos todo desde el separador decimal.
+  const normalized = raw.trim().replace(/,/g, '.')
+  const firstSegment = normalized.split('.')[0] ?? ''
+  const digits = firstSegment.replace(/\D/g, '')
+  return digits || ''
 }
 
 /** "2025-03-15" → "15/03/2025" */
@@ -318,7 +309,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             categoria: Number(data.categoria),
             tarjeta: data.tarjeta != null ? Number(data.tarjeta) : 0,
             num_cuotas: data.num_cuotas != null ? String(data.num_cuotas) : '',
-            monto_cuota: data.monto_cuota != null ? String(data.monto_cuota) : '',
+            monto_cuota:
+              data.monto_cuota != null && data.monto_cuota !== ''
+                ? parsearMontoDecimal(String(data.monto_cuota))
+                : '',
             fecha: isoToDisplay(fechaIso),
             ambito: data.ambito as 'COMUN' | 'PERSONAL',
             cuenta: data.cuenta != null ? Number(data.cuenta) : 0,
