@@ -36,14 +36,9 @@ def usuario_tiene_registros_en_familia(usuario_id: int, familia_id: int) -> tupl
     if Tarjeta.objects.filter(usuario_id=usuario_id).exists():
         return True, 'Tiene tarjetas registradas.'
 
-    # La signal crea automáticamente la cuenta 'Personal'; no bloqueará la salida si
-    # no hay cuentas adicionales.
-    if (
-        CuentaPersonal.objects.filter(usuario_id=usuario_id)
-        .exclude(nombre__iexact='Personal')
-        .exists()
-    ):
-        return True, 'Tiene cuentas personales.'
+    # Importante: no bloqueamos por la cuenta personal por defecto ('Personal').
+    # El objetivo del endpoint es permitir quitar miembros que no han registrado
+    # movimientos ni otros datos financieros.
 
     if TutorCuenta.objects.filter(tutor_id=usuario_id).exists():
         return True, 'Tiene cuentas tuteladas (tutorías activas).'
@@ -57,19 +52,8 @@ def usuario_tiene_registros_en_familia(usuario_id: int, familia_id: int) -> tupl
     if IngresoComun.objects.filter(usuario_id=usuario_id, familia_id=familia_id).exists():
         return True, 'Tiene ingresos comunes declarados.'
 
-    if SaldoMensualSnapshot.objects.filter(usuario_id=usuario_id, familia_id=familia_id).exists():
-        return True, 'Tiene datos en el histórico de saldos (snapshots).'
-
-    if LiquidacionComunMensualSnapshot.objects.filter(
-        usuario_id=usuario_id, familia_id=familia_id
-    ).exists():
-        return True, 'Tiene datos en snapshots de liquidación común.'
-
     if SueldoEstimadoProrrateoMensual.objects.filter(usuario_id=usuario_id).exists():
         return True, 'Tiene sueldos estimados de prorrateo guardados.'
-
-    if Categoria.objects.filter(usuario_id=usuario_id, familia_id=familia_id).exists():
-        return True, 'Tiene categorías personales.'
 
     if Fondo.objects.filter(familia_id=familia_id, usuario_id=usuario_id).exists():
         return True, 'Tiene fondos de inversión asociados.'
