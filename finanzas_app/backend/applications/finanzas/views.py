@@ -1637,6 +1637,7 @@ def importar_cuenta_personal_planilla(request):
     errores = []
     meses_importados = set()
     movimientos_para_crear = []
+    movimientos_para_crear = []
 
     vinculados_ingreso_comun = IngresoComun.objects.filter(
         familia_id=usuario.familia_id,
