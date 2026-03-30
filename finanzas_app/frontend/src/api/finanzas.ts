@@ -32,7 +32,6 @@ export interface ImportacionSueldosResult {
   dry_run: boolean
   ingresos_creados: number
   ingresos_anteriores_eliminados: number
-  filas_omitidas_otros_integrantes: number
 }
 
 export interface ImportacionGastosComunesResult {

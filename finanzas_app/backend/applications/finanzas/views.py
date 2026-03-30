@@ -1938,15 +1938,15 @@ def importar_sueldos_planilla(request):
     Importa sueldos desde CSV a IngresoComun.
 
     Cada importación real sustituye solo los ingresos comunes del usuario autenticado
-    (no los de otros miembros de la familia). Las filas cuyo integrante no sea el
-    usuario actual se omiten.
+    (no los de otros miembros de la familia). Todas las filas se registran como
+    sueldos del usuario que importa; la columna Integrante (si existe) se ignora.
 
     Encabezados esperados:
-      - Integrante
       - día
       - Mes/año
       - Sueldo
-      - Descripción
+      - Descripción (opcional)
+      - Integrante (opcional, ignorado)
       - ID entrada (ignorado)
     """
     usuario_auth, error = utils_auth.get_usuario_autenticado(request)
@@ -2002,9 +2002,7 @@ def importar_sueldos_planilla(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    miembros = list(get_user_model().objects.filter(familia_id=usuario_auth.familia_id))
     creados = 0
-    filas_omitidas_otros = 0
     errores = []
     meses_importados = set()
 
@@ -2023,16 +2021,6 @@ def importar_sueldos_planilla(request):
             if _fila_vacia(fila):
                 continue
             try:
-                integrante_txt = _obtener_columna(fila, 'integrante')
-                usuario_obj = _resolver_usuario_por_integrante(
-                    integrante_txt=integrante_txt,
-                    miembros=miembros,
-                    usuario_por_defecto=usuario_auth,
-                )
-                if usuario_obj.pk != usuario_auth.pk:
-                    filas_omitidas_otros += 1
-                    continue
-
                 dia_txt = _obtener_columna(fila, 'dia') or _obtener_columna(fila, 'día')
                 mes_anio_txt = _obtener_columna(fila, 'mes/año')
                 fecha_pago = _parsear_fecha_pago_desde_dia_o_mes_anio(dia_txt, mes_anio_txt)
@@ -2048,7 +2036,7 @@ def importar_sueldos_planilla(request):
 
                 IngresoComun.objects.create(
                     familia=usuario_auth.familia,
-                    usuario=usuario_obj,
+                    usuario=usuario_auth,
                     mes=mes,
                     fecha_pago=fecha_pago,
                     monto=monto,
@@ -2084,7 +2072,6 @@ def importar_sueldos_planilla(request):
             'dry_run': dry_run,
             'ingresos_creados': creados,
             'ingresos_anteriores_eliminados': ingresos_anteriores_eliminados,
-            'filas_omitidas_otros_integrantes': filas_omitidas_otros,
         },
         status=status.HTTP_200_OK,
     )
@@ -2520,44 +2507,6 @@ def _parsear_mes_anio(valor):
             if 1 <= month <= 12:
                 return month, year
     raise ValueError(f"Mes/año inválido '{valor}'.")
-
-
-def _normalizar_texto(valor):
-    return (
-        str(valor or '')
-        .strip()
-        .lower()
-        .replace('á', 'a')
-        .replace('é', 'e')
-        .replace('í', 'i')
-        .replace('ó', 'o')
-        .replace('ú', 'u')
-    )
-
-
-def _resolver_usuario_por_integrante(integrante_txt, miembros, usuario_por_defecto):
-    if not integrante_txt:
-        return usuario_por_defecto
-
-    objetivo = _normalizar_texto(integrante_txt)
-    candidatos = []
-    for m in miembros:
-        full_name = f'{m.first_name} {m.last_name}'.strip()
-        variantes = {
-            _normalizar_texto(m.username),
-            _normalizar_texto(m.email),
-            _normalizar_texto(m.first_name),
-            _normalizar_texto(m.last_name),
-            _normalizar_texto(full_name),
-        }
-        if objetivo in variantes:
-            candidatos.append(m)
-
-    if len(candidatos) == 1:
-        return candidatos[0]
-    if len(candidatos) > 1:
-        raise ValueError(f"Integrante ambiguo '{integrante_txt}'.")
-    raise ValueError(f"Integrante no encontrado '{integrante_txt}'.")
 
 
 def _reparar_fila_colapsada_sueldos(fila):

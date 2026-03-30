@@ -9,7 +9,6 @@ type ResultadoOk = {
   dry_run: boolean
   ingresos_creados: number
   ingresos_anteriores_eliminados: number
-  filas_omitidas_otros_integrantes: number
 }
 
 type ResultadoError = {
@@ -51,11 +50,10 @@ export default function ImportadorSueldosPage() {
 
       <section className={styles.card}>
         <p className={styles.descripcion}>
-          Sube un CSV con encabezados: Integrante, día, Mes/año, Sueldo, Descripción, ID entrada.
+          Sube un CSV con encabezados: día, Mes/año, Sueldo; opcionalmente Descripción e Integrante (esta columna se ignora).
         </p>
         <ul className={styles.reglas}>
-          <li>Se mapea a IngresoComun solo para tu usuario: cada importación borra tus ingresos comunes anteriores y deja solo lo del archivo.</li>
-          <li>Las filas cuyo integrante sea otro miembro de la familia se omiten.</li>
+          <li>Todo lo importado son sueldos del usuario con sesión iniciada: cada importación borra tus ingresos comunes anteriores y deja solo lo del archivo.</li>
           <li>día se usa para determinar el mes (guardado como primer día del mes).</li>
           <li>Sueldo se importa como monto y Descripción como origen.</li>
           <li>ID entrada se ignora.</li>
@@ -94,9 +92,6 @@ export default function ImportadorSueldosPage() {
           <p>Estado: {resultado.dry_run ? 'Validación (sin guardar)' : 'Importación aplicada'}</p>
           <p>Ingresos creados: {resultado.ingresos_creados}</p>
           <p>Ingresos anteriores sustituidos: {resultado.ingresos_anteriores_eliminados}</p>
-          {resultado.filas_omitidas_otros_integrantes > 0 && (
-            <p>Filas omitidas (otro integrante): {resultado.filas_omitidas_otros_integrantes}</p>
-          )}
         </section>
       )}
 
