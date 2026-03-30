@@ -5,6 +5,8 @@ export interface MiembroApi {
   email: string
   nombre: string
   rol: 'ADMIN' | 'MIEMBRO' | 'LECTURA'
+  /** Solo admin; miembro sin datos asociados y no es el único admin restante */
+  puede_quitar?: boolean
 }
 
 export interface InvitacionApi {
@@ -18,6 +20,9 @@ export const familiaApi = {
 
   patchMiembroRol: (id: number, rol: MiembroApi['rol']) =>
     client.patch<MiembroApi>(`/api/usuarios/familia/miembros/${id}/rol/`, { rol }),
+
+  deleteMiembro: (id: number) =>
+    client.delete(`/api/usuarios/familia/miembros/${id}/`),
 
   getInvitaciones: () => client.get<InvitacionApi[]>('/api/usuarios/familia/invitaciones/'),
 

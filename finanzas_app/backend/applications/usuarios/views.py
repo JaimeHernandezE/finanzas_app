@@ -7,6 +7,7 @@ from rest_framework import status
 from firebase_admin import auth as firebase_auth
 
 from applications import utils as utils_auth
+from .miembro_salida import puede_quitar_miembro_familia
 from .models import Usuario, Familia, InvitacionPendiente
 
 logger = logging.getLogger(__name__)
@@ -230,13 +231,17 @@ def familia_miembros(request):
         return err
     if not usuario.familia_id:
         return Response([])
-    qs = Usuario.objects.filter(familia_id=usuario.familia_id).order_by('first_name', 'email')
+    fid = usuario.familia_id
+    qs = Usuario.objects.filter(familia_id=fid).order_by('first_name', 'email')
     return Response([
         {
             'id': u.id,
             'email': u.email,
             'nombre': u.get_full_name() or u.username,
             'rol': u.rol,
+            'puede_quitar': puede_quitar_miembro_familia(
+                usuario.id, usuario.rol, u.id, u.rol, fid
+            )[0],
         }
         for u in qs
     ])
@@ -280,6 +285,39 @@ def miembro_actualizar_rol(request, pk):
         'nombre': otro.get_full_name() or otro.username,
         'rol': otro.rol,
     })
+
+
+@api_view(['DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def miembro_eliminar(request, pk):
+    """
+    Quita un usuario de la familia (familia=None). Solo sin datos asociados
+    ni violar regla de administradores; solo ADMIN.
+    """
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'Sin familia asignada.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        otro = Usuario.objects.get(pk=pk, familia_id=usuario.familia_id)
+    except Usuario.DoesNotExist:
+        return Response(
+            {'error': 'Miembro no encontrado.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    ok, msg = puede_quitar_miembro_familia(
+        usuario.id, usuario.rol, otro.id, otro.rol, usuario.familia_id
+    )
+    if not ok:
+        return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
+    otro.familia = None
+    otro.save(update_fields=['familia'])
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET', 'POST'])

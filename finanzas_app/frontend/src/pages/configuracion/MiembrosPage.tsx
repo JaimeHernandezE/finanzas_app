@@ -12,6 +12,7 @@ interface Miembro {
   foto: string | null
   rol: 'ADMIN' | 'MIEMBRO' | 'LECTURA'
   esTuActual: boolean
+  puedeQuitar: boolean
 }
 
 interface Invitacion {
@@ -46,6 +47,7 @@ export default function MiembrosPage() {
   const [editingRolId, setEditingRolId] = useState<number | null>(null)
   const [editRol, setEditRol] = useState<'ADMIN' | 'MIEMBRO' | 'LECTURA'>('MIEMBRO')
   const [savingRol, setSavingRol] = useState(false)
+  const [quitarMiembroId, setQuitarMiembroId] = useState<number | null>(null)
 
   const esAdmin = currentUser?.rol === 'ADMIN'
 
@@ -66,6 +68,7 @@ export default function MiembrosPage() {
           foto: null,
           rol: m.rol,
           esTuActual: m.id === uid,
+          puedeQuitar: !!m.puede_quitar,
         }))
       )
       setInvitaciones(
@@ -137,6 +140,7 @@ export default function MiembrosPage() {
   const startEditRol = (m: Miembro) => {
     setEditingRolId(m.id)
     setEditRol(m.rol)
+    setQuitarMiembroId(null)
   }
 
   const cancelEditRol = () => setEditingRolId(null)
@@ -165,6 +169,30 @@ export default function MiembrosPage() {
     }
   }
 
+  const startQuitarMiembro = (m: Miembro) => {
+    setApiError('')
+    setQuitarMiembroId(m.id)
+    setEditingRolId(null)
+  }
+
+  const cancelQuitarMiembro = () => setQuitarMiembroId(null)
+
+  const confirmQuitarMiembro = async () => {
+    if (quitarMiembroId == null) return
+    setApiError('')
+    try {
+      await familiaApi.deleteMiembro(quitarMiembroId)
+      setQuitarMiembroId(null)
+      await cargar()
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'No se pudo quitar al miembro.'
+      setApiError(msg)
+      setQuitarMiembroId(null)
+    }
+  }
+
   if (!currentUser?.id) return <Cargando />
   if (loading) return <Cargando />
   if (error)
@@ -188,10 +216,39 @@ export default function MiembrosPage() {
 
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>MIEMBROS ACTIVOS</h2>
+        {esAdmin && (
+          <p className={styles.hintQuitar}>
+            Puedes quitar de la familia a quien no tenga movimientos, cuentas, tarjetas ni otros datos
+            asociados. Si tiene actividad, primero hay que limpiar o reasignar esos registros.
+          </p>
+        )}
         <div className={styles.block}>
           {miembros.map((m) => {
             const inicial = m.nombre.trim().charAt(0).toUpperCase() || '?'
             const isEditing = editingRolId === m.id
+            const isConfirmQuitar = quitarMiembroId === m.id
+
+            if (isConfirmQuitar) {
+              return (
+                <div key={m.id} className={styles.fila}>
+                  <span className={styles.confirmText}>
+                    ¿Quitar a «{m.nombre}» de la familia? Podrá volver a unirse con una invitación.
+                  </span>
+                  <div className={styles.confirmActions}>
+                    <button
+                      type="button"
+                      className={styles.btnConfirmSi}
+                      onClick={() => void confirmQuitarMiembro()}
+                    >
+                      Sí
+                    </button>
+                    <button type="button" className={styles.btnConfirmNo} onClick={cancelQuitarMiembro}>
+                      No
+                    </button>
+                  </div>
+                </div>
+              )
+            }
 
             if (isEditing) {
               return (
@@ -254,14 +311,26 @@ export default function MiembrosPage() {
                     </span>
                     {m.esTuActual && <span className={styles.tuBadge}>(tú)</span>}
                     {esAdmin && (
-                      <button
-                        type="button"
-                        className={styles.btnEdit}
-                        onClick={() => startEditRol(m)}
-                        title="Editar rol"
-                      >
-                        ✎
-                      </button>
+                      <span className={styles.filaActions}>
+                        <button
+                          type="button"
+                          className={styles.btnEdit}
+                          onClick={() => startEditRol(m)}
+                          title="Editar rol"
+                        >
+                          ✎
+                        </button>
+                        {m.puedeQuitar && (
+                          <button
+                            type="button"
+                            className={styles.btnQuitar}
+                            onClick={() => startQuitarMiembro(m)}
+                            title="Quitar de la familia"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </span>
                     )}
                   </div>
                   <p className={styles.filaEmail}>{m.email}</p>

@@ -161,6 +161,74 @@
   }
 }
 
+.filaActions {
+  display: inline-flex;
+  align-items: center;
+  gap: $space-1;
+}
+
+.btnQuitar {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  cursor: pointer;
+  color: #ff4d4d;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
+
+.hintQuitar {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin: 0 0 $space-3;
+  line-height: 1.45;
+  max-width: 42rem;
+}
+
+.confirmText {
+  flex: 1;
+  font-size: $font-size-sm;
+  color: $color-text;
+}
+
+.confirmActions {
+  display: flex;
+  gap: $space-2;
+}
+
+.btnConfirmSi {
+  padding: $space-1 $space-3;
+  border: 1px solid #ff4d4d;
+  border-radius: $radius-base;
+  background: transparent;
+  color: #ff4d4d;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: rgba(255, 77, 77, 0.08);
+  }
+}
+
+.btnConfirmNo {
+  padding: $space-1 $space-3;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: transparent;
+  font-size: $font-size-sm;
+  cursor: pointer;
+
+  &:hover {
+    background: $color-bg-subtle;
+  }
+}
+
 .filaEmail {
   font-size: 13px;
   color: $color-text-muted;
