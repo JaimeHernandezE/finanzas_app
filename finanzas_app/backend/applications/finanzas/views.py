@@ -2,6 +2,7 @@
 
 import csv
 import io
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -41,6 +42,8 @@ from .serializers import (
     IngresoComunSerializer,
     PresupuestoSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _qs_movimientos_con_ingreso_comun(qs):
@@ -1638,6 +1641,7 @@ def importar_cuenta_personal_planilla(request):
     meses_importados = set()
     movimientos_para_crear = []
     movimientos_para_crear = []
+    movimientos_para_crear = []
 
     vinculados_ingreso_comun = IngresoComun.objects.filter(
         familia_id=usuario.familia_id,
@@ -2209,7 +2213,16 @@ def importar_gastos_comunes_planilla(request):
 
         if movimientos_para_crear:
             # Evita disparar señales por fila; el recálculo se hace una sola vez al final.
-            Movimiento.objects.bulk_create(movimientos_para_crear)
+            try:
+                Movimiento.objects.bulk_create(movimientos_para_crear)
+            except Exception:
+                logger.exception(
+                    "Error en bulk_create de importacion gastos comunes. usuario_id=%s familia_id=%s filas=%s",
+                    getattr(usuario, 'id', None),
+                    getattr(usuario, 'familia_id', None),
+                    len(movimientos_para_crear),
+                )
+                raise
 
         if dry_run:
             transaction.set_rollback(True)
@@ -2227,10 +2240,20 @@ def importar_gastos_comunes_planilla(request):
         )
 
     if not dry_run and creados and meses_importados and usuario.familia_id:
-        services_recalculo.recalcular_familia_desde(
-            usuario.familia_id, min(meses_importados)
-        )
-        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+        # Para importaciones grandes, evitar recálculo síncrono en request web:
+        # dejamos el recálculo marcado como pendiente para proceso diferido.
+        try:
+            services_recalculo.merge_recalculo_pendiente(
+                usuario.familia_id, min(meses_importados)
+            )
+        except Exception:
+            logger.exception(
+                "Error marcando recálculo pendiente post importación. usuario_id=%s familia_id=%s desde_mes=%s",
+                getattr(usuario, 'id', None),
+                getattr(usuario, 'familia_id', None),
+                min(meses_importados),
+            )
+            raise
 
     return Response(
         {
@@ -2239,6 +2262,7 @@ def importar_gastos_comunes_planilla(request):
             'movimientos_creados': creados,
             'categorias_familiares_creadas': categorias_creadas,
             'ambito_objetivo': 'COMUN',
+            'recalculo': 'pendiente',
         },
         status=status.HTTP_200_OK,
     )
