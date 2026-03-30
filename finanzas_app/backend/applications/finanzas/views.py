@@ -3,6 +3,7 @@
 from datetime import date
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Q, Sum, OuterRef, Subquery
 from django.utils import timezone
 from dateutil.relativedelta import relativedelta
@@ -750,7 +751,7 @@ def presupuesto_mes(request):
             tipo='EGRESO',
             ambito='COMUN',
             oculto=False,
-        )
+        ).exclude(metodo_pago__tipo='CREDITO')
     else:
         pres_qs = Presupuesto.objects.filter(
             familia_id=usuario.familia_id,
@@ -765,7 +766,7 @@ def presupuesto_mes(request):
             tipo='EGRESO',
             ambito='PERSONAL',
             oculto=False,
-        )
+        ).exclude(metodo_pago__tipo='CREDITO')
         if cuenta_id:
             try:
                 cuenta_int = int(cuenta_id)
@@ -916,6 +917,115 @@ def presupuesto_detalle_finanzas(request, pk):
     return Response(PresupuestoSerializer(p).data)
 
 
+# ── PAGO DE TARJETA ───────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def pagar_tarjeta(request):
+    """
+    POST { tarjeta_id, mes, anio, fecha_pago? }
+
+    Paga las cuotas incluidas (incluir=True, estado=PENDIENTE) del mes indicado:
+      1. Por cada cuota genera un Movimiento EGRESO en EFECTIVO que refleja
+         el flujo real de caja al saldar la tarjeta.
+      2. Marca las cuotas como PAGADO.
+
+    Los movimientos con crédito no se contabilizan como egreso en el momento
+    del gasto; el impacto en caja ocurre aquí, al pagar la tarjeta.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    tarjeta_id = request.data.get('tarjeta_id')
+    mes = request.data.get('mes')
+    anio = request.data.get('anio')
+    fecha_pago_raw = request.data.get('fecha_pago')
+
+    if not tarjeta_id or not mes or not anio:
+        return Response(
+            {'error': 'tarjeta_id, mes y anio son obligatorios.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        tarjeta = Tarjeta.objects.get(pk=tarjeta_id, usuario=usuario)
+    except Tarjeta.DoesNotExist:
+        return Response(
+            {'error': 'Tarjeta no encontrada.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if fecha_pago_raw:
+        try:
+            fecha_pago = date.fromisoformat(str(fecha_pago_raw)[:10])
+        except ValueError:
+            return Response(
+                {'error': 'fecha_pago inválida (use YYYY-MM-DD).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        fecha_pago = timezone.localdate()
+
+    cuotas_a_pagar = list(
+        Cuota.objects.filter(
+            movimiento__tarjeta=tarjeta,
+            movimiento__usuario=usuario,
+            mes_facturacion__month=mes,
+            mes_facturacion__year=anio,
+            estado='PENDIENTE',
+            incluir=True,
+        ).select_related(
+            'movimiento__categoria',
+            'movimiento__cuenta',
+        )
+    )
+
+    if not cuotas_a_pagar:
+        return Response({'pagados': [], 'cuotas_pagadas': 0,
+                         'mensaje': 'No hay cuotas pendientes para pagar.'})
+
+    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+    if not metodo_efectivo:
+        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+    movimientos_creados = []
+
+    with transaction.atomic():
+        for cuota in cuotas_a_pagar:
+            mov = cuota.movimiento
+            ref = mov.comentario or mov.categoria.nombre
+            num_cuotas = mov.num_cuotas or 1
+            sufijo = f" (cuota {cuota.numero}/{num_cuotas})" if num_cuotas > 1 else ""
+            comentario = f"Pago tarjeta {tarjeta.nombre}: {ref}{sufijo}"
+
+            nuevo = Movimiento.objects.create(
+                familia=mov.familia,
+                usuario=usuario,
+                cuenta=mov.cuenta,
+                tipo='EGRESO',
+                ambito=mov.ambito,
+                categoria=mov.categoria,
+                metodo_pago=metodo_efectivo,
+                fecha=fecha_pago,
+                monto=cuota.monto,
+                comentario=comentario,
+            )
+            movimientos_creados.append(nuevo)
+
+        ids_cuotas = [c.pk for c in cuotas_a_pagar]
+        Cuota.objects.filter(pk__in=ids_cuotas).update(estado='PAGADO')
+
+    return Response(
+        {
+            'pagados': MovimientoListSerializer(movimientos_creados, many=True).data,
+            'cuotas_pagadas': len(ids_cuotas),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
 # ── LIQUIDACIÓN ────────────────────────────────────────────────────────────────
 
 @api_view(['GET'])
@@ -971,7 +1081,7 @@ def liquidacion(request):
         fecha__month=mes,
         fecha__year=anio,
         oculto=False,
-    ).values(
+    ).exclude(metodo_pago__tipo='CREDITO').values(
         'usuario__id',
         'usuario__first_name',
     ).annotate(
