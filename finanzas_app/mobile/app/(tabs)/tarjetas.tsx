@@ -206,6 +206,8 @@ export default function TarjetasScreen() {
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
+  const [menuPagoVisible, setMenuPagoVisible] = useState(false)
+  const [seleccionPagoIds, setSeleccionPagoIds] = useState<Set<number>>(new Set())
 
   // ── Modal nuevo gasto (para flujo +Gasto en web) ──
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
@@ -576,6 +578,67 @@ export default function TarjetasScreen() {
     }
   }
 
+  function abrirMenuPagarTarjeta(tarjeta: Tarjeta) {
+    setTarjetaId(tarjeta.id)
+    setMenuPagoVisible(true)
+    // selección inicial se recalcula al render según cuotas activas
+    setSeleccionPagoIds(new Set())
+  }
+
+  function toggleSeleccionPago(id: number) {
+    setSeleccionPagoIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const cuotasActivasMenuPago = useMemo(
+    () => cuotasTarjeta.filter((c) => c.estado !== 'PAGADO'),
+    [cuotasTarjeta],
+  )
+
+  const nowMonthIdx = hoy.getFullYear() * 12 + hoy.getMonth()
+  const cuotasActivasConTipo = useMemo(() => {
+    return cuotasActivasMenuPago.map((c) => {
+      const idx = toMonthIndex(c.mes_facturacion)
+      const porFacturar = idx != null && idx > nowMonthIdx
+      return { ...c, porFacturar }
+    })
+  }, [cuotasActivasMenuPago, nowMonthIdx])
+
+  const seleccionEfectivaPagoIds = useMemo(() => {
+    if (seleccionPagoIds.size > 0) return seleccionPagoIds
+    // por defecto seleccionar todo lo pendiente al abrir menú
+    return new Set(cuotasActivasConTipo.map((c) => c.id))
+  }, [seleccionPagoIds, cuotasActivasConTipo])
+
+  const totalSeleccionPago = useMemo(() => {
+    return cuotasActivasConTipo
+      .filter((c) => seleccionEfectivaPagoIds.has(c.id))
+      .reduce((s, c) => s + montoNum(c.monto), 0)
+  }, [cuotasActivasConTipo, seleccionEfectivaPagoIds])
+
+  async function registrarPagoSeleccionadoMenu() {
+    const ids = [...seleccionEfectivaPagoIds]
+    if (ids.length === 0) return
+    setGuardandoPago(true)
+    try {
+      await Promise.all(ids.map((id) => movimientosApi.updateCuota(id, { estado: 'PAGADO' })))
+      setMenuPagoVisible(false)
+      setVistaActiva('FACTURADO')
+      void refetchCuotas()
+      void refetchCuotasTarjeta()
+      void refetchMovPersonal()
+      void refetchMovComun()
+    } catch {
+      Alert.alert('Error', 'No se pudo registrar el pago de los ítems seleccionados.')
+    } finally {
+      setGuardandoPago(false)
+    }
+  }
+
   function abrirModalNuevoGasto() {
     setNuevoGastoError(null)
     setNuevoAmbito('PERSONAL')
@@ -736,10 +799,7 @@ export default function TarjetasScreen() {
                     <Text className="text-dark text-xs font-semibold">Editar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => {
-                      setTarjetaId(t.id)
-                      setVistaActiva('FACTURADO')
-                    }}
+                    onPress={() => abrirMenuPagarTarjeta(t)}
                     className="flex-1 bg-dark rounded-lg py-1.5 items-center"
                   >
                     <Text className="text-white text-xs font-semibold">Pagar tarjeta</Text>
@@ -1237,6 +1297,81 @@ export default function TarjetasScreen() {
                         <Text className="text-white font-semibold text-sm">{guardandoPago ? 'Confirmando…' : 'Confirmar'}</Text>
                       </TouchableOpacity>
                     </View>
+                  </View>
+                </View>
+              </Modal>
+
+              {/* Menú pago rápido: facturado + por facturar */}
+              <Modal visible={menuPagoVisible} transparent animationType="slide" onRequestClose={() => setMenuPagoVisible(false)}>
+                <View className="flex-1 bg-black/50 justify-end">
+                  <View className="bg-white rounded-t-2xl px-5 pt-4 pb-5" style={{ maxHeight: '85%' }}>
+                    <View className="flex-row items-center justify-between mb-3">
+                      <Text className="text-lg font-bold text-dark">Pagar tarjeta</Text>
+                      <TouchableOpacity onPress={() => setMenuPagoVisible(false)}>
+                        <Text className="text-muted text-xl">×</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text className="text-muted text-sm mb-3">
+                      {tarjetaSeleccionada?.nombre ?? 'Tarjeta'} · Selecciona ítems facturados y por facturar.
+                    </Text>
+
+                    {loadingCuotasTarjeta ? (
+                      <View className="py-8 items-center">
+                        <ActivityIndicator color="#0f0f0f" />
+                      </View>
+                    ) : errorCuotasTarjeta ? (
+                      <View className="bg-danger/10 border border-danger/30 rounded-xl p-4">
+                        <Text className="text-danger text-sm text-center">{errorCuotasTarjeta}</Text>
+                      </View>
+                    ) : cuotasActivasConTipo.length === 0 ? (
+                      <View className="bg-white border border-border rounded-xl p-6 items-center">
+                        <Text className="text-muted text-sm text-center">No hay cuotas pendientes para esta tarjeta.</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <View className="bg-dark rounded-xl p-4 mb-3">
+                          <Text className="text-white/60 text-xs uppercase">Total seleccionado</Text>
+                          <Text className="text-white font-bold text-2xl">{formatMonto(totalSeleccionPago)}</Text>
+                        </View>
+
+                        <ScrollView className="border border-border rounded-xl mb-4">
+                          {cuotasActivasConTipo.map((c, idx) => {
+                            const selected = seleccionEfectivaPagoIds.has(c.id)
+                            const isLast = idx === cuotasActivasConTipo.length - 1
+                            return (
+                              <TouchableOpacity
+                                key={c.id}
+                                onPress={() => toggleSeleccionPago(c.id)}
+                                className={`px-4 py-3 flex-row items-center ${!isLast ? 'border-b border-border' : ''}`}
+                              >
+                                <View className={`w-5 h-5 rounded border mr-3 items-center justify-center ${selected ? 'bg-dark border-dark' : 'border-border'}`}>
+                                  {selected && <Text className="text-white text-xs font-bold">✓</Text>}
+                                </View>
+                                <View className="flex-1 min-w-0 mr-2">
+                                  <Text className="text-dark font-medium text-sm" numberOfLines={1}>
+                                    Cuota {c.numero}
+                                  </Text>
+                                  <Text className="text-muted text-xs mt-0.5">
+                                    {c.porFacturar ? 'Por facturar' : 'Facturado'} · {c.mes_facturacion}
+                                  </Text>
+                                </View>
+                                <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(c.monto))}</Text>
+                              </TouchableOpacity>
+                            )
+                          })}
+                        </ScrollView>
+
+                        <TouchableOpacity
+                          disabled={guardandoPago || seleccionEfectivaPagoIds.size === 0}
+                          onPress={() => void registrarPagoSeleccionadoMenu()}
+                          className={`rounded-xl py-3.5 items-center ${guardandoPago || seleccionEfectivaPagoIds.size === 0 ? 'bg-dark/30' : 'bg-dark'}`}
+                        >
+                          <Text className="text-white font-bold text-sm">
+                            {guardandoPago ? 'Registrando pago…' : 'Registrar pago'}
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 </View>
               </Modal>
