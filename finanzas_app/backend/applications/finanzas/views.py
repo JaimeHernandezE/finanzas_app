@@ -924,9 +924,11 @@ def presupuesto_detalle_finanzas(request, pk):
 @permission_classes([AllowAny])
 def pagar_tarjeta(request):
     """
-    POST { tarjeta_id, mes, anio, fecha_pago? }
+    POST { tarjeta_id, mes?, anio?, fecha_pago?, cuota_ids? }
 
-    Paga las cuotas incluidas (incluir=True, estado=PENDIENTE) del mes indicado:
+    Paga cuotas incluidas (incluir=True, estado=PENDIENTE):
+      - Si llega `cuota_ids`, paga exactamente esas cuotas.
+      - Si no llega `cuota_ids`, usa el filtro por `mes` y `anio` (comportamiento histórico).
       1. Por cada cuota genera un Movimiento EGRESO en EFECTIVO que refleja
          el flujo real de caja al saldar la tarjeta.
       2. Marca las cuotas como PAGADO.
@@ -942,10 +944,11 @@ def pagar_tarjeta(request):
     mes = request.data.get('mes')
     anio = request.data.get('anio')
     fecha_pago_raw = request.data.get('fecha_pago')
+    cuota_ids_raw = request.data.get('cuota_ids')
 
-    if not tarjeta_id or not mes or not anio:
+    if not tarjeta_id:
         return Response(
-            {'error': 'tarjeta_id, mes y anio son obligatorios.'},
+            {'error': 'tarjeta_id es obligatorio.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -968,19 +971,49 @@ def pagar_tarjeta(request):
     else:
         fecha_pago = timezone.localdate()
 
-    cuotas_a_pagar = list(
-        Cuota.objects.filter(
-            movimiento__tarjeta=tarjeta,
-            movimiento__usuario=usuario,
-            mes_facturacion__month=mes,
-            mes_facturacion__year=anio,
-            estado='PENDIENTE',
-            incluir=True,
-        ).select_related(
-            'movimiento__categoria',
-            'movimiento__cuenta',
-        )
+    base_qs = Cuota.objects.filter(
+        movimiento__tarjeta=tarjeta,
+        movimiento__usuario=usuario,
+        estado='PENDIENTE',
+        incluir=True,
+    ).select_related(
+        'movimiento__categoria',
+        'movimiento__cuenta',
     )
+
+    if cuota_ids_raw is not None:
+        if not isinstance(cuota_ids_raw, list) or len(cuota_ids_raw) == 0:
+            return Response(
+                {'error': 'cuota_ids debe ser una lista no vacía.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            cuota_ids = sorted({int(x) for x in cuota_ids_raw})
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'cuota_ids debe contener IDs numéricos.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cuotas_a_pagar = list(base_qs.filter(pk__in=cuota_ids))
+        encontrados = {c.pk for c in cuotas_a_pagar}
+        faltantes = [cid for cid in cuota_ids if cid not in encontrados]
+        if faltantes:
+            return Response(
+                {'error': 'Algunas cuotas no son válidas para pago.', 'cuotas_invalidas': faltantes},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    else:
+        if not mes or not anio:
+            return Response(
+                {'error': 'mes y anio son obligatorios cuando no se envía cuota_ids.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cuotas_a_pagar = list(
+            base_qs.filter(
+                mes_facturacion__month=mes,
+                mes_facturacion__year=anio,
+            )
+        )
 
     if not cuotas_a_pagar:
         return Response({'pagados': [], 'cuotas_pagadas': 0,

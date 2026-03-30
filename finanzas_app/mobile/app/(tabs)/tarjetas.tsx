@@ -562,14 +562,21 @@ export default function TarjetasScreen() {
     setGuardandoPago(true)
     try {
       setActualizando(new Set(cuotasPorPagar.map((c) => c.id)))
-      await Promise.all(
-        cuotasPorPagar.map((c) => movimientosApi.updateCuota(c.id, { estado: 'PAGADO' })),
-      )
+      await movimientosApi.pagarTarjeta({
+        tarjeta_id: tarjetaIdEfectivo as number,
+        mes: mes + 1,
+        anio,
+        fecha_pago: new Date().toISOString().slice(0, 10),
+        cuota_ids: cuotasPorPagar.map((c) => c.id),
+      })
       setCargosAdicionales([])
-      setTotalPagado(total)
+      const totalCuotasPagadas = cuotasPorPagar.reduce((s, c) => s + montoNum(c.monto), 0)
+      setTotalPagado(totalCuotasPagadas)
       setExitoPostPago(true)
       void refetchCuotas()
       void refetchCuotasTarjeta()
+      void refetchMovPersonal()
+      void refetchMovComun()
     } catch {
       Alert.alert('Error', 'No se pudo registrar el pago.')
     } finally {
@@ -625,7 +632,13 @@ export default function TarjetasScreen() {
     if (ids.length === 0) return
     setGuardandoPago(true)
     try {
-      await Promise.all(ids.map((id) => movimientosApi.updateCuota(id, { estado: 'PAGADO' })))
+      await movimientosApi.pagarTarjeta({
+        tarjeta_id: tarjetaIdEfectivo as number,
+        mes: mes + 1,
+        anio,
+        fecha_pago: new Date().toISOString().slice(0, 10),
+        cuota_ids: ids,
+      })
       setMenuPagoVisible(false)
       setVistaActiva('FACTURADO')
       void refetchCuotas()

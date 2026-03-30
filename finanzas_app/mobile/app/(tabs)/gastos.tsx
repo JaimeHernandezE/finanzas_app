@@ -146,7 +146,10 @@ export default function GastosScreen() {
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
 
   const totalMes = useMemo(
-    () => movimientosTyped.filter((m) => m.tipo === 'EGRESO').reduce((s, m) => s + montoSeguro(m.monto), 0),
+    () =>
+      movimientosTyped
+        .filter((m) => m.tipo === 'EGRESO' && m.metodo_pago_tipo !== 'CREDITO')
+        .reduce((s, m) => s + montoSeguro(m.monto), 0),
     [movimientosTyped],
   )
 
@@ -199,7 +202,7 @@ export default function GastosScreen() {
     const items: ListItem[] = []
     for (const grupo of grupos) {
       const subtotal = grupo.movimientos
-        .filter((m) => m.tipo === 'EGRESO')
+        .filter((m) => m.tipo === 'EGRESO' && m.metodo_pago_tipo !== 'CREDITO')
         .reduce((acc, m) => acc + montoSeguro(m.monto), 0)
       items.push({ kind: 'header', fecha: grupo.fecha, label: grupo.label, subtotal })
       grupo.movimientos.forEach((mov, idx) => {

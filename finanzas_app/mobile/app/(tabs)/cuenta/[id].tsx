@@ -366,7 +366,7 @@ export default function CuentaPersonalScreen() {
           <View className="px-5">
             {grupos.map((grupo) => {
               const subtotalEgresos = grupo.movimientos.reduce((acc, m) => {
-                if (m.tipo !== 'EGRESO') return acc
+                if (m.tipo !== 'EGRESO' || m.metodo_pago_tipo === 'CREDITO') return acc
                 return acc + montoSeguro(m.monto)
               }, 0)
               const mostrarSubtotal = subtotalEgresos > 0
@@ -386,6 +386,7 @@ export default function CuentaPersonalScreen() {
                     {grupo.movimientos.map((mov, idx) => {
                       const badge = METODO_BADGE[mov.metodo_pago_tipo ?? 'EFECTIVO']
                       const esIngreso = mov.tipo === 'INGRESO'
+                      const esCredito = mov.metodo_pago_tipo === 'CREDITO'
                       const m = montoSeguro(mov.monto)
                       const puedeEditar = puedeEditarMovimientoEnCuenta(
                         mov.usuario,
@@ -404,8 +405,12 @@ export default function CuentaPersonalScreen() {
                             <Text className="text-muted text-xs mt-0.5">{mov.categoria_nombre}</Text>
                           </View>
                           <View className="items-end">
-                            <Text className={`text-sm font-semibold ${esIngreso ? 'text-success' : 'text-dark'}`}>
-                              {esIngreso ? '+' : '−'}
+                            <Text
+                              className={`text-sm font-semibold ${
+                                esIngreso ? 'text-success' : esCredito ? 'text-muted' : 'text-dark'
+                              }`}
+                            >
+                              {esIngreso ? '+' : esCredito ? '' : '−'}
                               {formatMonto(m)}
                             </Text>
                             <View className="flex-row items-center mt-1 gap-2 flex-wrap justify-end">
