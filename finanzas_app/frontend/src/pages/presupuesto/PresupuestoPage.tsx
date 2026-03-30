@@ -1,9 +1,11 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
 import { useApi } from '@/hooks/useApi'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
+import CategoriaPresupuestoItem from '@/components/presupuesto/CategoriaPresupuestoItem'
 import { montoClpANumero } from '@/utils/montoClp'
 import { useConfig } from '@/context/ConfigContext'
 import styles from './PresupuestoPage.module.scss'
@@ -38,14 +40,6 @@ const MESES = [
 function toPesos(n: unknown): number {
   const x = Number(n)
   return Number.isFinite(x) ? Math.round(x) : 0
-}
-
-function colorBarra(gastado: number, presupuestado: number): string {
-  if (presupuestado <= 0) return gastado > 0 ? '#f59e0b' : '#94a3b8'
-  const pct = (gastado / presupuestado) * 100
-  if (pct <= 80) return '#22a06b'
-  if (pct <= 100) return '#f59e0b'
-  return '#ff4d4d'
 }
 
 function ResumenCards({
@@ -90,119 +84,10 @@ function ResumenCards({
   )
 }
 
-function ItemConPresupuesto({
-  cat,
-  onStartEdit,
-  editingKey,
-  editValue,
-  onEditChange,
-  onEditConfirm,
-  onEditCancel,
-}: {
-  cat: CatPres
-  onStartEdit: (cat: CatPres) => void
-  editingKey: string | null
-  editValue: string
-  onEditChange: (v: string) => void
-  onEditConfirm: (cat: CatPres) => void
-  onEditCancel: () => void
-}) {
-  const { formatMonto } = useConfig()
-  const key = String(cat.categoriaId)
-  const presup = cat.presupuestado ?? 0
-  const pct = presup > 0 ? (cat.gastado / presup) * 100 : cat.gastado > 0 ? 999 : 0
-  const color = colorBarra(cat.gastado, presup)
-  const barWidth = presup > 0 ? Math.min(pct, 100) : cat.gastado > 0 ? 100 : 0
-  const excedido = presup > 0 && cat.gastado > presup ? cat.gastado - presup : 0
-  const isEditing = editingKey === key
-
-  return (
-    <div className={styles.catItem}>
-      <div className={styles.catItemHeader}>
-        <span className={styles.catItemNombre}>{cat.nombre}</span>
-        {!isEditing && cat.presupuestoId != null && (
-          <button
-            type="button"
-            className={styles.btnEdit}
-            onClick={() => onStartEdit(cat)}
-            aria-label="Editar monto"
-          >
-            ✎
-          </button>
-        )}
-      </div>
-      {isEditing ? (
-        <div className={styles.catItemEditRow}>
-          <span className={styles.catItemMontos}>
-            {formatMonto(cat.gastado)} de{' '}
-            <InputMontoClp
-              soloInput
-              inputClassName={styles.catItemEditInput}
-              value={editValue}
-              onChange={onEditChange}
-              autoFocus
-              aria-label="Monto presupuestado"
-            />
-          </span>
-          <button
-            type="button"
-            className={styles.btnFormConfirm}
-            onClick={() => onEditConfirm(cat)}
-            aria-label="Confirmar"
-          >
-            ✓
-          </button>
-          <button
-            type="button"
-            className={styles.btnFormCancel}
-            onClick={onEditCancel}
-            aria-label="Cancelar"
-          >
-            ✕
-          </button>
-        </div>
-      ) : (
-        <div className={styles.catItemRow}>
-          <span className={styles.catItemMontos}>
-            {formatMonto(cat.gastado)} de {formatMonto(presup)}
-          </span>
-          <div className={styles.catItemBarWrap}>
-            <div className={styles.barTrack}>
-              <div
-                className={styles.barFill}
-                style={
-                  {
-                    '--target-width': `${barWidth}%`,
-                    backgroundColor: color,
-                  } as React.CSSProperties
-                }
-              />
-            </div>
-            <span className={styles.catItemPct} style={{ color }}>
-              {presup > 0 ? `${pct.toFixed(1)}%` : cat.gastado > 0 ? '—' : '0%'}
-            </span>
-            {excedido > 0 ? (
-              <span className={styles.catItemIndicadorExcedido}>
-                Excedido +{formatMonto(excedido)}
-              </span>
-            ) : (
-              <span
-                className={styles.catItemIndicador}
-                style={{ color }}
-                aria-hidden
-              >
-                ●
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function ItemSinPresupuesto({
   cat,
+  highlighted,
   onStartAssign,
   assignKey,
   assignValue,
@@ -211,6 +96,7 @@ function ItemSinPresupuesto({
   onAssignCancel,
 }: {
   cat: CatPres
+  highlighted: boolean
   onStartAssign: (cat: CatPres) => void
   assignKey: string | null
   assignValue: string
@@ -223,7 +109,11 @@ function ItemSinPresupuesto({
   const isAssigning = assignKey === key
 
   return (
-    <div className={styles.catItemSinPresupuesto}>
+    <div
+      id={`cat-pres-${cat.categoriaId}`}
+      className={styles.catItemSinPresupuesto}
+      style={highlighted ? { background: 'rgba(96, 200, 240, 0.14)', borderRadius: 8 } : undefined}
+    >
       <div className={styles.catItemSinHeader}>
         <div className={styles.catItemSinLeft}>
           <span className={styles.catItemSinNombre}>{cat.nombre}</span>
@@ -281,10 +171,16 @@ function ItemSinPresupuesto({
 }
 
 export default function PresupuestoPage() {
+  const [searchParams] = useSearchParams()
   const hoy = new Date()
-  const [mes, setMes] = useState(hoy.getMonth())
-  const [anio, setAnio] = useState(hoy.getFullYear())
-  const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>('FAMILIAR')
+  const mesParam = Number(searchParams.get('mes'))
+  const anioParam = Number(searchParams.get('anio'))
+  const ambitoParam = searchParams.get('ambito') === 'PERSONAL' ? 'PERSONAL' : 'FAMILIAR'
+  const cuentaParam = Number(searchParams.get('cuenta'))
+  const categoriaFocusParam = Number(searchParams.get('categoria'))
+  const [mes, setMes] = useState(Number.isFinite(mesParam) && mesParam >= 1 && mesParam <= 12 ? mesParam - 1 : hoy.getMonth())
+  const [anio, setAnio] = useState(Number.isFinite(anioParam) && anioParam >= 2000 ? anioParam : hoy.getFullYear())
+  const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>(ambitoParam)
   const { data: cuentasData } = useCuentasPersonales()
   const cuentasPropias = useMemo(
     () =>
@@ -299,7 +195,8 @@ export default function PresupuestoPage() {
         }),
     [cuentasData],
   )
-  const [cuentaPersonalId, setCuentaPersonalId] = useState<number | null>(null)
+  const [cuentaPersonalId, setCuentaPersonalId] = useState<number | null>(Number.isFinite(cuentaParam) ? cuentaParam : null)
+  const [categoriaDestacadaId] = useState<number | null>(Number.isFinite(categoriaFocusParam) ? categoriaFocusParam : null)
 
   useEffect(() => {
     if (ambito !== 'PERSONAL') return
@@ -397,6 +294,13 @@ export default function PresupuestoPage() {
     () => [...sinPresupuesto].sort((a, b) => a.nombre.localeCompare(b.nombre)),
     [sinPresupuesto],
   )
+
+  useEffect(() => {
+    if (!categoriaDestacadaId) return
+    const el = document.getElementById(`cat-pres-${categoriaDestacadaId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [categoriaDestacadaId, conPresupuestoOrdenadas.length, sinPresupuestoOrdenadas.length])
 
   const idsEnLista = useMemo(() => new Set(categorias.map(c => c.categoriaId)), [categorias])
   const categoriasDisponiblesParaAgregar = useMemo(
@@ -616,25 +520,34 @@ export default function PresupuestoPage() {
           </p>
         )}
 
-        {conPresupuestoOrdenadas.map(cat => (
-          <ItemConPresupuesto
-            key={cat.categoriaId}
-            cat={cat}
-            onStartEdit={handleStartEdit}
-            editingKey={editingKey}
-            editValue={editMontoValue}
-            onEditChange={setEditMontoValue}
-            onEditConfirm={handleEditConfirm}
-            onEditCancel={() => {
-              setEditingKey(null)
-              setEditMontoValue('')
-            }}
-          />
-        ))}
+        {conPresupuestoOrdenadas.map(cat => {
+          const isEditing = editingKey === String(cat.categoriaId)
+          return (
+            <CategoriaPresupuestoItem
+              key={cat.categoriaId}
+              id={`cat-pres-${cat.categoriaId}`}
+              nombre={cat.nombre}
+              gastado={cat.gastado}
+              presupuestado={cat.presupuestado ?? 0}
+              highlighted={categoriaDestacadaId === cat.categoriaId}
+              editable
+              isEditing={isEditing}
+              editValue={editMontoValue}
+              onStartEdit={() => handleStartEdit(cat)}
+              onEditChange={setEditMontoValue}
+              onEditConfirm={() => handleEditConfirm(cat)}
+              onEditCancel={() => {
+                setEditingKey(null)
+                setEditMontoValue('')
+              }}
+            />
+          )
+        })}
         {sinPresupuestoOrdenadas.map(cat => (
           <ItemSinPresupuesto
             key={cat.categoriaId}
             cat={cat}
+            highlighted={categoriaDestacadaId === cat.categoriaId}
             onStartAssign={c => {
               setAssignKey(String(c.categoriaId))
               setAssignMontoValue('')

@@ -19,6 +19,7 @@ interface FormErrors {
   cuenta?:    string
   tarjeta?:   string
   numCuotas?: string
+  montoCuota?: string
   general?:   string
 }
 
@@ -48,6 +49,7 @@ export default function MovimientoFormPage() {
   const [metodo,    setMetodo]    = useState<Metodo>('DEBITO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
+  const [montoCuotaManual, setMontoCuotaManual] = useState('')
   const [loading,   setLoading]   = useState(false)
   const [errors,    setErrors]    = useState<FormErrors>({})
   const returnToParam = searchParams.get('returnTo')
@@ -67,10 +69,18 @@ export default function MovimientoFormPage() {
   }, [metodos, metodo])
 
   const montoNum = montoClpANumero(monto)
-  const montoCuota =
+  const montoCuotaCalculado =
     numCuotas && montoNum > 0
       ? Math.ceil(montoNum / parseInt(numCuotas, 10))
       : null
+  const montoCuotaManualDigits = montoCuotaManual.replace(/\D/g, '')
+  const montoCuotaManualNum = montoCuotaManualDigits
+    ? parseInt(montoCuotaManualDigits, 10)
+    : null
+  const montoCuotaEfectivo =
+    montoCuotaManualNum != null && !Number.isNaN(montoCuotaManualNum) && montoCuotaManualNum > 0
+      ? montoCuotaManualNum
+      : montoCuotaCalculado
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -82,6 +92,9 @@ export default function MovimientoFormPage() {
     if (metodo === 'CREDITO') {
       if (!data.get('tarjeta'))  next.tarjeta   = 'Selecciona una tarjeta.'
       if (!numCuotas)            next.numCuotas = 'Ingresa el número de cuotas.'
+      if (montoCuotaManual.trim() && (!montoCuotaManualNum || montoCuotaManualNum <= 0)) {
+        next.montoCuota = 'Valor de cuota inválido o déjalo vacío.'
+      }
     }
     if (ambito === 'PERSONAL' && cuentasOpciones.length > 0 && !data.get('cuenta')) {
       next.cuenta = 'Selecciona una cuenta personal.'
@@ -113,7 +126,7 @@ export default function MovimientoFormPage() {
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
-        monto_cuota: metodo === 'CREDITO' && montoCuota ? montoCuota : null,
+        monto_cuota: metodo === 'CREDITO' && montoCuotaEfectivo ? montoCuotaEfectivo : null,
       }
       await movimientosApi.createMovimiento(payload)
       const cuentaQ = searchParams.get('cuenta')
@@ -237,7 +250,10 @@ export default function MovimientoFormPage() {
                     key={m}
                     type="button"
                     className={`${styles.metodoBtn} ${metodo === m ? styles.metodoBtnActive : ''}`}
-                    onClick={() => setMetodo(m)}
+                    onClick={() => {
+                      setMetodo(m)
+                      if (m !== 'CREDITO') setMontoCuotaManual('')
+                    }}
                   >
                     {m === 'EFECTIVO' ? 'Efectivo' : m === 'DEBITO' ? 'Débito' : 'Crédito'}
                   </button>
@@ -274,18 +290,22 @@ export default function MovimientoFormPage() {
               <Input
                 name="montoCuota"
                 label="Valor cuota (opcional)"
-                type="number"
-                min="1"
+                type="text"
+                inputMode="numeric"
+                value={montoCuotaManual}
+                onChange={e => setMontoCuotaManual(e.target.value)}
                 placeholder={
-                  montoCuota
-                    ? `${formatMonto(montoCuota)} (calculado)`
+                  montoCuotaCalculado
+                    ? `${formatMonto(montoCuotaCalculado)} (calculado)`
                     : 'Se calcula automático'
                 }
+                error={errors.montoCuota}
                 helperText="Si no ingresas, se divide monto ÷ cuotas. La diferencia de centavos va a la primera."
               />
-              {montoCuota && numCuotas && (
+              {montoCuotaEfectivo != null && numCuotas && (
                 <p className={styles.cuotaPreview}>
-                  {numCuotas} cuotas de {formatMonto(montoCuota)}
+                  {numCuotas} cuotas de {formatMonto(montoCuotaEfectivo)}
+                  {montoCuotaManualNum ? ' (manual)' : ' (calculado)'}
                 </p>
               )}
             </div>

@@ -13,6 +13,7 @@ import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, movimientosApi } from '@finanzas/shared/api'
+import type { PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
 
@@ -35,12 +36,6 @@ interface LiquidacionApi {
   gastos_comunes: Array<{ usuario_id: number; total: string }>
 }
 
-interface CategoriaGasto {
-  categoria: string
-  monto: number
-  color: string
-}
-
 interface CuentaPersonalApi {
   id: number
   nombre: string
@@ -51,8 +46,6 @@ const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
-
-const COLORS = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860', '#60f0c8', '#c860f0']
 
 const METODO_BADGE: Record<'EFECTIVO' | 'DEBITO' | 'CREDITO', { label: string; bg: string; color: string }> = {
   EFECTIVO: { label: 'EF', bg: '#f0f0ec', color: '#6b7280' },
@@ -74,6 +67,17 @@ function fechaCorta(iso: string): string {
   const date = new Date(y, m - 1, d)
   const mes = date.toLocaleDateString('es-CL', { month: 'short' }).replace('.', '')
   return `${String(date.getDate()).padStart(2, '0')} ${mes}`
+}
+
+function porcentaje(gastado: number, presupuestado: number): number {
+  if (presupuestado <= 0) return 0
+  return Math.min((gastado / presupuestado) * 100, 100)
+}
+
+function colorBarra(pct: number): string {
+  if (pct >= 100) return '#ef4444'
+  if (pct >= 80) return '#f59e0b'
+  return '#22c55e'
 }
 
 export default function DashboardScreen() {
@@ -107,6 +111,20 @@ export default function DashboardScreen() {
   )
   const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion } =
     useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mes + 1, anio), [mes, anio])
+  const {
+    data: presupuestoData,
+    loading: loadingPresupuesto,
+    error: errorPresupuesto,
+  } = useApi<PresupuestoMesFila[]>(
+    () =>
+      finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito: 'PERSONAL',
+        cuenta: cuentaTab ?? undefined,
+      }),
+    [mes, anio, cuentaTab],
+  )
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -171,25 +189,39 @@ export default function DashboardScreen() {
     return movimientos.filter(m => m.cuenta === cuentaTab)
   }, [movimientos, cuentaTab])
 
-  const { ultimos, categoriasSorted, maxCat, totalCat } = useMemo(() => {
+  const { ultimos } = useMemo(() => {
     const ultimos = [...movimientosCuenta]
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
       .slice(0, 10)
-
-    const byCat = new Map<string, number>()
-    for (const m of movimientosCuenta) {
-      if (m.tipo !== 'EGRESO') continue
-      const name = m.categoria_nombre || 'Otros'
-      byCat.set(name, (byCat.get(name) ?? 0) + montoAbs(m.monto))
-    }
-    const categoriasSorted: CategoriaGasto[] = Array.from(byCat.entries())
-      .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
-      .sort((a, b) => b.monto - a.monto)
-    const maxCat = categoriasSorted[0]?.monto ?? 1
-    const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
-
-    return { ultimos, categoriasSorted, maxCat, totalCat }
+    return { ultimos }
   }, [movimientosCuenta])
+
+  const categoriasComparadas = useMemo(() => {
+    return ((presupuestoData ?? []) as PresupuestoMesFila[])
+      .filter((f) => f.presupuesto_id != null)
+      .map((f) => {
+        const presupuestado = Math.round(Number(f.monto_presupuestado) || 0)
+        const gastado = Math.round(Number(f.gastado) || 0)
+        const pct = porcentaje(gastado, presupuestado)
+        return {
+          categoriaId: f.categoria_id,
+          categoria: f.categoria_nombre || 'Otros',
+          gastado,
+          presupuestado,
+          pct,
+        }
+      })
+      .sort((a, b) => b.pct - a.pct)
+  }, [presupuestoData])
+
+  const totalCatGastado = useMemo(
+    () => categoriasComparadas.reduce((s, c) => s + c.gastado, 0),
+    [categoriasComparadas],
+  )
+  const totalCatPresupuestado = useMemo(
+    () => categoriasComparadas.reduce((s, c) => s + c.presupuestado, 0),
+    [categoriasComparadas],
+  )
 
   function irAnterior() {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
@@ -390,29 +422,50 @@ export default function DashboardScreen() {
             <View className="bg-white rounded-2xl p-5 mb-4">
               <View className="flex-row items-center justify-between mb-4">
                 <Text className="text-dark font-semibold text-sm">Gastos por categoría</Text>
-                <Text className="text-dark font-semibold text-sm">{formatMonto(Math.abs(totalCat))}</Text>
+                <Text className="text-dark font-semibold text-sm">
+                  {formatMonto(Math.abs(totalCatGastado))} de {formatMonto(Math.abs(totalCatPresupuestado))}
+                </Text>
               </View>
 
-              {categoriasSorted.length === 0 ? (
-                <Text className="text-muted text-sm text-center py-2">Sin gastos en este mes.</Text>
+              {loadingPresupuesto ? (
+                <Text className="text-muted text-sm text-center py-2">Cargando comparación…</Text>
+              ) : errorPresupuesto ? (
+                <Text className="text-muted text-sm text-center py-2">No se pudo cargar presupuesto del período.</Text>
+              ) : categoriasComparadas.length === 0 ? (
+                <Text className="text-muted text-sm text-center py-2">Sin presupuestos configurados para este período/cuenta.</Text>
               ) : (
                 <View className="gap-3">
-                  {categoriasSorted.map((cat) => {
-                    const pct = maxCat > 0 ? (cat.monto / maxCat) * 100 : 0
+                  {categoriasComparadas.map((cat) => {
+                    const pct = cat.pct
                     return (
-                      <View key={cat.categoria} className="flex-row items-center">
-                        <Text className="text-sm text-dark w-[110px]" numberOfLines={1}>
-                          {cat.categoria}
-                        </Text>
-                        <View className="flex-1 h-2 bg-[#f0f0ec] rounded overflow-hidden mx-3">
-                          <View
-                            className="h-2 rounded"
-                            style={{ width: `${pct}%`, backgroundColor: cat.color }}
-                          />
+                      <View key={cat.categoriaId}>
+                        <View className="flex-row items-center justify-between mb-1">
+                          <Text className="text-sm text-dark font-medium flex-1 mr-2" numberOfLines={1}>
+                            {cat.categoria}
+                          </Text>
+                          <Text className="text-xs text-muted">
+                            {formatMonto(cat.gastado)} de {formatMonto(cat.presupuestado)}
+                          </Text>
                         </View>
-                        <Text className="text-xs font-semibold text-dark text-right w-[82px]">
-                          {formatMonto(Math.abs(cat.monto))}
-                        </Text>
+                        <View className="flex-row items-center">
+                          <View className="flex-1 h-2 bg-[#f0f0ec] rounded overflow-hidden mr-3">
+                            <View
+                              className="h-2 rounded"
+                              style={{ width: `${pct}%`, backgroundColor: colorBarra(pct) }}
+                            />
+                          </View>
+                          <Text
+                            className="text-xs font-semibold text-right w-[54px]"
+                            style={{ color: colorBarra(pct) }}
+                          >
+                            {Math.round(pct)}%
+                          </Text>
+                        </View>
+                        {cat.gastado > cat.presupuestado && cat.presupuestado > 0 && (
+                          <Text className="text-danger text-[10px] mt-1">
+                            Excedido en {formatMonto(cat.gastado - cat.presupuestado)}
+                          </Text>
+                        )}
                       </View>
                     )
                   })}

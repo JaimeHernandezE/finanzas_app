@@ -38,6 +38,15 @@ export const movimientosApi = {
   getCuotasDeudaPendiente: () =>
     client.get<{ total: string }>('/api/finanzas/cuotas/deuda-pendiente/'),
 
+  /** Genera movimientos en efectivo por cuota y marca cuotas pagadas */
+  pagarTarjeta: (data: {
+    tarjeta_id: number
+    mes?: number
+    anio?: number
+    fecha_pago?: string
+    cuota_ids?: number[]
+  }) => client.post('/api/finanzas/pagar-tarjeta/', data),
+
   updateCuota: (id: number, data: { incluir?: boolean; estado?: string }) =>
     client.put(`/api/finanzas/cuotas/${id}/`, data),
 }

@@ -215,6 +215,7 @@ function MovimientoRow({
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const esCredito = mov.metodo_pago_tipo === 'CREDITO'
   const monto = montoSeguro(mov.monto)
 
   return (
@@ -230,9 +231,10 @@ function MovimientoRow({
 
       <span
         className={styles.movMonto}
-        style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
+        style={{ color: esIngreso ? '#22a06b' : esCredito ? '#6b7280' : '#0f0f0f' }}
       >
-        {esIngreso ? '+' : '−'}{formatMonto(monto)}
+        {esIngreso ? '+' : esCredito ? '' : '−'}
+        {formatMonto(monto)}
       </span>
 
       <span
@@ -274,6 +276,7 @@ function DateGroup({
   // El resumen diario representa gasto del día; no descuenta ingresos.
   const subtotalEgresos = grupo.movimientos.reduce((acc, m) => {
     if (m.tipo !== 'EGRESO') return acc
+    if (m.metodo_pago_tipo === 'CREDITO') return acc
     return acc + montoSeguro(m.monto)
   }, 0)
   const mostrarSubtotal = subtotalEgresos > 0

@@ -6,6 +6,7 @@ import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
 import { Cargando } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './MovimientoFormPage.module.scss'
 
 type Tipo = 'EGRESO' | 'INGRESO'
@@ -35,6 +36,7 @@ interface FormErrors {
   cuenta?: string
   tarjeta?: string
   numCuotas?: string
+  montoCuota?: string
   general?: string
 }
 
@@ -45,6 +47,7 @@ function destinoTrasGuardar(m: MovimientoApi) {
 }
 
 export default function MovimientoEditarPage() {
+  const { formatMonto } = useConfig()
   const { id: idParam } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -68,6 +71,7 @@ export default function MovimientoEditarPage() {
   const [cuentaId, setCuentaId] = useState<string>('')
   const [tarjetaId, setTarjetaId] = useState<string>('')
   const [numCuotas, setNumCuotas] = useState('')
+  const [montoCuotaInput, setMontoCuotaInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<FormErrors>({})
   const returnToParam = searchParams.get('returnTo')
@@ -124,6 +128,11 @@ export default function MovimientoEditarPage() {
         setCuentaId(d.cuenta != null ? String(d.cuenta) : '')
         setTarjetaId(d.tarjeta != null ? String(d.tarjeta) : '')
         setNumCuotas(d.num_cuotas != null ? String(d.num_cuotas) : '')
+        setMontoCuotaInput(
+          d.monto_cuota != null && String(d.monto_cuota).trim() !== ''
+            ? String(Math.round(parseFloat(String(d.monto_cuota))))
+            : '',
+        )
       } catch (err: unknown) {
         const ax = err as { response?: { status?: number; data?: { error?: string } } }
         if (ax.response?.status === 404) {
@@ -153,10 +162,14 @@ export default function MovimientoEditarPage() {
   const vinculadoIngresoComun = base != null && base.ingreso_comun != null
   const tieneCuotasTc = (base?.cuotas?.length ?? 0) > 0
 
-  const montoCuota =
+  const montoCuotaCalculado =
     numCuotas && monto
       ? Math.ceil(parseFloat(monto) / parseInt(numCuotas, 10))
       : null
+  const montoCuotaManualDigits = montoCuotaInput.replace(/\D/g, '')
+  const montoCuotaManualNum = montoCuotaManualDigits
+    ? parseInt(montoCuotaManualDigits, 10)
+    : null
 
   const handleSubmitVinculado = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -205,6 +218,9 @@ export default function MovimientoEditarPage() {
     if (metodo === 'CREDITO') {
       if (!tarjetaId) next.tarjeta = 'Selecciona una tarjeta.'
       if (!numCuotas) next.numCuotas = 'Ingresa el número de cuotas.'
+      if (!tieneCuotasTc && montoCuotaInput.trim() && (!montoCuotaManualNum || montoCuotaManualNum <= 0)) {
+        next.montoCuota = 'Valor de cuota inválido o déjalo vacío.'
+      }
     }
     if (ambito === 'PERSONAL' && cuentasOpciones.length > 0 && !cuentaId) {
       next.cuenta = 'Selecciona una cuenta personal.'
@@ -218,6 +234,16 @@ export default function MovimientoEditarPage() {
     setLoading(true)
     setErrors({})
     try {
+      let montoCuotaPayload: number | null = null
+      if (metodo === 'CREDITO') {
+        if (tieneCuotasTc && base.monto_cuota != null) {
+          montoCuotaPayload = Math.round(parseFloat(String(base.monto_cuota)))
+        } else if (montoCuotaManualNum != null && montoCuotaManualNum > 0) {
+          montoCuotaPayload = montoCuotaManualNum
+        } else if (montoCuotaCalculado != null && montoCuotaCalculado > 0) {
+          montoCuotaPayload = montoCuotaCalculado
+        }
+      }
       const payload: Record<string, unknown> = {
         fecha,
         tipo,
@@ -229,8 +255,7 @@ export default function MovimientoEditarPage() {
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && tarjetaId ? Number(tarjetaId) : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
-        monto_cuota:
-          metodo === 'CREDITO' && montoCuota ? montoCuota : null,
+        monto_cuota: montoCuotaPayload,
       }
       await movimientosApi.patchMovimiento(base.id, payload)
       const actualizado = { ...base, ...payload, cuenta: payload.cuenta as number | null, ambito }
@@ -476,7 +501,10 @@ export default function MovimientoEditarPage() {
                     key={m}
                     type="button"
                     className={`${styles.metodoBtn} ${metodo === m ? styles.metodoBtnActive : ''}`}
-                    onClick={() => setMetodo(m)}
+                    onClick={() => {
+                      setMetodo(m)
+                      if (m !== 'CREDITO') setMontoCuotaInput('')
+                    }}
                     disabled={tieneCuotasTc}
                   >
                     {m === 'EFECTIVO' ? 'Efectivo' : m === 'DEBITO' ? 'Débito' : 'Crédito'}
@@ -510,6 +538,28 @@ export default function MovimientoEditarPage() {
                     disabled={tieneCuotasTc}
                   />
                 </div>
+                {tieneCuotasTc && base.monto_cuota != null && (
+                  <p style={{ fontSize: 13, color: '#6b7280', marginTop: 8 }}>
+                    Valor cuota: {formatMonto(Math.round(parseFloat(String(base.monto_cuota))))}
+                  </p>
+                )}
+                {!tieneCuotasTc && (
+                  <Input
+                    name="montoCuota"
+                    label="Valor cuota (opcional)"
+                    type="text"
+                    inputMode="numeric"
+                    value={montoCuotaInput}
+                    onChange={e => setMontoCuotaInput(e.target.value)}
+                    placeholder={
+                      montoCuotaCalculado
+                        ? `${formatMonto(montoCuotaCalculado)} (calculado)`
+                        : 'Se calcula automático'
+                    }
+                    error={errors.montoCuota}
+                    helperText="Si no ingresas, se divide monto ÷ cuotas."
+                  />
+                )}
               </div>
             )}
 

@@ -449,7 +449,7 @@ export default function PagarTarjetaPage() {
   )
   const cuotasTarjeta = (cuotasTarjetaData ?? []) as Cuota[]
 
-  const { data: movPersonalData, loading: movPersonalLoading, error: movPersonalError } = useApi(
+  const { data: movPersonalData, loading: movPersonalLoading, error: movPersonalError, refetch: refetchMovPersonal } = useApi(
     () => movimientosApi.getMovimientos({
       tipo: 'EGRESO',
       ambito: 'PERSONAL',
@@ -458,7 +458,7 @@ export default function PagarTarjetaPage() {
     }),
     [],
   )
-  const { data: movComunData, loading: movComunLoading, error: movComunError } = useApi(
+  const { data: movComunData, loading: movComunLoading, error: movComunError, refetch: refetchMovComun } = useApi(
     () => movimientosApi.getMovimientos({
       tipo: 'EGRESO',
       ambito: 'COMUN',
@@ -473,6 +473,8 @@ export default function PagarTarjetaPage() {
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
+  const [guardandoPago, setGuardandoPago] = useState(false)
+  const [errorPago, setErrorPago] = useState<string | null>(null)
 
   const toMonthIndex = (fecha: string | undefined) => {
     if (!fecha) return null
@@ -533,15 +535,36 @@ export default function PagarTarjetaPage() {
   }
 
   const handleConfirmarPago = async () => {
-    setTotalPagado(total)
     const aMarcar = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO')
-    await Promise.all(
-      aMarcar.map(c => movimientosApi.updateCuota(c.id, { estado: 'PAGADO' })),
-    )
-    setCargosAdicionales([])
-    setModalConfirmarPago(false)
-    setExitoPostPago(true)
-    refetch()
+    if (!tarjetaId || aMarcar.length === 0) {
+      setErrorPago('No hay cuotas seleccionadas para pagar.')
+      return
+    }
+    setGuardandoPago(true)
+    setErrorPago(null)
+    try {
+      await movimientosApi.pagarTarjeta({
+        tarjeta_id: tarjetaId,
+        mes: mes + 1,
+        anio,
+        fecha_pago: new Date().toISOString().slice(0, 10),
+        cuota_ids: aMarcar.map(c => c.id),
+      })
+      const totalCuotasPagadas = aMarcar.reduce((s, c) => s + montoNum(c), 0)
+      setTotalPagado(totalCuotasPagadas)
+      setCargosAdicionales([])
+      setModalConfirmarPago(false)
+      setExitoPostPago(true)
+      void refetch()
+      void refetchCuotasTarjeta()
+      void refetchMovPersonal()
+      void refetchMovComun()
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } }
+      setErrorPago(ax.response?.data?.error ?? 'No se pudo registrar el pago.')
+    } finally {
+      setGuardandoPago(false)
+    }
   }
 
   const tarjeta = tarjetas.find(t => String(t.id) === tarjetaSeleccionada)
@@ -903,7 +926,10 @@ export default function PagarTarjetaPage() {
             excluido={excluido}
             cargos={cargos}
             total={total}
-            onRegistrar={() => setModalConfirmarPago(true)}
+            onRegistrar={() => {
+              setErrorPago(null)
+              setModalConfirmarPago(true)
+            }}
           />
         </>
       )}
@@ -912,7 +938,7 @@ export default function PagarTarjetaPage() {
       {modalConfirmarPago && (
         <div
           className={styles.modalOverlay}
-          onClick={() => setModalConfirmarPago(false)}
+          onClick={() => !guardandoPago && setModalConfirmarPago(false)}
         >
           <div
             className={styles.modalCard}
@@ -932,10 +958,14 @@ export default function PagarTarjetaPage() {
               <br />
               <strong>Total a pagar {formatMonto(total)}</strong>
             </p>
+            {errorPago && (
+              <p style={{ color: '#b91c1c', fontSize: 14, marginTop: 8 }}>{errorPago}</p>
+            )}
             <div className={styles.modalBtns}>
               <button
                 type="button"
                 className={styles.btnGhost}
+                disabled={guardandoPago}
                 onClick={() => setModalConfirmarPago(false)}
               >
                 Cancelar
@@ -943,9 +973,10 @@ export default function PagarTarjetaPage() {
               <button
                 type="button"
                 className={styles.btnPrimary}
+                disabled={guardandoPago}
                 onClick={handleConfirmarPago}
               >
-                Confirmar
+                {guardandoPago ? 'Registrando…' : 'Confirmar'}
               </button>
             </div>
           </div>

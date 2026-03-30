@@ -52,7 +52,7 @@ export const finanzasApi = {
     client.get('/api/finanzas/liquidacion/', { params: { mes, anio } }),
 
   /** Filas categoría + presupuesto/gastado del mes */
-  getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL' }) =>
+  getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL'; cuenta?: number }) =>
     client.get<PresupuestoMesFila[]>('/api/finanzas/presupuesto-mes/', { params }),
 
   createPresupuesto: (data: {

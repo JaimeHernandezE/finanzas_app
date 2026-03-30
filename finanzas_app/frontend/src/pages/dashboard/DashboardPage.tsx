@@ -1,10 +1,12 @@
 import { useEffect, useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi, movimientosApi } from '@/api'
+import type { PresupuestoMesFila } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import CategoriaPresupuestoItem from '@/components/presupuesto/CategoriaPresupuestoItem'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
 import styles from './DashboardPage.module.scss'
@@ -26,18 +28,10 @@ interface MovimientoApi {
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
 }
 
-interface CategoriaGasto {
-  categoria: string
-  monto: number
-  color: string
-}
-
 interface LiquidacionApi {
   ingresos: Array<{ usuario_id: number; total: string }>
   gastos_comunes: Array<{ usuario_id: number; total: string }>
 }
-
-const COLORS = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860', '#60f0c8', '#c860f0']
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -119,36 +113,18 @@ function MetricCard({
   )
 }
 
-function CategoriaBar({
-  categoria, monto, color, max, delay,
-}: CategoriaGasto & { max: number; delay: number }) {
-  const { formatMonto } = useConfig()
-  const pct = max > 0 ? (monto / max) * 100 : 0
-
-  return (
-    <div className={styles.barRow}>
-      <span className={styles.barLabel} title={categoria}>{categoria}</span>
-      <div className={styles.barTrack}>
-        <div
-          className={styles.barFill}
-          style={
-            { '--target-width': `${pct}%`, backgroundColor: color, animationDelay: `${delay}ms` } as React.CSSProperties
-          }
-        />
-      </div>
-      <span className={styles.barMonto}>{formatMonto(Math.abs(monto))}</span>
-    </div>
-  )
-}
-
 function MovimientoItem({ mov }: { mov: MovimientoApi }) {
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const esCreditoTc = mov.metodo_pago_tipo === 'CREDITO'
   const monto = montoAbs(mov.monto)
-  const montoFmt  = esIngreso
-    ? formatMonto(monto)
-    : `−${formatMonto(monto)}`
+  const montoFmt =
+    esIngreso
+      ? formatMonto(monto)
+      : esCreditoTc
+        ? formatMonto(monto)
+        : `−${formatMonto(monto)}`
 
   return (
     <div className={styles.movItem}>
@@ -160,7 +136,7 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
       <div className={styles.movRight}>
         <span
           className={styles.movMonto}
-          style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
+          style={{ color: esIngreso ? '#22a06b' : esCreditoTc ? '#6b7280' : '#0f0f0f' }}
         >
           {montoFmt}
         </span>
@@ -232,6 +208,7 @@ function MovimientosList({
 
 export default function DashboardPage() {
   const { formatMonto } = useConfig()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
@@ -278,6 +255,16 @@ export default function DashboardPage() {
       setCuentaTab(cuentasPropias[0].id)
     }
   }, [cuentasPropias, cuentaTab])
+  const { data: presupuestoData, loading: loadingPresupuesto, error: errorPresupuesto } = useApi<PresupuestoMesFila[]>(
+    () =>
+      finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito: 'PERSONAL',
+        cuenta: cuentaTab ?? undefined,
+      }),
+    [mes, anio, cuentaTab],
+  )
 
   const deudaTc = useMemo(() => {
     const t = deudaRes?.total
@@ -342,20 +329,25 @@ export default function DashboardPage() {
     return movimientos.filter(m => m.cuenta === cuentaTab)
   }, [movimientos, cuentaTab])
 
-  // Categorías (solo egresos) ordenadas de mayor a menor
-  const categoriasSorted = useMemo(() => {
-    const byCat = new Map<string, number>()
-    for (const m of movimientosCuentaSeleccionada) {
-      if (m.tipo !== 'EGRESO') continue
-      const name = m.categoria_nombre || 'Otros'
-      byCat.set(name, (byCat.get(name) ?? 0) + montoAbs(m.monto))
-    }
-    return Array.from(byCat.entries())
-      .map(([categoria, monto], i) => ({ categoria, monto, color: COLORS[i % COLORS.length] }))
-      .sort((a, b) => b.monto - a.monto)
-  }, [movimientosCuentaSeleccionada])
-  const maxCat = categoriasSorted[0]?.monto ?? 1
-  const totalCat = categoriasSorted.reduce((s, c) => s + c.monto, 0)
+  const categoriasComparadas = useMemo(() => {
+    return (presupuestoData ?? [])
+      .filter(f => f.presupuesto_id != null)
+      .map(f => {
+        const presupuestado = Math.round(Number(f.monto_presupuestado) || 0)
+        const gastado = Math.round(Number(f.gastado) || 0)
+        const pct = presupuestado > 0 ? (gastado / presupuestado) * 100 : 0
+        return {
+          categoriaId: f.categoria_id,
+          nombre: f.categoria_nombre || 'Otros',
+          gastado,
+          presupuestado,
+          pct,
+        }
+      })
+      .sort((a, b) => b.pct - a.pct)
+  }, [presupuestoData])
+  const totalCatGastado = categoriasComparadas.reduce((s, c) => s + c.gastado, 0)
+  const totalCatPresupuestado = categoriasComparadas.reduce((s, c) => s + c.presupuestado, 0)
 
   const linkListadoCuentaActiva = useMemo(() => {
     if (cuentaTab !== null) return `/gastos/cuenta/${cuentaTab}`
@@ -398,6 +390,12 @@ export default function DashboardPage() {
         <MetricCard label="Saldo proyectado"     valor={saldo}         variant="dark"    delay={160} />
       </div>
 
+      {deudaTc > 0 && (
+        <div className={styles.linkPagarTarjeta}>
+          <Link to="/tarjetas/pagar">Ir a pagar tarjeta →</Link>
+        </div>
+      )}
+
       {cuentasPropias.length > 0 && (
         <div className={styles.tabsWrap}>
           {cuentasPropias.map(c => (
@@ -420,11 +418,35 @@ export default function DashboardPage() {
         <div className={styles.catCard}>
           <div className={styles.catHeader}>
             <span className={styles.catTitulo}>Gastos por categoría</span>
-            <span className={styles.catTotal}>{formatMonto(Math.abs(totalCat))}</span>
+            <span className={styles.catTotal}>
+              {formatMonto(Math.abs(totalCatGastado))} de {formatMonto(Math.abs(totalCatPresupuestado))}
+            </span>
           </div>
           <div className={styles.catLista}>
-            {categoriasSorted.map((c, i) => (
-              <CategoriaBar key={c.categoria} {...c} max={maxCat} delay={i * 60} />
+            {loadingPresupuesto && <p className={styles.catHint}>Cargando comparación…</p>}
+            {!loadingPresupuesto && errorPresupuesto && (
+              <p className={styles.catHint}>No se pudo cargar presupuesto del período.</p>
+            )}
+            {!loadingPresupuesto && !errorPresupuesto && categoriasComparadas.length === 0 && (
+              <p className={styles.catHint}>Sin presupuestos configurados para este período/cuenta.</p>
+            )}
+            {!loadingPresupuesto && !errorPresupuesto && categoriasComparadas.map(cat => (
+              <CategoriaPresupuestoItem
+                key={cat.categoriaId}
+                nombre={cat.nombre}
+                gastado={cat.gastado}
+                presupuestado={cat.presupuestado}
+                onClick={() => {
+                  const params = new URLSearchParams({
+                    categoria: String(cat.categoriaId),
+                    ambito: 'PERSONAL',
+                    mes: String(mes + 1),
+                    anio: String(anio),
+                  })
+                  if (cuentaTab != null) params.set('cuenta', String(cuentaTab))
+                  navigate(`/presupuesto?${params.toString()}`)
+                }}
+              />
             ))}
           </div>
         </div>

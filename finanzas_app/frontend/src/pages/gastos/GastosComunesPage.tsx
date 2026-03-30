@@ -196,6 +196,7 @@ function MovimientoRow({
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
+  const esCredito = mov.metodo_pago_tipo === 'CREDITO'
   const esPropio  = usuarioId == null || mov.usuario === usuarioId
 
   return (
@@ -214,9 +215,12 @@ function MovimientoRow({
 
       <span
         className={styles.movMonto}
-        style={{ color: esIngreso ? '#22a06b' : '#0f0f0f' }}
+        style={{
+          color: esIngreso ? '#22a06b' : esCredito ? '#6b7280' : '#0f0f0f',
+        }}
       >
-        {esIngreso ? '+' : '−'}{formatMonto(mov.monto)}
+        {esIngreso ? '+' : esCredito ? '' : '−'}
+        {formatMonto(mov.monto)}
       </span>
 
       <span
@@ -257,9 +261,10 @@ function DateGroup({
   onDelete:  (mov: MovimientoComun) => void
 }) {
   const { formatMonto } = useConfig()
-  const subtotal = grupo.movimientos.reduce(
-    (acc, m) => acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto), 0,
-  )
+  const subtotal = grupo.movimientos.reduce((acc, m) => {
+    if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return acc
+    return acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto)
+  }, 0)
 
   return (
     <div className={styles.grupo}>
