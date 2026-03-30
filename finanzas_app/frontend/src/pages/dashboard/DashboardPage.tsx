@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
@@ -6,6 +6,8 @@ import { useApi } from '@/hooks/useApi'
 import { finanzasApi, movimientosApi } from '@/api'
 import type { PresupuestoMesFila } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
+import InputMontoClp from '@/components/ui/InputMontoClp/InputMontoClp'
+import { montoClpANumero } from '@/utils/montoClp'
 import CategoriaPresupuestoItem from '@/components/presupuesto/CategoriaPresupuestoItem'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
@@ -113,6 +115,371 @@ function MetricCard({
   )
 }
 
+interface EfectivoDesglose {
+  a: string
+  b: string
+  c: string
+  d: string
+  e: string
+  e_personal: string
+  e_comun: string
+}
+
+function EfectivoMetricCard({
+  label,
+  valor,
+  desglose,
+  delay = 0,
+}: {
+  label: string
+  valor: number
+  desglose: EfectivoDesglose | null | undefined
+  delay?: number
+}) {
+  const { formatMonto } = useConfig()
+  const [detalleAbierto, setDetalleAbierto] = useState(false)
+  const v = toPesos(valor)
+  const textoValor = v < 0 ? `−${formatMonto(Math.abs(v))}` : formatMonto(v)
+  const n = (s: string | undefined) => Math.round(Number(s) || 0)
+  const fmt = (x: number) => (x < 0 ? `−${formatMonto(Math.abs(x))}` : formatMonto(x))
+
+  if (!desglose) {
+    return (
+      <div className={styles.metricCard} style={{ animationDelay: `${delay}ms` }}>
+        <span className={styles.metricLabel}>{label}</span>
+        <span className={styles.metricValor}>{textoValor}</span>
+      </div>
+    )
+  }
+
+  const a = n(desglose.a)
+  const b = n(desglose.b)
+  const c = n(desglose.c)
+  const d = n(desglose.d)
+  const e = n(desglose.e)
+  const ePersonal = n(desglose.e_personal)
+  const eComun = n(desglose.e_comun)
+  const idPanel = 'efectivo-desglose-panel'
+  const maxBar = Math.max(Math.abs(a), Math.abs(b), Math.abs(c), Math.abs(d), Math.abs(e), 1)
+  const barPct = (v: number) => (Math.abs(v) / maxBar) * 100
+
+  return (
+    <div className={styles.metricCard} style={{ animationDelay: `${delay}ms` }}>
+      <div className={styles.metricLabelRow}>
+        <span className={styles.metricLabel}>{label}</span>
+        <button
+          type="button"
+          className={styles.metricHelpBtn}
+          onClick={() => setDetalleAbierto((x) => !x)}
+          aria-expanded={detalleAbierto}
+          aria-controls={idPanel}
+          aria-label={
+            detalleAbierto
+              ? 'Ocultar desglose de efectivo disponible'
+              : 'Ver desglose de efectivo disponible'
+          }
+        >
+          ?
+        </button>
+      </div>
+      <span className={styles.metricValor}>{textoValor}</span>
+      {detalleAbierto && (
+        <div id={idPanel} className={styles.metricDetallePanel} role="region" aria-live="polite">
+          <div className={styles.metricTooltipTitle}>Desglose (A + B + C − D + E)</div>
+
+          <div className={styles.metricDesgloseSectionTitle}>Aportes</div>
+          <div className={styles.metricDesgloseFila}>
+            <div className={styles.metricDesgloseFilaHead}>
+              <span className={styles.metricTooltipKey}>A — Total sueldos (ingreso común, sin mes actual)</span>
+              <span className={styles.metricDesgloseMonto}>
+                <span className={a >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
+                  {a >= 0 ? '+' : '−'}
+                </span>
+                <span className={a >= 0 ? styles.metricDesgloseValAport : styles.metricDesgloseValEgreso}>
+                  {formatMonto(Math.abs(a))}
+                </span>
+              </span>
+            </div>
+            <div className={styles.metricDesgloseBarTrack}>
+              <div
+                className={styles.metricDesgloseBarFill}
+                style={{
+                  width: `${barPct(a)}%`,
+                  background: a >= 0 ? '#22a06b' : '#ef4444',
+                }}
+              />
+            </div>
+          </div>
+          <div className={styles.metricDesgloseFila}>
+            <div className={styles.metricDesgloseFilaHead}>
+              <span className={styles.metricTooltipKey}>B — Sueldo declarado (mes actual)</span>
+              <span className={styles.metricDesgloseMonto}>
+                <span className={b >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
+                  {b >= 0 ? '+' : '−'}
+                </span>
+                <span className={b >= 0 ? styles.metricDesgloseValAport : styles.metricDesgloseValEgreso}>
+                  {formatMonto(Math.abs(b))}
+                </span>
+              </span>
+            </div>
+            <div className={styles.metricDesgloseBarTrack}>
+              <div
+                className={styles.metricDesgloseBarFill}
+                style={{
+                  width: `${barPct(b)}%`,
+                  background: b >= 0 ? '#22a06b' : '#ef4444',
+                }}
+              />
+            </div>
+          </div>
+
+          <div className={styles.metricDesgloseSectionTitle}>Egresos</div>
+          <div className={styles.metricDesgloseFila}>
+            <div className={styles.metricDesgloseFilaHead}>
+              <span className={styles.metricTooltipKey}>
+                C — Suma de los netos mensuales (ingresos − egresos) de todas tus cuentas personales
+              </span>
+              <span className={styles.metricDesgloseMonto}>
+                <span className={c >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
+                  {c >= 0 ? '+' : '−'}
+                </span>
+                <span
+                  className={c >= 0 ? styles.metricDesgloseValAport : styles.metricDesgloseValEgreso}
+                >
+                  {formatMonto(Math.abs(c))}
+                </span>
+              </span>
+            </div>
+            <div className={styles.metricDesgloseBarTrack}>
+              <div
+                className={styles.metricDesgloseBarFill}
+                style={{
+                  width: `${barPct(c)}%`,
+                  background: c >= 0 ? '#22a06b' : '#ef4444',
+                }}
+              />
+            </div>
+          </div>
+          <div className={styles.metricDesgloseFila}>
+            <div className={styles.metricDesgloseFilaHead}>
+              <span className={styles.metricTooltipKey}>D — Gastos comunes prorrateados</span>
+              <span className={styles.metricDesgloseMonto}>
+                <span className={styles.metricDesgloseSignMenos}>−</span>
+                <span className={styles.metricDesgloseValEgreso}>{formatMonto(Math.abs(d))}</span>
+              </span>
+            </div>
+            <div className={styles.metricDesgloseBarTrack}>
+              <div
+                className={styles.metricDesgloseBarFill}
+                style={{ width: `${barPct(d)}%`, background: '#ef4444' }}
+              />
+            </div>
+          </div>
+          <div className={styles.metricDesgloseFila}>
+            <div className={styles.metricDesgloseFilaHead}>
+              <span className={styles.metricTooltipKey}>E — Mes actual (personal + común)</span>
+              <span className={styles.metricDesgloseMonto}>
+                <span className={e >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
+                  {e >= 0 ? '+' : '−'}
+                </span>
+                <span
+                  className={e >= 0 ? styles.metricDesgloseValAport : styles.metricDesgloseValEgreso}
+                >
+                  {formatMonto(Math.abs(e))}
+                </span>
+              </span>
+            </div>
+            <div className={styles.metricDesgloseBarTrack}>
+              <div
+                className={styles.metricDesgloseBarFill}
+                style={{
+                  width: `${barPct(e)}%`,
+                  background: e >= 0 ? '#22a06b' : '#ef4444',
+                }}
+              />
+            </div>
+          </div>
+          <div className={styles.metricTooltipRow} style={{ marginTop: 8 }}>
+            <span className={styles.metricTooltipKey} style={{ paddingLeft: 8 }}>↳ Personal (sin duplicar sueldos)</span>
+            <span className={styles.metricTooltipVal}>{fmt(ePersonal)}</span>
+          </div>
+          <div className={styles.metricTooltipRow}>
+            <span className={styles.metricTooltipKey} style={{ paddingLeft: 8 }}>↳ Común</span>
+            <span className={styles.metricTooltipVal}>{fmt(eComun)}</span>
+          </div>
+          <p className={styles.metricTooltipHint}>
+            Cálculo: A + B + C − D + E. A y B se muestran como aportes (+). En el bloque inferior, C y E
+            llevan el signo del neto (+ verde / − rojo); D siempre se resta (−). D acumula prorrateos de
+            meses anteriores al actual.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SaldoProyectadoCard({
+  label,
+  saldo,
+  esActual,
+  efectivo,
+  deudaTc,
+  compensacion,
+  netoFamiliarComun,
+  netoComunUsuario,
+  esperadoProrrateo,
+  miembros,
+  sueldosDigitos,
+  onSueldoChange,
+  errorCompensacion,
+  delay = 0,
+}: {
+  label: string
+  saldo: number
+  esActual: boolean
+  efectivo: number
+  deudaTc: number
+  compensacion: number
+  netoFamiliarComun: number
+  netoComunUsuario: number
+  esperadoProrrateo: number
+  miembros: { usuario_id: number; nombre: string }[]
+  sueldosDigitos: Record<number, string>
+  onSueldoChange: (usuarioId: number, soloDigitos: string) => void
+  errorCompensacion: string | null
+  delay?: number
+}) {
+  const { formatMonto } = useConfig()
+  const v = toPesos(saldo)
+  const textoValor = v < 0 ? `−${formatMonto(Math.abs(v))}` : formatMonto(v)
+  const [detalleAbierto, setDetalleAbierto] = useState(false)
+  const idPanel = 'saldo-proyectado-panel'
+
+  return (
+    <div
+      className={`${styles.metricCard} ${styles.metricCardDark}`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className={styles.metricLabelRow}>
+        <span className={styles.metricLabel} style={{ color: 'rgba(255,255,255,0.5)' }}>
+          {label}
+        </span>
+        <button
+          type="button"
+          className={styles.metricHelpBtnSaldo}
+          onClick={() => setDetalleAbierto((x) => !x)}
+          aria-expanded={detalleAbierto}
+          aria-controls={idPanel}
+          aria-label={detalleAbierto ? 'Ocultar desglose de saldo proyectado' : 'Ver desglose de saldo proyectado'}
+        >
+          ?
+        </button>
+      </div>
+      <span
+        className={styles.metricValor}
+        style={{ color: v < 0 ? '#ff4d4d' : '#c8f060' }}
+        title={
+          esActual
+            ? 'Saldo = efectivo disponible − deuda tarjetas + compensación (C). Pulsa ? para el detalle.'
+            : 'Saldo ≈ efectivo disponible − deuda tarjetas (resumen no es el mes en curso). Pulsa ? para más.'
+        }
+      >
+        {textoValor}
+      </span>
+
+      {detalleAbierto && (
+        <div id={idPanel} className={styles.metricDetallePanelSaldo} role="region" aria-live="polite">
+          {!esActual && (
+            <>
+              <div className={styles.metricTooltipTitle}>Cómo se calcula (mes pasado)</div>
+              <p className={styles.saldoDetalleNota}>
+                El efectivo disponible y el desglose del mes en curso siguen siendo los de <strong>hoy</strong>;
+                por eso el saldo proyectado completo (con compensación y neto del mes) solo tiene sentido con el
+                resumen en el <strong>mes en curso</strong>.
+              </p>
+              <ul className={styles.saldoDetalleLista}>
+                <li>
+                  <strong>Saldo</strong> ≈ efectivo disponible actual − deuda en tarjetas (cuotas pendientes).
+                </li>
+              </ul>
+            </>
+          )}
+          {esActual && (
+            <>
+              <div className={styles.metricTooltipTitle}>Cómo se calcula el saldo proyectado</div>
+              <p className={styles.saldoDetalleIntro}>
+                Efectivo disponible menos deudas tarjetas más la compensación según prorrateo de sueldos estimados
+                (según mes anterior).
+              </p>
+              <p className={styles.saldoDetalleFormula}>
+                <strong>Saldo = A − B + C</strong>
+              </p>
+              <div className={styles.metricDesgloseSectionTitle}>Aporte</div>
+              <div className={styles.metricTooltipRow}>
+                <span className={styles.metricTooltipKey}>A — Efectivo disponible</span>
+                <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
+                  +{formatMonto(Math.abs(efectivo))}
+                </span>
+              </div>
+              <div className={styles.metricDesgloseSectionTitle}>Egresos</div>
+              <div className={styles.metricTooltipRow}>
+                <span className={styles.metricTooltipKey}>B — Deuda tarjetas</span>
+                <span className={styles.metricTooltipVal} style={{ color: '#f87171' }}>
+                  −{formatMonto(Math.abs(deudaTc))}
+                </span>
+              </div>
+              <div className={styles.metricDesgloseSectionTitle}>Compensación</div>
+              <ul className={styles.saldoDetalleLista}>
+                <li>
+                  <strong>Neto familiar común</strong> (Ingresos − egresos comunes):{' '}
+                  {formatMonto(Math.round(netoFamiliarComun))}.
+                </li>
+                <li>
+                  <strong>Tu neto común esperado</strong> (Prorrateado según sueldo estimado):{' '}
+                  {formatMonto(esperadoProrrateo)}.
+                </li>
+                <li>
+                  <strong>Tu neto común real</strong> (lo que has aportado o recibiste en común en el mes):{' '}
+                  {formatMonto(netoComunUsuario)}.
+                </li>
+              </ul>
+              <p className={styles.saldoDetalleHint}>
+                <strong>Compensación estimada</strong> = Neto común esperado − Neto común real →{' '}
+                {formatMonto(esperadoProrrateo)} − {formatMonto(netoComunUsuario)} ={' '}
+                <span style={{ color: compensacion >= 0 ? '#4ade80' : '#f87171' }}>
+                  {compensacion >= 0 ? '+' : '−'}
+                  {formatMonto(Math.abs(compensacion))}
+                </span>
+              </p>
+              {errorCompensacion && (
+                <p className={styles.saldoDetalleError}>{errorCompensacion}</p>
+              )}
+              {miembros.length > 0 && (
+                <div className={styles.saldoSueldosGrid}>
+                  {miembros.map((m) => (
+                    <label key={m.usuario_id} className={styles.saldoSueldoFila}>
+                      <span className={styles.saldoSueldoNombre}>
+                        Base prorrateo (mes ant.) — {m.nombre}
+                      </span>
+                      <InputMontoClp
+                        soloInput
+                        inputClassName={styles.saldoSueldoInput}
+                        value={sueldosDigitos[m.usuario_id] ?? ''}
+                        onChange={(soloDigitos) => onSueldoChange(m.usuario_id, soloDigitos)}
+                        aria-label={`Base prorrateo mes anterior ${m.nombre}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function MovimientoItem({ mov }: { mov: MovimientoApi }) {
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
@@ -213,6 +580,7 @@ export default function DashboardPage() {
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const { movimientos: movimientosRaw, loading, error } = useMovimientos({
     mes: mes + 1,
@@ -221,6 +589,10 @@ export default function DashboardPage() {
     solo_mios: true,
   })
   const movimientos = (movimientosRaw ?? []) as MovimientoApi[]
+  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo } = useApi(
+    () => finanzasApi.getEfectivoDisponible(),
+    [],
+  )
 
   const { data: deudaRes, loading: loadingDeuda } = useApi(
     () => movimientosApi.getCuotasDeudaPendiente(),
@@ -229,6 +601,27 @@ export default function DashboardPage() {
   const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion } = useApi<LiquidacionApi>(
     () => finanzasApi.getLiquidacion(mes + 1, anio),
     [mes, anio],
+  )
+  const { mesPrevio, anioPrevio } = useMemo(() => {
+    if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
+    return { mesPrevio: mes, anioPrevio: anio }
+  }, [mes, anio])
+  const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior } = useApi<LiquidacionApi>(
+    () => finanzasApi.getLiquidacion(mesPrevio, anioPrevio),
+    [mesPrevio, anioPrevio],
+  )
+  const { data: compensacionData, error: errorCompensacion } = useApi(
+    () => finanzasApi.getCompensacionProyectada(mes + 1, anio),
+    [mes, anio],
+  )
+  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo } = useApi(
+    () =>
+      esActual
+        ? finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
+        : Promise.resolve({
+            data: { mes: mes + 1, anio, montos: {} as Record<string, string> },
+          }),
+    [mes, anio, esActual],
   )
   const { data: cuentasData } = useCuentasPersonales()
   const cuentasPropias = useMemo(
@@ -271,8 +664,6 @@ export default function DashboardPage() {
     return Math.round(Number(t) || 0)
   }, [deudaRes])
 
-  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
-
   const irAnterior = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
     else setMes(m => m - 1)
@@ -284,45 +675,124 @@ export default function DashboardPage() {
     else setMes(m => m + 1)
   }
 
-  // Métricas y listas (API ya filtra por mes/anio)
-  const efectivo = useMemo(
-    () =>
-      movimientos
-        .filter(m => m.metodo_pago_tipo !== 'CREDITO')
-        .reduce(
-          (acc, m) =>
-            acc + (m.tipo === 'INGRESO' ? montoAbs(m.monto) : -montoAbs(m.monto)),
-          0,
-        ),
-    [movimientos],
-  )
-  const ajusteLiquidacionComun = useMemo(() => {
-    if (!liquidacionRes || !user) return 0
-    const totalIngresos = (liquidacionRes.ingresos ?? []).reduce(
-      (acc, i) => acc + toPesos(i.total),
+  // Efectivo disponible: ver API efectivo-disponible (desglose A–E con botón ? en la tarjeta).
+  const efectivo = useMemo(() => {
+    const t = efectivoRes?.efectivo
+    return Math.round(Number(t) || 0)
+  }, [efectivoRes])
+  const efectivoDesglose = efectivoRes?.desglose ?? null
+
+  const [sueldosDigitos, setSueldosDigitos] = useState<Record<number, string>>({})
+  const [sueldosDirty, setSueldosDirty] = useState(false)
+  const lastSueldosInitSig = useRef<string>('')
+
+  useEffect(() => {
+    lastSueldosInitSig.current = ''
+  }, [mes, anio])
+
+  useEffect(() => {
+    if (!esActual) return
+    if (!compensacionData?.miembros?.length) return
+    if (loadingLiquidacionAnterior || loadingSueldosProrrateo) return
+    const sigLiq = JSON.stringify(
+      (liquidacionMesAnteriorRes?.ingresos ?? []).map((i) => [i.usuario_id, i.total]),
+    )
+    const sigApi = JSON.stringify(sueldosProrrateoRes?.montos ?? {})
+    const sig = `${anio}-${mes}|${sigLiq}|${sigApi}`
+    if (lastSueldosInitSig.current === sig) return
+    lastSueldosInitSig.current = sig
+    const prevById = Object.fromEntries(
+      (liquidacionMesAnteriorRes?.ingresos ?? []).map((i) => [
+        i.usuario_id,
+        Math.round(Number(i.total) || 0),
+      ]),
+    )
+    const apiMontos = sueldosProrrateoRes?.montos ?? {}
+    const next: Record<number, string> = {}
+    for (const m of compensacionData.miembros) {
+      const k = String(m.usuario_id)
+      const apiVal = apiMontos[k]
+      if (apiVal !== undefined && apiVal !== null && apiVal !== '') {
+        const n = Math.round(Number(apiVal) || 0)
+        next[m.usuario_id] = n === 0 ? '' : String(n)
+      } else {
+        const v = prevById[m.usuario_id] ?? 0
+        next[m.usuario_id] = v === 0 ? '' : String(v)
+      }
+    }
+    setSueldosDigitos(next)
+    setSueldosDirty(false)
+  }, [
+    esActual,
+    mes,
+    anio,
+    compensacionData,
+    liquidacionMesAnteriorRes,
+    sueldosProrrateoRes,
+    loadingLiquidacionAnterior,
+    loadingSueldosProrrateo,
+  ])
+
+  useEffect(() => {
+    if (!esActual || !sueldosDirty) return
+    if (!compensacionData?.miembros?.length) return
+    const t = window.setTimeout(() => {
+      const montos: Record<string, string> = {}
+      for (const m of compensacionData.miembros) {
+        const n = montoClpANumero(sueldosDigitos[m.usuario_id] ?? '')
+        montos[String(m.usuario_id)] = n.toFixed(2)
+      }
+      finanzasApi
+        .putSueldosEstimadosProrrateo(mes + 1, anio, montos)
+        .then(() => setSueldosDirty(false))
+        .catch(() => {
+          /* el usuario puede reintentar editando */
+        })
+    }, 800)
+    return () => window.clearTimeout(t)
+  }, [sueldosDigitos, sueldosDirty, esActual, mes, anio, compensacionData])
+
+  const saldoCompensacionDetalle = useMemo(() => {
+    const vacio = {
+      compensacion: 0,
+      netoComunUsuario: 0,
+      esperadoProrrateo: 0,
+    }
+    if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
+    const n = compensacionData.miembros.length
+    const netoFam = toPesos(compensacionData.neto_familiar_comun)
+    const totEst = compensacionData.miembros.reduce(
+      (s, m) => s + montoClpANumero(sueldosDigitos[m.usuario_id] ?? ''),
       0,
     )
-    const totalGastosComunes = (liquidacionRes.gastos_comunes ?? []).reduce(
-      (acc, g) => acc + toPesos(g.total),
-      0,
-    )
-    if (totalIngresos <= 0 || totalGastosComunes <= 0) return 0
+    const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
+    if (!self) return vacio
+    const netoUs = toPesos(self.neto_comun_mes)
+    const meu = montoClpANumero(sueldosDigitos[user.id] ?? '')
+    let esperado = 0
+    if (totEst > 0.005) {
+      esperado = (meu / totEst) * netoFam
+    } else if (n > 0) {
+      esperado = netoFam / n
+    }
+    const netoR = Math.round(netoUs)
+    const espR = Math.round(esperado)
+    /** Aplicado al saldo: esperado − neto. Si pagaste más común que tu parte (neto más bajo), suma (devolución). */
+    return {
+      compensacion: espR - netoR,
+      netoComunUsuario: netoR,
+      esperadoProrrateo: espR,
+    }
+  }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
 
-    const ingresoUsuario = (liquidacionRes.ingresos ?? [])
-      .filter(i => i.usuario_id === user.id)
-      .reduce((acc, i) => acc + toPesos(i.total), 0)
+  const compensacionEstimada = saldoCompensacionDetalle.compensacion
 
-    // Lo que "debería" cubrir según prorrateo por ingresos.
-    const aporteEsperado = (ingresoUsuario / totalIngresos) * totalGastosComunes
-    // Lo que efectivamente pagó en gastos comunes.
-    const pagadoPorUsuario = (liquidacionRes.gastos_comunes ?? [])
-      .filter(g => g.usuario_id === user.id)
-      .reduce((acc, g) => acc + toPesos(g.total), 0)
-
-    // > 0: le deben al usuario (se suma al saldo). < 0: el usuario debe (se resta).
-    return Math.round(pagadoPorUsuario - aporteEsperado)
-  }, [liquidacionRes, user])
-  const saldo = efectivo - deudaTc + ajusteLiquidacionComun
+  const saldo = useMemo(() => {
+    if (!esActual) {
+      return efectivo - deudaTc
+    }
+    return efectivo - deudaTc + compensacionEstimada
+  }, [esActual, efectivo, deudaTc, compensacionEstimada])
 
   const movimientosCuentaSeleccionada = useMemo(() => {
     if (cuentaTab === null) return movimientos
@@ -355,8 +825,19 @@ export default function DashboardPage() {
     return p ? `/gastos/cuenta/${p.id}` : '/configuracion/cuentas'
   }, [cuentaTab, cuentasData])
 
-  if (loading || loadingDeuda || loadingLiquidacion) return <Cargando />
-  if (error || errorLiquidacion) return <ErrorCarga mensaje={error || errorLiquidacion || 'Error al cargar datos.'} />
+  if (
+    loading ||
+    loadingEfectivo ||
+    loadingDeuda ||
+    loadingLiquidacion ||
+    loadingLiquidacionAnterior ||
+    (esActual && loadingSueldosProrrateo)
+  ) return <Cargando />
+  if (error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior) {
+    return <ErrorCarga mensaje={error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior || 'Error al cargar datos.'} />
+  }
+
+  const recalculoPendiente = efectivoRes?.recalculo?.pendiente
 
   return (
     <div className={styles.page}>
@@ -384,10 +865,34 @@ export default function DashboardPage() {
       </div>
 
       {/* ── Tarjetas métricas ── */}
+      {recalculoPendiente && (
+        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 12 }}>
+          Hay recálculo de histórico pendiente; los totales pueden actualizarse al ejecutar el comando de mantenimiento.
+        </p>
+      )}
+
       <div className={styles.metrics}>
-        <MetricCard label="Efectivo disponible" valor={efectivo}      variant="default" delay={0}   />
+        <EfectivoMetricCard label="Efectivo disponible" valor={efectivo} desglose={efectivoDesglose} delay={0} />
         <MetricCard label="Deuda tarjetas"       valor={deudaTc}       variant="danger"  delay={80}  />
-        <MetricCard label="Saldo proyectado"     valor={saldo}         variant="dark"    delay={160} />
+        <SaldoProyectadoCard
+          label="Saldo proyectado"
+          saldo={saldo}
+          esActual={esActual}
+          efectivo={efectivo}
+          deudaTc={deudaTc}
+          compensacion={compensacionEstimada}
+          netoFamiliarComun={toPesos(compensacionData?.neto_familiar_comun)}
+          netoComunUsuario={saldoCompensacionDetalle.netoComunUsuario}
+          esperadoProrrateo={saldoCompensacionDetalle.esperadoProrrateo}
+          miembros={compensacionData?.miembros ?? []}
+          sueldosDigitos={sueldosDigitos}
+          onSueldoChange={(usuarioId, soloDigitos) => {
+            setSueldosDirty(true)
+            setSueldosDigitos((prev) => ({ ...prev, [usuarioId]: soloDigitos }))
+          }}
+          errorCompensacion={errorCompensacion}
+          delay={160}
+        />
       </div>
 
       {deudaTc > 0 && (

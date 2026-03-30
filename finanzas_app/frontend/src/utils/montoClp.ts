@@ -26,3 +26,16 @@ export function montoClpANumero(soloDigitos: string): number {
   if (d === '') return 0
   return parseInt(d, 10) || 0
 }
+
+/**
+ * Suma de `contribucionSaldo` (egreso positivo, ingreso negativo, sin TC en el neto).
+ * Devuelve texto con − si predomina egreso y + si predomina ingreso.
+ */
+export function formatMontoNetoContribucion(
+  sumaInterna: number,
+  formatMonto: (n: number) => string,
+): string {
+  if (sumaInterna === 0) return formatMonto(0)
+  if (sumaInterna > 0) return `-${formatMonto(sumaInterna)}`
+  return `+${formatMonto(-sumaInterna)}`
+}

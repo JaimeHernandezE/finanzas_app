@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useCategorias } from '@/hooks/useCatalogos'
@@ -20,6 +20,10 @@ const GRUPOS = [
     items: [
       { icon: '▤', label: 'Categorías', to: '/configuracion/categorias' as const },
       { icon: '◫', label: 'Cuentas personales', to: '/configuracion/cuentas' as const },
+      { icon: '⇪', label: 'Importar cuenta personal', to: '/configuracion/importar-cuenta-personal' as const },
+      { icon: '⇪', label: 'Importar honorarios', to: '/configuracion/importar-honorarios' as const },
+      { icon: '⇪', label: 'Importar sueldos', to: '/configuracion/importar-sueldos' as const },
+      { icon: '⇪', label: 'Importar gastos comunes', to: '/configuracion/importar-gastos-comunes' as const },
     ],
   },
   {
@@ -79,12 +83,47 @@ export default function ConfiguracionPage() {
   } = useApi(() => finanzasApi.getCuentasPersonales(), [])
   const nC =
     cuentasRaw !== null && cuentasRaw !== undefined ? cuentasRaw.length : undefined
+  const [recalculando, setRecalculando] = useState(false)
+  const [msgRecalculo, setMsgRecalculo] = useState<string | null>(null)
+  const [errRecalculo, setErrRecalculo] = useState<string | null>(null)
+
+  const ejecutarRecalculoHistorico = async () => {
+    if (recalculando) return
+    setRecalculando(true)
+    setMsgRecalculo(null)
+    setErrRecalculo(null)
+    try {
+      const { data } = await finanzasApi.recalcularHistorico()
+      if (!data.procesado) {
+        setMsgRecalculo(data.detalle ?? 'No hay datos para recalcular.')
+      } else {
+        const nRh = data.meses_resumen_historico_familia
+        const nSu = data.meses_saldos_personales_usuario
+        const extra =
+          nRh != null || nSu != null
+            ? ` Resumen familiar: ${nRh ?? '—'} meses; tus cuentas personales: ${nSu ?? '—'} meses.`
+            : ''
+        setMsgRecalculo(
+          `Recálculo histórico completado (${data.desde ?? 'inicio'} → ${data.hasta ?? 'hoy'}).${extra}`
+        )
+      }
+    } catch (e: any) {
+      const backendError = e?.response?.data?.error
+      setErrRecalculo(backendError ?? 'No se pudo ejecutar el recálculo histórico.')
+    } finally {
+      setRecalculando(false)
+    }
+  }
 
   const resumenPorRuta = useMemo(
     () => ({
       '/configuracion/categorias': textoCategorias(loadCats, errCats, nCats),
       '/configuracion/miembros': textoMiembros(loadM, errM, nM),
       '/configuracion/cuentas': textoCuentas(loadC, errC, nC),
+      '/configuracion/importar-cuenta-personal': 'CSV',
+      '/configuracion/importar-honorarios': 'CSV',
+      '/configuracion/importar-sueldos': 'CSV',
+      '/configuracion/importar-gastos-comunes': 'CSV',
     }),
     [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC]
   )
@@ -118,6 +157,29 @@ export default function ConfiguracionPage() {
           </ul>
         </section>
       ))}
+
+      <section className={styles.section}>
+        <h2 className={styles.groupHeader}>MANTENIMIENTO</h2>
+        <div className={styles.accionBox}>
+          <div className={styles.accionInfo}>
+            <h3 className={styles.accionTitulo}>Recálculo histórico mensual</h3>
+            <p className={styles.accionTexto}>
+              Actualiza liquidación común, saldos por cuenta de la familia, snapshots del resumen familiar
+              por mes y vuelve a generar los saldos mensuales de tus cuentas personales.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={styles.accionBtn}
+            onClick={ejecutarRecalculoHistorico}
+            disabled={recalculando}
+          >
+            {recalculando ? 'Recalculando...' : 'Recalcular histórico'}
+          </button>
+        </div>
+        {msgRecalculo ? <p className={styles.msgOk}>{msgRecalculo}</p> : null}
+        {errRecalculo ? <p className={styles.msgErr}>{errRecalculo}</p> : null}
+      </section>
     </div>
   )
 }

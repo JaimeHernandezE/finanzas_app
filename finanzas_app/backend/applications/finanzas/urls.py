@@ -54,4 +54,48 @@ urlpatterns = [
 
     # Liquidación
     path('liquidacion/', views.liquidacion, name='liquidacion'),
+    path('resumen-historico/', views.resumen_historico, name='resumen-historico'),
+
+    # Snapshots / recálculo
+    path('saldo-mensual/', views.saldo_mensual, name='saldo-mensual'),
+    path(
+        'cuenta-resumen-mensual/',
+        views.cuenta_resumen_mensual,
+        name='cuenta-resumen-mensual',
+    ),
+    path('efectivo-disponible/', views.efectivo_disponible, name='efectivo-disponible'),
+    path(
+        'compensacion-proyectada/',
+        views.compensacion_proyectada_datos,
+        name='compensacion-proyectada',
+    ),
+    path(
+        'sueldos-estimados-prorrateo/',
+        views.sueldos_estimados_prorrateo,
+        name='sueldos-estimados-prorrateo',
+    ),
+    path('recalculo/estado/', views.recalculo_estado, name='recalculo-estado'),
+    path('recalculo/historico/', views.recalculo_historico, name='recalculo-historico'),
+
+    # Importación de planillas
+    path(
+        'importaciones/cuenta-personal/',
+        views.importar_cuenta_personal_planilla,
+        name='importar-cuenta-personal-planilla',
+    ),
+    path(
+        'importaciones/honorarios/',
+        views.importar_honorarios_planilla,
+        name='importar-honorarios-planilla',
+    ),
+    path(
+        'importaciones/sueldos/',
+        views.importar_sueldos_planilla,
+        name='importar-sueldos-planilla',
+    ),
+    path(
+        'importaciones/gastos-comunes/',
+        views.importar_gastos_comunes_planilla,
+        name='importar-gastos-comunes-planilla',
+    ),
 ]

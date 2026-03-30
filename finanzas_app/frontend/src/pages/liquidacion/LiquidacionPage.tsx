@@ -189,6 +189,8 @@ export default function LiquidacionPage() {
   if (error) return <ErrorCarga mensaje={error} />
   if (!data) return null
 
+  const recalculoPendiente = !!(liquidacionData as { recalculo?: { pendiente?: boolean } })?.recalculo?.pendiente
+
   return (
     <div className={styles.page}>
 
@@ -207,6 +209,12 @@ export default function LiquidacionPage() {
           </button>
         </div>
       </div>
+
+      {recalculoPendiente && (
+        <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 16 }}>
+          Hay recálculo de histórico pendiente; si los totales no coinciden, ejecuta el comando de mantenimiento en el servidor.
+        </p>
+      )}
 
       {/* ── Sueldos declarados ── */}
       <SeccionCard titulo="Sueldos declarados">

@@ -138,6 +138,9 @@ class MovimientoListSerializer(serializers.ModelSerializer):
     para evitar N+1 queries en listas largas.
     """
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
+    categoria_es_inversion = serializers.BooleanField(
+        source='categoria.es_inversion', read_only=True
+    )
     metodo_pago_tipo = serializers.CharField(source='metodo_pago.tipo', read_only=True)
     tarjeta_nombre = serializers.CharField(
         source='tarjeta.nombre', read_only=True, allow_null=True
@@ -154,7 +157,7 @@ class MovimientoListSerializer(serializers.ModelSerializer):
             'id', 'fecha', 'tipo', 'ambito', 'monto', 'comentario',
             'usuario',
             'cuenta', 'cuenta_nombre',
-            'categoria', 'categoria_nombre',
+            'categoria', 'categoria_nombre', 'categoria_es_inversion',
             'metodo_pago', 'metodo_pago_tipo',
             'tarjeta', 'tarjeta_nombre',
             'autor_nombre', 'oculto', 'ingreso_comun',
@@ -212,9 +215,28 @@ class IngresoComunSerializer(serializers.ModelSerializer):
     class Meta:
         model = IngresoComun
         fields = [
-            'id', 'mes', 'monto', 'origen', 'usuario', 'autor_nombre', 'movimiento',
+            'id', 'mes', 'fecha_pago', 'monto', 'origen', 'usuario', 'autor_nombre', 'movimiento',
         ]
         read_only_fields = ['usuario', 'familia', 'movimiento']
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        mes = attrs.get('mes')
+        fecha_pago = attrs.get('fecha_pago')
+
+        if fecha_pago is None and self.instance is not None:
+            fecha_pago = self.instance.fecha_pago
+        if mes is None and self.instance is not None:
+            mes = self.instance.mes
+
+        # Si viene fecha real de pago, el mes se normaliza automáticamente
+        # al primer día de ese mismo mes para mantener coherencia.
+        if fecha_pago:
+            attrs['mes'] = date(fecha_pago.year, fecha_pago.month, 1)
+        elif mes:
+            attrs['fecha_pago'] = mes
+
+        return attrs
 
 
 class PresupuestoSerializer(serializers.ModelSerializer):

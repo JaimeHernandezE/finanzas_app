@@ -115,15 +115,11 @@ export default function CategoriasPage() {
     const c = categorias.find((x) => x.id === editingId)
     if (!c) return
     try {
-      if (c.ambito === 'GLOBAL') {
-        await catalogosApi.updateCategoria(Number(editingId), { nombre: editNombre })
-      } else {
-        await catalogosApi.updateCategoria(Number(editingId), {
-          nombre: editNombre,
-          tipo: editTipo,
-          es_inversion: editEsInversion,
-        })
-      }
+      await catalogosApi.updateCategoria(Number(editingId), {
+        nombre: editNombre,
+        tipo: editTipo,
+        es_inversion: editEsInversion,
+      })
       setEditingId(null)
       refetch()
     } catch {
@@ -138,9 +134,16 @@ export default function CategoriasPage() {
   }
 
   const confirmDelete = async (id: string) => {
-    await catalogosApi.deleteCategoria(Number(id))
-    setDeletingId(null)
-    refetch()
+    try {
+      await catalogosApi.deleteCategoria(Number(id))
+      refetch()
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { error?: string } } }
+      const msg = ax.response?.data?.error ?? 'No se pudo eliminar la categoría.'
+      window.alert(msg)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const cancelDelete = () => setDeletingId(null)
@@ -169,7 +172,6 @@ export default function CategoriasPage() {
   }
 
   const renderFila = (c: Categoria) => {
-    const isGlobal = c.ambito === 'GLOBAL'
     const isEditing = editingId === c.id
     const isDeleting = deletingId === c.id
 
@@ -194,26 +196,22 @@ export default function CategoriasPage() {
             value={editNombre}
             onChange={(e) => setEditNombre(e.target.value)}
           />
-          {!isGlobal && (
-            <>
-              <select
-                className={styles.selectTipo}
-                value={editTipo}
-                onChange={(e) => setEditTipo(e.target.value as 'INGRESO' | 'EGRESO')}
-              >
-                <option value="EGRESO">Egreso</option>
-                <option value="INGRESO">Ingreso</option>
-              </select>
-              <label className={styles.checkLabel}>
-                <input
-                  type="checkbox"
-                  checked={editEsInversion}
-                  onChange={(e) => setEditEsInversion(e.target.checked)}
-                />
-                inversión
-              </label>
-            </>
-          )}
+          <select
+            className={styles.selectTipo}
+            value={editTipo}
+            onChange={(e) => setEditTipo(e.target.value as 'INGRESO' | 'EGRESO')}
+          >
+            <option value="EGRESO">Egreso</option>
+            <option value="INGRESO">Ingreso</option>
+          </select>
+          <label className={styles.checkLabel}>
+            <input
+              type="checkbox"
+              checked={editEsInversion}
+              onChange={(e) => setEditEsInversion(e.target.checked)}
+            />
+            inversión
+          </label>
           <button type="button" className={styles.btnOk} onClick={saveEdit} title="Guardar">✓</button>
           <button type="button" className={styles.btnCancel} onClick={cancelEdit} title="Cancelar">✕</button>
         </div>
@@ -229,9 +227,7 @@ export default function CategoriasPage() {
         <span className={styles.filaTipo}>{c.tipo === 'EGRESO' ? 'Egreso' : 'Ingreso'}</span>
         <div className={styles.filaActions}>
           <button type="button" className={styles.btnEdit} onClick={() => startEdit(c)} title="Editar">✎</button>
-          {!isGlobal && (
-            <button type="button" className={styles.btnDelete} onClick={() => startDelete(c.id)} title="Eliminar">🗑</button>
-          )}
+          <button type="button" className={styles.btnDelete} onClick={() => startDelete(c.id)} title="Eliminar">🗑</button>
         </div>
       </div>
     )

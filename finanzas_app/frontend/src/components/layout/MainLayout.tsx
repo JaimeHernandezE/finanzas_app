@@ -19,6 +19,7 @@ interface CuentaNav {
 }
 
 const FAMILIA_FIJOS = [
+  { icon: '⊞', label: 'Resumen', to: '/familia/resumen' },
   { icon: '₪', label: 'Sueldos', to: '/sueldos' },
 ] as const
 

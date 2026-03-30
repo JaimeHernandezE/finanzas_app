@@ -111,6 +111,19 @@ class TestCategoriasEdicion:
         )
         assert res.status_code == 200
 
+    def test_editar_categoria_global_es_inversion(
+        self, client, auth_header, categoria_global
+    ):
+        """Puede marcar es_inversion en una categoría global."""
+        res = client.put(
+            f'/api/finanzas/categorias/{categoria_global.id}/',
+            data={'nombre': categoria_global.nombre, 'es_inversion': True},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        assert res.json()['es_inversion'] is True
+
     def test_no_puede_editar_categoria_de_otra_familia(
         self, client, auth_header_otra_familia, categoria_familiar
     ):
@@ -137,15 +150,15 @@ class TestCategoriasEliminacion:
         )
         assert res.status_code == 204
 
-    def test_no_puede_eliminar_categoria_global(
+    def test_eliminar_categoria_global(
         self, client, auth_header, categoria_global
     ):
-        """No puede eliminar categorías globales del sistema."""
+        """Puede eliminar una categoría global si no tiene movimientos asociados."""
         res = client.delete(
             f'/api/finanzas/categorias/{categoria_global.id}/',
             **auth_header,
         )
-        assert res.status_code == 403
+        assert res.status_code == 204
 
     def test_no_puede_eliminar_categoria_de_otra_familia(
         self, client, auth_header_otra_familia, categoria_familiar

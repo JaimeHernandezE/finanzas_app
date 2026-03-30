@@ -98,3 +98,64 @@
   color: $color-text-muted;
   flex-shrink: 0;
 }
+
+.accionBox {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  padding: $space-4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: $space-4;
+}
+
+.accionInfo {
+  min-width: 0;
+}
+
+.accionTitulo {
+  margin: 0 0 $space-1 0;
+  font-size: 15px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.accionTexto {
+  margin: 0;
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.accionBtn {
+  flex-shrink: 0;
+  border: 1px solid #dadad4;
+  background: #f7f7f5;
+  color: $color-text;
+  border-radius: $radius-base;
+  padding: $space-2 $space-3;
+  font-size: 13px;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: #efefeb;
+  }
+
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+}
+
+.msgOk {
+  margin: $space-2 0 0;
+  font-size: 13px;
+  color: #18794e;
+}
+
+.msgErr {
+  margin: $space-2 0 0;
+  font-size: 13px;
+  color: #b42318;
+}

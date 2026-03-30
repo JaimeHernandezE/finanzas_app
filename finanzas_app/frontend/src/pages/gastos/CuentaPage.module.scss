@@ -586,3 +586,128 @@
   justify-content: flex-end;
   gap: $space-3;
 }
+
+// ── Acciones encabezado (Resumen + Nuevo) ─────────────────────────────────────
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex-wrap: wrap;
+}
+
+// ── Suma total mes (misma idea que gastos comunes) ───────────────────────────
+
+.totalSuma {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: $space-3;
+  margin-bottom: $space-3;
+  padding: $space-3 $space-4;
+  background: #f7f7f5;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-lg;
+}
+
+.totalSumaLabel {
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+}
+
+.totalSumaHint {
+  font-size: 11px;
+  font-weight: 400;
+  color: $color-text-muted;
+  margin-top: 2px;
+}
+
+.totalSumaMonto {
+  font-size: 18px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+// ── Tabla resumen mensual ─────────────────────────────────────────────────────
+
+.resumenCard {
+  background: $color-bg-white;
+  border-radius: $radius-xl;
+  border: 1px solid $color-border;
+  overflow: hidden;
+}
+
+.resumenTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: $font-size-sm;
+}
+
+.resumenTh {
+  text-align: left;
+  padding: $space-2 $space-4;
+  background: $color-bg-subtle;
+  color: $color-text-muted;
+  font-weight: $font-weight-semibold;
+  font-size: $font-size-xs;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.resumenTd {
+  padding: $space-3 $space-4;
+  border-top: 1px solid $color-border;
+  color: $color-text;
+  font-variant-numeric: tabular-nums;
+}
+
+.resumenTdMes {
+  font-weight: $font-weight-medium;
+}
+
+.resumenTdPos {
+  color: #15803d;
+}
+
+.resumenTdNeg {
+  color: $color-text;
+}
+
+.resumenEmpty {
+  padding: $space-8 $space-4;
+  text-align: center;
+  color: $color-text-muted;
+  font-size: $font-size-sm;
+}
+
+.resumenRowInfo {
+  background: #f4f4f1;
+}
+
+.resumenRowInfo td {
+  border-top: none;
+  border-bottom: 1px solid $color-border;
+  font-weight: $font-weight-semibold;
+  vertical-align: top;
+}
+
+.resumenInfoLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.resumenInfoTitulo {
+  font-size: $font-size-sm;
+  color: $color-text;
+}
+
+.resumenInfoHint {
+  font-size: 11px;
+  font-weight: 400;
+  color: $color-text-muted;
+  line-height: 1.35;
+}

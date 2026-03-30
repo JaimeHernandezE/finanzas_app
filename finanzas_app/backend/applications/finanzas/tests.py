@@ -1,5 +1,6 @@
 import datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.db import IntegrityError
 from django.db.models.deletion import ProtectedError
@@ -8,8 +9,10 @@ from django.test import TestCase
 from applications.usuarios.models import Familia, Usuario
 from .models import (
     Categoria, CuentaPersonal, Cuota, IngresoComun,
-    MetodoPago, Movimiento, Presupuesto, Tarjeta,
+    MetodoPago, Movimiento, Presupuesto, ResumenHistoricoMesSnapshot,
+    Tarjeta,
 )
+from applications.finanzas import services_recalculo
 
 
 # =============================================================================
@@ -310,3 +313,57 @@ class IngresoComunMovimientoSignalTest(FinanzasTestBase):
         mid = ing.movimiento_id
         ing.delete()
         self.assertFalse(Movimiento.objects.filter(pk=mid).exists())
+
+
+class EfectivoDashboardFormulaTest(FinanzasTestBase):
+    """efectivo_disponible_dashboard: resumen + snapshots personales − prorrateo + mes actual."""
+
+    @patch('applications.finanzas.services_recalculo.timezone.localdate')
+    def test_efectivo_suma_resumen_y_snapshots_resta_prorrateo(self, mock_hoy):
+        mock_hoy.return_value = datetime.date(2026, 3, 15)
+        uid = self.usuario.pk
+        feb = datetime.date(2026, 2, 1)
+        IngresoComun.objects.create(
+            familia=self.familia,
+            usuario=self.usuario,
+            mes=feb,
+            monto=Decimal('1000000.00'),
+            origen='Sueldo',
+        )
+        payload = {
+            'mes': 2,
+            'anio': 2026,
+            'sueldos_por_usuario': [],
+            'compensacion': {
+                'por_usuario': [
+                    {
+                        'usuario_id': uid,
+                        'nombre': 'Test',
+                        'pagado_efectivo': '0.00',
+                        'gasto_prorrateado': '200000.00',
+                        'diferencia': '0.00',
+                    },
+                ],
+            },
+        }
+        ResumenHistoricoMesSnapshot.objects.create(
+            familia=self.familia,
+            mes=feb,
+            payload=payload,
+        )
+        cuenta = CuentaPersonal.objects.get(usuario=self.usuario, nombre='Personal')
+        Movimiento.objects.create(
+            familia=self.familia,
+            usuario=self.usuario,
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            cuenta=cuenta,
+            categoria=self.categoria_egreso,
+            fecha=datetime.date(2026, 2, 1),
+            monto=Decimal('50000.00'),
+            metodo_pago=self.metodo_efectivo,
+        )
+        datos = services_recalculo.efectivo_disponible_dashboard(self.usuario)
+        # A=1_000_000, B=0 (sueldo mes actual), C=-50_000 (netos cuentas), D=200_000, E marzo=0
+        esperado = Decimal('1000000.00') - Decimal('50000.00') - Decimal('200000.00')
+        self.assertEqual(datos['efectivo'], esperado)

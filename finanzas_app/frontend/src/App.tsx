@@ -11,11 +11,13 @@ import DashboardPage from '@/pages/dashboard/DashboardPage'
 import MovimientoFormPage from '@/pages/gastos/MovimientoFormPage'
 import MovimientoEditarPage from '@/pages/gastos/MovimientoEditarPage'
 import CuentaPage from '@/pages/gastos/CuentaPage'
+import CuentaResumenPage from '@/pages/gastos/CuentaResumenPage'
 import GastosComunesPage from '@/pages/gastos/GastosComunesPage'
 import TarjetasPage from '@/pages/tarjetas/TarjetasPage'
 import PagarTarjetaPage from '@/pages/tarjetas/PagarTarjetaPage'
 import LiquidacionPage from '@/pages/liquidacion/LiquidacionPage'
 import SueldosPage from '@/pages/sueldos/SueldosPage'
+import ResumenFamiliarPage from '@/pages/familia/ResumenFamiliarPage'
 import PresupuestoPage from '@/pages/presupuesto/PresupuestoPage'
 import InversionesPage from '@/pages/inversiones/InversionesPage'
 import FondoDetallePage from '@/pages/inversiones/FondoDetallePage'
@@ -28,6 +30,10 @@ import CategoriasPage from '@/pages/configuracion/CategoriasPage'
 import CuentasPage from '@/pages/configuracion/CuentasPage'
 import MiembrosPage from '@/pages/configuracion/MiembrosPage'
 import PerfilPage from '@/pages/configuracion/PerfilPage'
+import ImportadorCuentaPersonalPage from '@/pages/configuracion/ImportadorCuentaPersonalPage'
+import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorariosPage'
+import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
+import ImportadorGastosComunesPage from '@/pages/configuracion/ImportadorGastosComunesPage'
 
 const Placeholder = ({ title }: { title: string }) => (
   <div style={{ padding: '40px 32px', color: '#888' }}>
@@ -58,12 +64,14 @@ function AppRoutes() {
         <Route path="gastos">
           <Route index element={<Navigate to="/gastos/comunes" replace />} />
           <Route path="comunes" element={<GastosComunesPage />} />
+          <Route path="cuenta/:id/resumen" element={<CuentaResumenPage />} />
           <Route path="cuenta/:id" element={<CuentaPage />} />
           <Route path="nuevo" element={<MovimientoFormPage />} />
           <Route path=":id" element={<MovimientoFormPage />} />
           <Route path=":id/editar" element={<MovimientoEditarPage />} />
         </Route>
 
+        <Route path="familia/resumen" element={<ResumenFamiliarPage />} />
         <Route path="sueldos" element={<SueldosPage />} />
 
         <Route path="tarjetas">
@@ -93,6 +101,10 @@ function AppRoutes() {
           <Route path="categorias" element={<CategoriasPage />} />
           <Route path="cuentas" element={<CuentasPage />} />
           <Route path="miembros" element={<MiembrosPage />} />
+          <Route path="importar-cuenta-personal" element={<ImportadorCuentaPersonalPage />} />
+          <Route path="importar-honorarios" element={<ImportadorHonorariosPage />} />
+          <Route path="importar-sueldos" element={<ImportadorSueldosPage />} />
+          <Route path="importar-gastos-comunes" element={<ImportadorGastosComunesPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

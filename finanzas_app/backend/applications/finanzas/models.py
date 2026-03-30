@@ -373,6 +373,11 @@ class IngresoComun(models.Model):
         help_text="Miembro que reporta este ingreso. Cada uno ingresa el suyo."
     )
     mes    = models.DateField(help_text="Primer día del mes al que corresponde este ingreso.")
+    fecha_pago = models.DateField(
+        null=True,
+        blank=True,
+        help_text='Fecha real de pago del ingreso (si se conoce).',
+    )
     monto  = models.DecimalField(max_digits=12, decimal_places=2)
     origen = models.CharField(
         max_length=100,
@@ -393,3 +398,173 @@ class IngresoComun(models.Model):
 
     class Meta:
         ordering = ['-mes']
+
+
+class SaldoMensualSnapshot(models.Model):
+    """
+    Snapshot mensual por usuario/cuenta: ingresos y egresos en efectivo/débito (sin crédito)
+    y efectivo_neto = ingresos_efectivo − egresos_efectivo.
+    cuenta_id=0 representa movimientos personales sin cuenta asignada.
+    """
+    familia = models.ForeignKey(
+        'usuarios.Familia',
+        on_delete=models.CASCADE,
+        related_name='saldos_mensuales_snapshot',
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='saldos_mensuales_snapshot',
+    )
+    mes = models.DateField(help_text='Primer día del mes.')
+    cuenta_id = models.PositiveIntegerField(
+        default=0,
+        help_text='PK de CuentaPersonal o 0 si el movimiento no tiene cuenta.',
+    )
+    ingresos_efectivo = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text='Suma de ingresos en efectivo/débito (sin crédito, sin ingreso declarado fondo común/sueldo).',
+    )
+    egresos_efectivo = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        help_text='Suma de egresos corrientes en efectivo/débito (sin crédito, sin categoría inversión).',
+    )
+    efectivo_neto = models.DecimalField(max_digits=14, decimal_places=2)
+    movimientos_contados = models.PositiveIntegerField(default=0)
+    calculado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['familia', 'usuario', 'mes', 'cuenta_id'],
+                name='uniq_saldo_mensual_snapshot',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['familia', 'usuario', 'mes']),
+        ]
+
+    def __str__(self):
+        return f'Saldo {self.usuario} {self.mes:%Y-%m} c={self.cuenta_id}'
+
+
+class LiquidacionComunMensualSnapshot(models.Model):
+    """Totales agregados para liquidación común por mes y usuario."""
+    TIPO_LINEA_CHOICES = [
+        ('INGRESO_COMUN', 'Ingreso común declarado'),
+        ('GASTO_COMUN_NO_CREDITO', 'Gasto común (efectivo/débito)'),
+    ]
+
+    familia = models.ForeignKey(
+        'usuarios.Familia',
+        on_delete=models.CASCADE,
+        related_name='liquidaciones_comun_snapshot',
+    )
+    mes = models.DateField(help_text='Primer día del mes.')
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='liquidaciones_comun_snapshot',
+    )
+    tipo_linea = models.CharField(max_length=30, choices=TIPO_LINEA_CHOICES)
+    total = models.DecimalField(max_digits=14, decimal_places=2)
+    items_contados = models.PositiveIntegerField(default=0)
+    calculado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['familia', 'mes', 'usuario', 'tipo_linea'],
+                name='uniq_liquidacion_comun_mensual',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['familia', 'mes']),
+        ]
+
+    def __str__(self):
+        return f'{self.tipo_linea} {self.familia_id} {self.mes:%Y-%m} u={self.usuario_id}'
+
+
+class ResumenHistoricoMesSnapshot(models.Model):
+    """
+    Resumen familiar por mes (gasto común, sueldos, prorrateo, compensación).
+    El payload replica la estructura devuelta por la API resumen-historico por mes.
+    """
+
+    familia = models.ForeignKey(
+        'usuarios.Familia',
+        on_delete=models.CASCADE,
+        related_name='resumenes_historicos_mes',
+    )
+    mes = models.DateField(help_text='Primer día del mes.')
+    payload = models.JSONField()
+    calculado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['familia', 'mes'],
+                name='uniq_resumen_historico_mes_familia',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['familia', 'mes']),
+        ]
+
+    def __str__(self):
+        return f'Resumen histórico {self.familia_id} {self.mes:%Y-%m}'
+
+
+class SueldoEstimadoProrrateoMensual(models.Model):
+    """
+    Base de sueldos para prorrateo del saldo proyectado (misma lógica que Resumen común,
+    con proporciones editables). Un registro por usuario y mes calendario.
+    Al guardar un mes, se eliminan registros de meses anteriores de la misma familia.
+    """
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='sueldos_estimados_prorrateo_mensual',
+    )
+    mes = models.DateField(help_text='Primer día del mes al que aplica.')
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    actualizado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['usuario', 'mes'],
+                name='uniq_sueldo_estimado_prorrateo_usuario_mes',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['usuario', 'mes']),
+        ]
+
+    def __str__(self):
+        return f'Sueldo est. prorrateo u={self.usuario_id} {self.mes:%Y-%m}'
+
+
+class RecalculoPendiente(models.Model):
+    """
+    Marca que hay recálculo pendiente desde dirty_from (primer día de mes)
+    para una familia. Un solo registro por familia.
+    """
+    familia = models.OneToOneField(
+        'usuarios.Familia',
+        on_delete=models.CASCADE,
+        related_name='recalculo_pendiente',
+    )
+    dirty_from = models.DateField(
+        help_text='Recalcular snapshots desde este mes (inclusive) hasta el actual.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'Pendiente desde {self.dirty_from} — {self.familia_id}'

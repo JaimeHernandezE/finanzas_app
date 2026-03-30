@@ -2,8 +2,12 @@ import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
+import { useApi } from '@/hooks/useApi'
+import { familiaApi } from '@/api/familia'
+import { useAuth } from '@/context/AuthContext'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
+import { formatMontoNetoContribucion } from '@/utils/montoClp'
 import styles from './GastosComunesPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,7 +19,7 @@ interface MovimientoComun {
   fecha: string
   comentario: string
   categoria_nombre: string
-  monto: number
+  monto: number | string
   tipo: 'INGRESO' | 'EGRESO'
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   autor_nombre: string
@@ -56,6 +60,24 @@ const fechaGrupo = (iso: string) => {
 const hoyISO = () => {
   const h = new Date()
   return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`
+}
+
+function toMontoNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const txt = value.trim()
+    if (!txt) return 0
+    const parsed = Number(txt)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+/** Misma lógica que el subtotal por día: egreso suma salvo TC; ingreso resta. */
+function contribucionSaldo(m: MovimientoComun): number {
+  const monto = toMontoNumber(m.monto)
+  if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return 0
+  return m.tipo === 'EGRESO' ? monto : -monto
 }
 
 function groupByDate(movimientos: MovimientoComun[]): GrupoFecha[] {
@@ -114,19 +136,25 @@ function SegmentedControl({
 function FilterSidebar({
   abierto,
   categorias,
+  usuarios,
   filtrosCategorias,
   filtrosMetodos,
+  filtrosUsuarios,
   onToggleCategoria,
   onToggleMetodo,
+  onToggleUsuario,
   onClose,
   onLimpiar,
 }: {
   abierto:           boolean
   categorias:        { id: number; nombre: string }[]
+  usuarios:          { id: number; nombre: string }[]
   filtrosCategorias: string[]
   filtrosMetodos:    string[]
+  filtrosUsuarios:   number[]
   onToggleCategoria: (cat: string) => void
   onToggleMetodo:    (met: string) => void
+  onToggleUsuario:   (uid: number) => void
   onClose:           () => void
   onLimpiar:         () => void
 }) {
@@ -170,6 +198,22 @@ function FilterSidebar({
               </label>
             ))}
           </div>
+
+          {usuarios.length > 0 && (
+            <div className={styles.filterSection}>
+              <p className={styles.filterSectionLabel}>Usuario</p>
+              {usuarios.map(u => (
+                <label key={u.id} className={styles.checkItem}>
+                  <input
+                    type="checkbox"
+                    checked={filtrosUsuarios.includes(u.id)}
+                    onChange={() => onToggleUsuario(u.id)}
+                  />
+                  {u.nombre}
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className={styles.filterFooter}>
@@ -220,7 +264,7 @@ function MovimientoRow({
         }}
       >
         {esIngreso ? '+' : esCredito ? '' : '−'}
-        {formatMonto(mov.monto)}
+        {formatMonto(toMontoNumber(mov.monto))}
       </span>
 
       <span
@@ -261,17 +305,16 @@ function DateGroup({
   onDelete:  (mov: MovimientoComun) => void
 }) {
   const { formatMonto } = useConfig()
-  const subtotal = grupo.movimientos.reduce((acc, m) => {
-    if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return acc
-    return acc + (m.tipo === 'EGRESO' ? m.monto : -m.monto)
-  }, 0)
+  const subtotal = grupo.movimientos.reduce((acc, m) => acc + contribucionSaldo(m), 0)
 
   return (
     <div className={styles.grupo}>
       <div className={styles.grupoHeader}>
         <span className={styles.grupoLabel}>{grupo.label.toUpperCase()}</span>
         <span className={styles.grupoSep}> — </span>
-        <span className={styles.grupoSubtotal}>{formatMonto(subtotal)}</span>
+        <span className={styles.grupoSubtotal}>
+          {formatMontoNetoContribucion(subtotal, formatMonto)}
+        </span>
       </div>
       {grupo.movimientos.map(m => (
         <MovimientoRow
@@ -317,7 +360,7 @@ function DeleteModal({
         <h2 className={styles.modalTitulo}>Eliminar movimiento</h2>
         <p className={styles.modalTexto}>
           ¿Eliminar <strong>"{mov.comentario || '—'}"</strong> por{' '}
-          <strong>{formatMonto(mov.monto)}</strong>?
+          <strong>{formatMonto(toMontoNumber(mov.monto))}</strong>?
           <br />
           Esta acción no se puede deshacer.
         </p>
@@ -336,6 +379,8 @@ function DeleteModal({
 
 export default function GastosComunesPage() {
   const navigate = useNavigate()
+  const { formatMonto } = useConfig()
+  const { usuario: usuarioAuth } = useAuth()
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -343,11 +388,14 @@ export default function GastosComunesPage() {
   const [busqueda,          setBusqueda]          = useState('')
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos,    setFiltrosMetodos]    = useState<string[]>([])
+  const [filtrosUsuarios,   setFiltrosUsuarios]   = useState<number[]>([])
   const [sidebarAbierto,    setSidebarAbierto]    = useState(false)
   const [movimientoAEliminar, setMovimientoAEliminar] = useState<MovimientoComun | null>(null)
 
   const { data: categoriasData } = useCategorias()
   const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
+
+  const { data: miembrosRaw } = useApi(() => familiaApi.getMiembros(), [])
 
   const { movimientos, loading, error, refetch, eliminar } = useMovimientos({
     ambito: 'COMUN',
@@ -356,7 +404,34 @@ export default function GastosComunesPage() {
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
     q: busqueda || undefined,
   })
-  const movimientosTyped = (movimientos ?? []) as MovimientoComun[]
+  const movimientosTyped = useMemo(
+    () =>
+      ((movimientos ?? []) as MovimientoComun[]).map((m) => ({
+        ...m,
+        monto: toMontoNumber(m.monto),
+      })),
+    [movimientos],
+  )
+
+  const usuariosFiltro = useMemo(() => {
+    const fromApi = (miembrosRaw ?? []) as { id: number; nombre: string }[]
+    if (fromApi.length > 0) {
+      return fromApi.map(m => ({
+        id: m.id,
+        nombre: (m.nombre || '').trim().split(/\s+/)[0] || `Usuario ${m.id}`,
+      }))
+    }
+    const map = new Map<number, string>()
+    for (const m of movimientosTyped) {
+      if (m.usuario != null) {
+        const nom = (m.autor_nombre || '').trim().split(/\s+/)[0] || `Usuario ${m.usuario}`
+        map.set(m.usuario, nom)
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, nombre]) => ({ id, nombre }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+  }, [miembrosRaw, movimientosTyped])
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -370,7 +445,8 @@ export default function GastosComunesPage() {
     else setMes(m => m + 1)
   }
 
-  const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
+  const filtrosActivos =
+    filtrosCategorias.length + filtrosMetodos.length + filtrosUsuarios.length
 
   const toggleCategoria = (cat: string) =>
     setFiltrosCategorias(prev =>
@@ -382,9 +458,15 @@ export default function GastosComunesPage() {
       prev.includes(met) ? prev.filter(m => m !== met) : [...prev, met],
     )
 
+  const toggleUsuario = (uid: number) =>
+    setFiltrosUsuarios(prev =>
+      prev.includes(uid) ? prev.filter(u => u !== uid) : [...prev, uid],
+    )
+
   const limpiarFiltros = () => {
     setFiltrosCategorias([])
     setFiltrosMetodos([])
+    setFiltrosUsuarios([])
     setSidebarAbierto(false)
   }
 
@@ -402,14 +484,27 @@ export default function GastosComunesPage() {
     return movimientosTyped.filter(m => {
       if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria_nombre)) return false
       if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo_pago_tipo)) return false
+      if (filtrosUsuarios.length > 0) {
+        const uid = m.usuario
+        if (uid == null || !filtrosUsuarios.includes(uid)) return false
+      }
       return true
     })
-  }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
+  }, [movimientosTyped, filtrosCategorias, filtrosMetodos, filtrosUsuarios])
 
-  const usuarioId = null
+  /** Total neto (egresos − ingresos, sin TC en el neto) según movimientos visibles. */
+  const sumaMostrada = useMemo(
+    () => movimientosFiltrados.reduce((acc, m) => acc + contribucionSaldo(m), 0),
+    [movimientosFiltrados],
+  )
+
+  const sinFiltrosRestrictivos =
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+
+  const usuarioId = usuarioAuth?.id ?? null
 
   const grupos    = groupByDate(movimientosFiltrados)
-  const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.length > 0
+  const hayFiltros = !sinFiltrosRestrictivos
 
   if (loading) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />
@@ -460,6 +555,24 @@ export default function GastosComunesPage() {
         </button>
       </div>
 
+      <div className={styles.totalSuma}>
+        <div>
+          <div className={styles.totalSumaLabel}>
+            {sinFiltrosRestrictivos
+              ? `Total ${MESES[mes]} ${anio}`
+              : 'Total (filtros activos)'}
+          </div>
+          {!sinFiltrosRestrictivos && (
+            <div className={styles.totalSumaHint}>
+              Tipo, búsqueda o panel lateral
+            </div>
+          )}
+        </div>
+        <span className={styles.totalSumaMonto}>
+          {formatMontoNetoContribucion(sumaMostrada, formatMonto)}
+        </span>
+      </div>
+
       {/* ── Listado ── */}
       <div className={styles.lista}>
         {grupos.length === 0 ? (
@@ -481,10 +594,13 @@ export default function GastosComunesPage() {
       <FilterSidebar
         abierto={sidebarAbierto}
         categorias={categorias}
+        usuarios={usuariosFiltro}
         filtrosCategorias={filtrosCategorias}
         filtrosMetodos={filtrosMetodos}
+        filtrosUsuarios={filtrosUsuarios}
         onToggleCategoria={toggleCategoria}
         onToggleMetodo={toggleMetodo}
+        onToggleUsuario={toggleUsuario}
         onClose={() => setSidebarAbierto(false)}
         onLimpiar={limpiarFiltros}
       />

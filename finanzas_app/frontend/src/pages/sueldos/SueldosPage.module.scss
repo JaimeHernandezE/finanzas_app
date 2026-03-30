@@ -240,6 +240,14 @@
   padding: $space-1 $space-2;
 }
 
+.fechaPagoInput {
+  @include input-base;
+  height: $input-height-sm;
+  padding: $space-1 $space-2;
+  flex: 0 1 155px;
+  min-width: 140px;
+}
+
 .btnIcon {
   display: flex;
   align-items: center;

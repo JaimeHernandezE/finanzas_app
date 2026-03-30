@@ -1,0 +1,96 @@
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.backLink {
+  text-decoration: none;
+  color: $color-text-muted;
+  font-size: 13px;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  margin: $space-4 0 $space-5;
+}
+
+.card {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  padding: $space-5;
+  display: grid;
+  gap: $space-4;
+}
+
+.descripcion {
+  margin: 0;
+  color: $color-text;
+}
+
+.reglas {
+  margin: 0;
+  padding-left: 18px;
+  color: $color-text-muted;
+}
+
+.acciones {
+  display: flex;
+  gap: $space-3;
+}
+
+.btnPrimario,
+.btnSecundario {
+  border: 1px solid #e1ddd4;
+  border-radius: $radius-sm;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.btnPrimario {
+  background: #171717;
+  color: #fff;
+  border-color: #171717;
+}
+
+.btnSecundario {
+  background: #fff;
+  color: $color-text;
+}
+
+.resultadoOk,
+.resultadoError {
+  margin-top: $space-5;
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  padding: $space-4;
+}
+
+.resultadoError {
+  border-color: #e7c6c6;
+}
+
+.listaErrores {
+  margin: $space-3 0 0;
+  padding-left: 18px;
+  color: #7b2d2d;
+}

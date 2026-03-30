@@ -1,10 +1,13 @@
 # applications/finanzas/views.py
 
-from datetime import date
+import csv
+import io
+from datetime import date, datetime
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q, Sum, OuterRef, Subquery
+from django.db.models import Min, OuterRef, ProtectedError, Q, Subquery, Sum
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from dateutil.relativedelta import relativedelta
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -22,7 +25,10 @@ from .models import (
     Cuota,
     IngresoComun,
     Presupuesto,
+    RecalculoPendiente,
+    SueldoEstimadoProrrateoMensual,
 )
+from . import services_recalculo
 from .serializers import (
     CategoriaSerializer,
     CuentaPersonalSerializer,
@@ -100,8 +106,9 @@ def categorias(request):
 @permission_classes([AllowAny])
 def categoria_detalle(request, pk):
     """
-    PUT    → Edita una categoría (solo si pertenece a la familia o al usuario)
-    DELETE → Elimina una categoría (solo familiar o personal, no globales)
+    PUT    → Edita una categoría (globales, familiares o personales si aplica permiso).
+    DELETE → Elimina una categoría (incluidas globales). Falla si hay movimientos
+             u otros registros protegidos por FK.
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
@@ -126,20 +133,22 @@ def categoria_detalle(request, pk):
         )
 
     if request.method == 'DELETE':
-        if es_global:
+        try:
+            categoria.delete()
+        except ProtectedError:
             return Response(
-                {'error': 'No se pueden eliminar categorías globales.'},
-                status=status.HTTP_403_FORBIDDEN
+                {
+                    'error': 'No se puede eliminar: hay movimientos u otros registros '
+                    'asociados a esta categoría.',
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
-        categoria.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     if request.method == 'PUT':
-        if es_global:
-            data = {'nombre': request.data.get('nombre', categoria.nombre)}
-            serializer = CategoriaSerializer(categoria, data=data, partial=True)
-        else:
-            serializer = CategoriaSerializer(categoria, data=request.data, partial=True)
+        allowed_keys = {'nombre', 'tipo', 'es_inversion'}
+        data = {k: v for k, v in request.data.items() if k in allowed_keys}
+        serializer = CategoriaSerializer(categoria, data=data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
@@ -522,37 +531,27 @@ def cuotas(request):
 @permission_classes([AllowAny])
 def cuotas_deuda_pendiente(request):
     """
-    Suma del gasto personal con tarjeta de crédito del usuario autenticado
-    para el mes actual, considerando solo movimientos hasta el día de
-    facturación de cada tarjeta.
+    Suma de cuotas de tarjeta del usuario autenticado con mes de facturación
+    igual al mes calendario actual (facturación del mes en curso), pendientes
+    de pago (PENDIENTE o FACTURADO) e incluidas en el estado de cuenta.
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
 
     hoy = timezone.localdate()
-    tarjetas = Tarjeta.objects.filter(usuario=usuario).only('id', 'dia_facturacion')
-    if not tarjetas.exists():
-        return Response({'total': '0'})
+    mes_facturacion = date(hoy.year, hoy.month, 1)
 
-    total = Decimal('0')
-    base_qs = Movimiento.objects.filter(
-        usuario=usuario,
-        tipo='EGRESO',
-        ambito='PERSONAL',
-        oculto=False,
-        metodo_pago__tipo='CREDITO',
-        fecha__year=hoy.year,
-        fecha__month=hoy.month,
+    qs = Cuota.objects.filter(
+        movimiento__usuario=usuario,
+        mes_facturacion=mes_facturacion,
+        incluir=True,
+        estado__in=('PENDIENTE', 'FACTURADO'),
     )
+    if usuario.familia_id:
+        qs = qs.filter(movimiento__familia_id=usuario.familia_id)
 
-    for tarjeta in tarjetas:
-        qs_tarjeta = base_qs.filter(tarjeta_id=tarjeta.id)
-        if tarjeta.dia_facturacion:
-            qs_tarjeta = qs_tarjeta.filter(fecha__day__lte=tarjeta.dia_facturacion)
-        subtotal = qs_tarjeta.aggregate(t=Sum('monto')).get('t') or Decimal('0')
-        total += subtotal
-
+    total = qs.aggregate(t=Sum('monto'))['t'] or Decimal('0')
     return Response({'total': str(total)})
 
 
@@ -607,7 +606,12 @@ def ingresos_comunes(request):
            ?usuario=1        filtra por usuario (para ver solo los propios)
 
     POST → Crea un ingreso común para el usuario autenticado.
-           Body: { "mes": "2026-03-01", "monto": "1800000.00", "origen": "Sueldo" }
+           Body: {
+             "mes": "2026-03-01",
+             "fecha_pago": "2026-03-25",  # opcional
+             "monto": "1800000.00",
+             "origen": "Sueldo"
+           }
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
@@ -1087,48 +1091,54 @@ def liquidacion(request):
     mes = int(mes)
     anio = int(anio)
 
-    ingresos_qs = IngresoComun.objects.filter(
-        familia=usuario.familia,
-        mes__month=mes,
-        mes__year=anio,
-    ).values(
-        'usuario__id',
-        'usuario__first_name',
-    ).annotate(
-        total=Sum('monto')
-    ).order_by('usuario__first_name')
+    snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
+        usuario.familia_id, mes, anio
+    )
+    if snap is not None:
+        ingresos, gastos_comunes = snap
+    else:
+        ingresos_qs = IngresoComun.objects.filter(
+            familia=usuario.familia,
+            mes__month=mes,
+            mes__year=anio,
+        ).values(
+            'usuario__id',
+            'usuario__first_name',
+        ).annotate(
+            total=Sum('monto')
+        ).order_by('usuario__first_name')
 
-    ingresos = [
-        {
-            'usuario_id': i['usuario__id'],
-            'nombre': i['usuario__first_name'],
-            'total': str(i['total']),
-        }
-        for i in ingresos_qs
-    ]
+        ingresos = [
+            {
+                'usuario_id': i['usuario__id'],
+                'nombre': i['usuario__first_name'],
+                'total': str(i['total']),
+            }
+            for i in ingresos_qs
+        ]
 
-    gastos_qs = Movimiento.objects.filter(
-        familia=usuario.familia,
-        ambito='COMUN',
-        tipo='EGRESO',
-        fecha__month=mes,
-        fecha__year=anio,
-        oculto=False,
-    ).exclude(metodo_pago__tipo='CREDITO').values(
-        'usuario__id',
-        'usuario__first_name',
-    ).annotate(
-        total=Sum('monto')
-    ).order_by('usuario__first_name')
+        gastos_qs = Movimiento.objects.filter(
+            familia=usuario.familia,
+            ambito='COMUN',
+            tipo='EGRESO',
+            fecha__month=mes,
+            fecha__year=anio,
+            oculto=False,
+        ).exclude(metodo_pago__tipo='CREDITO').values(
+            'usuario__id',
+            'usuario__first_name',
+        ).annotate(
+            total=Sum('monto')
+        ).order_by('usuario__first_name')
 
-    gastos_comunes = [
-        {
-            'usuario_id': g['usuario__id'],
-            'nombre': g['usuario__first_name'],
-            'total': str(g['total']),
-        }
-        for g in gastos_qs
-    ]
+        gastos_comunes = [
+            {
+                'usuario_id': g['usuario__id'],
+                'nombre': g['usuario__first_name'],
+                'total': str(g['total']),
+            }
+            for g in gastos_qs
+        ]
 
     return Response({
         'periodo': {
@@ -1137,4 +1147,1409 @@ def liquidacion(request):
         },
         'ingresos': ingresos,
         'gastos_comunes': gastos_comunes,
+        'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
     })
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def resumen_historico(request):
+    """
+    Resumen mensual histórico de la familia (neto común, sueldos, prorrateo, compensación).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response(
+            {
+                'meses': [],
+                'recalculo': {'pendiente': False, 'dirty_from': None},
+            }
+        )
+    meses = services_recalculo.resumen_historico_familia(usuario.familia_id)
+    return Response(
+        {
+            'meses': meses,
+            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+        }
+    )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def saldo_mensual(request):
+    """
+    GET ?mes=3&anio=2026
+    Efectivo neto (no crédito) por cuenta personal del usuario, desde snapshot o cálculo en vivo.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    mes = request.GET.get('mes')
+    anio = request.GET.get('anio')
+    if not mes or not anio:
+        return Response(
+            {'error': 'Los parámetros mes y anio son obligatorios.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        mes = int(mes)
+        anio = int(anio)
+    except ValueError:
+        return Response(
+            {'error': 'mes y anio deben ser numéricos.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not usuario.familia_id:
+        return Response(
+            {
+                'mes': mes,
+                'anio': anio,
+                'cuentas': [],
+                'recalculo': {'pendiente': False, 'dirty_from': None},
+            }
+        )
+
+    cuentas = services_recalculo.saldo_efectivo_cuentas_desde_snapshot(
+        usuario, usuario.familia_id, mes, anio
+    )
+    if cuentas is None:
+        cuentas = services_recalculo.efectivo_por_cuenta_live(
+            usuario, usuario.familia_id, mes, anio
+        )
+
+    return Response(
+        {
+            'mes': mes,
+            'anio': anio,
+            'cuentas': cuentas,
+            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+        }
+    )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def cuenta_resumen_mensual(request):
+    """
+    GET ?cuenta=ID
+    Resumen por mes calendario de una cuenta personal (ingresos/egresos efectivo-débito, neto).
+    Solo cuentas visibles para el usuario (propias o tuteladas).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    raw = request.GET.get('cuenta')
+    if not raw:
+        return Response(
+            {'error': 'El parámetro cuenta es obligatorio.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        cuenta_id = int(raw)
+    except ValueError:
+        return Response(
+            {'error': 'cuenta debe ser numérico.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        cuenta = CuentaPersonal.objects.get(pk=cuenta_id)
+    except CuentaPersonal.DoesNotExist:
+        return Response(
+            {'error': 'Cuenta no encontrada.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    visibles = usuario.cuentas_visibles()
+    if not visibles.filter(pk=cuenta.pk).exists():
+        return Response(
+            {'error': 'Sin permisos para acceder a esta cuenta.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if not usuario.familia_id:
+        return Response(
+            {
+                'cuenta': {'id': cuenta.pk, 'nombre': cuenta.nombre},
+                'meses': [],
+                'recalculo': {'pendiente': False, 'dirty_from': None},
+            }
+        )
+
+    meses = services_recalculo.resumen_cuenta_personal_mensual(
+        usuario.familia_id, cuenta_id
+    )
+    return Response(
+        {
+            'cuenta': {'id': cuenta.pk, 'nombre': cuenta.nombre},
+            'meses': meses,
+            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+        }
+    )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def efectivo_disponible(request):
+    """
+    Efectivo del dashboard: ver services_recalculo.efectivo_disponible_dashboard
+    (desglose A–E en campo desglose).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    datos = services_recalculo.efectivo_disponible_dashboard(usuario)
+    recalculo = (
+        services_recalculo.get_recalculo_estado(usuario.familia_id)
+        if usuario.familia_id
+        else {'pendiente': False, 'dirty_from': None}
+    )
+    desglose = datos['desglose']
+    return Response(
+        {
+            'efectivo': str(datos['efectivo']),
+            'personal_historico': str(datos['personal_historico']),
+            'comun_movimientos_historico': str(datos['comun_movimientos_historico']),
+            'prorrateo_gastos_comunes_acumulado': str(datos['prorrateo_gastos_comunes_acumulado']),
+            'desglose': {k: str(v) for k, v in desglose.items()},
+            'recalculo': recalculo,
+        }
+    )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def compensacion_proyectada_datos(request):
+    """
+    GET ?mes=3&anio=2026
+    Neto familiar COMÚN y neto/ingreso declarado por miembro (para saldo proyectado con prorrateo estimado).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'Usuario sin familia asociada.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    mes = request.GET.get('mes')
+    anio = request.GET.get('anio')
+    if not mes or not anio:
+        return Response(
+            {'error': 'Los parámetros mes y anio son obligatorios.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    datos = services_recalculo.datos_compensacion_proyectada(usuario, int(mes), int(anio))
+    if datos is None:
+        return Response({'error': 'Sin datos.'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(datos)
+
+
+def _primer_dia_mes_param(mes: int, anio: int) -> date:
+    return date(anio, mes, 1)
+
+
+@api_view(['GET', 'PUT'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def sueldos_estimados_prorrateo(request):
+    """
+    GET ?mes=&anio= — Montos guardados por usuario para el mes (primer día).
+    PUT { "montos": { "<usuario_id>": "12345.67", ... } } — Guarda y elimina
+    registros de meses anteriores de la misma familia.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'Usuario sin familia asociada.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    mes_q = request.query_params.get('mes')
+    anio_q = request.query_params.get('anio')
+    if not mes_q or not anio_q:
+        return Response(
+            {'error': 'Los parámetros mes y anio son obligatorios.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        mes_i = int(mes_q)
+        anio_i = int(anio_q)
+    except (TypeError, ValueError):
+        return Response(
+            {'error': 'mes y anio deben ser enteros.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    primer = _primer_dia_mes_param(mes_i, anio_i)
+    User = get_user_model()
+    miembros_ids = list(
+        User.objects.filter(familia_id=usuario.familia_id).values_list('pk', flat=True)
+    )
+    if not miembros_ids:
+        return Response({'mes': mes_i, 'anio': anio_i, 'montos': {}}, status=status.HTTP_200_OK)
+
+    if request.method == 'GET':
+        rows = SueldoEstimadoProrrateoMensual.objects.filter(
+            usuario_id__in=miembros_ids,
+            mes=primer,
+        ).values('usuario_id', 'monto')
+        montos = {str(r['usuario_id']): str(r['monto']) for r in rows}
+        return Response({'mes': mes_i, 'anio': anio_i, 'montos': montos})
+
+    if request.method == 'PUT':
+        raw = request.data.get('montos')
+        if not isinstance(raw, dict):
+            return Response(
+                {'error': 'Se esperaba un objeto {"montos": { "id": "monto", ... }}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        miembros_set = set(miembros_ids)
+        to_save: list[tuple[int, Decimal]] = []
+        for k, v in raw.items():
+            try:
+                uid = int(k)
+            except (TypeError, ValueError):
+                return Response(
+                    {'error': f'Clave de usuario inválida: {k!r}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if uid not in miembros_set:
+                return Response(
+                    {'error': f'El usuario {uid} no pertenece a la familia.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                dec = Decimal(str(v))
+            except Exception:
+                return Response(
+                    {'error': f'Monto inválido para usuario {uid}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if dec < 0:
+                return Response(
+                    {'error': f'El monto no puede ser negativo (usuario {uid}).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if dec.as_tuple().exponent < -2:
+                return Response(
+                    {'error': f'Máximo 2 decimales (usuario {uid}).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            to_save.append((uid, dec.quantize(Decimal('0.01'))))
+
+        with transaction.atomic():
+            for uid, monto in to_save:
+                SueldoEstimadoProrrateoMensual.objects.update_or_create(
+                    usuario_id=uid,
+                    mes=primer,
+                    defaults={'monto': monto},
+                )
+            SueldoEstimadoProrrateoMensual.objects.filter(
+                usuario__familia_id=usuario.familia_id,
+                mes__lt=primer,
+            ).delete()
+
+        rows = SueldoEstimadoProrrateoMensual.objects.filter(
+            usuario_id__in=miembros_ids,
+            mes=primer,
+        ).values('usuario_id', 'monto')
+        montos = {str(r['usuario_id']): str(r['monto']) for r in rows}
+        return Response({'mes': mes_i, 'anio': anio_i, 'montos': montos})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def recalculo_estado(request):
+    """GET estado de recálculo pendiente (snapshots históricos)."""
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response({'pendiente': False, 'dirty_from': None})
+    return Response(services_recalculo.get_recalculo_estado(usuario.familia_id))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def recalculo_historico(request):
+    """
+    Recalcula snapshots históricos de la familia:
+    - Liquidación común y saldos personales (todos los miembros) desde el primer mes con datos
+      hasta el mes actual.
+    - Snapshots de resumen histórico familiar por mes (backfill_resumen_historico_snapshots).
+    - Refuerzo explícito de saldos mensuales por cuenta solo del usuario autenticado
+      (backfill_saldos_personales_usuario).
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'El usuario no pertenece a una familia.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    familia_id = usuario.familia_id
+    min_mov = Movimiento.objects.filter(familia_id=familia_id).aggregate(
+        m=Min('fecha')
+    )['m']
+    min_ing = IngresoComun.objects.filter(familia_id=familia_id).aggregate(
+        m=Min('mes')
+    )['m']
+
+    candidatos = [d for d in (min_mov, min_ing) if d is not None]
+    if not candidatos:
+        return Response(
+            {
+                'ok': True,
+                'procesado': False,
+                'detalle': 'No hay datos históricos para recalcular.',
+            }
+        )
+
+    mes_inicio = services_recalculo.primer_dia_mes(min(candidatos))
+    services_recalculo.recalcular_familia_desde(familia_id, mes_inicio)
+    meses_resumen_familia = services_recalculo.backfill_resumen_historico_snapshots(
+        familia_id
+    )
+    meses_saldos_usuario = services_recalculo.backfill_saldos_personales_usuario(
+        usuario.pk, familia_id
+    )
+    RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
+
+    return Response(
+        {
+            'ok': True,
+            'procesado': True,
+            'desde': mes_inicio.isoformat(),
+            'hasta': services_recalculo.primer_dia_mes(timezone.localdate()).isoformat(),
+            'meses_resumen_historico_familia': meses_resumen_familia,
+            'meses_saldos_personales_usuario': meses_saldos_usuario,
+        }
+    )
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def importar_cuenta_personal_planilla(request):
+    """
+    Importa movimientos desde una planilla CSV para la cuenta Personal.
+
+    Cada importación real sustituye los movimientos de efectivo en esa cuenta (no se
+    borran movimientos vinculados a ingresos comunes declarados ni otros métodos de pago).
+
+    Encabezados esperados:
+      - Fecha (obligatorio)
+      - Mes/año (ignorado)
+      - Categoría
+      - Monto
+      - Descripción
+      - ID gasto (ignorado)
+
+    Reglas:
+      - Si una categoría no existe, se crea como categoría personal.
+      - Si el monto es negativo, se crea movimiento INGRESO en categoría "Otros".
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        return Response(
+            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+
+    try:
+        contenido = archivo.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return Response(
+            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stream = io.StringIO(contenido)
+    try:
+        sample = stream.read(4096)
+        stream.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(stream, dialect=dialect)
+
+    if not reader.fieldnames:
+        return Response(
+            {'error': 'La planilla no tiene encabezados.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
+    if 'fecha' not in normalizados or 'monto' not in normalizados:
+        return Response(
+            {'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+    if not metodo_efectivo:
+        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+    cuenta_personal, _ = CuentaPersonal.objects.get_or_create(
+        usuario=usuario,
+        nombre='Personal',
+        defaults={'descripcion': 'Cuenta por defecto para finanzas personales y efectivo.'},
+    )
+
+    categoria_otros, _ = Categoria.objects.get_or_create(
+        familia=usuario.familia,
+        usuario=usuario,
+        nombre='Otros',
+        tipo='INGRESO',
+        defaults={'es_inversion': False},
+    )
+
+    creados = 0
+    categorias_creadas = 0
+    errores = []
+    meses_importados = set()
+
+    vinculados_ingreso_comun = IngresoComun.objects.filter(
+        familia_id=usuario.familia_id,
+        usuario_id=usuario.pk,
+        movimiento_id__isnull=False,
+    ).values_list('movimiento_id', flat=True)
+
+    with transaction.atomic():
+        qs_borrar = Movimiento.objects.filter(
+            familia_id=usuario.familia_id,
+            usuario_id=usuario.pk,
+            cuenta_id=cuenta_personal.pk,
+            ambito='PERSONAL',
+            metodo_pago__tipo='EFECTIVO',
+        ).exclude(pk__in=vinculados_ingreso_comun)
+        movimientos_anteriores_eliminados = qs_borrar.count()
+        qs_borrar.delete()
+
+        for fila_idx, fila in enumerate(reader, start=2):
+            fila = _reparar_fila_colapsada(fila)
+            # Ignorar filas completamente vacías en la planilla.
+            if _fila_vacia(fila):
+                continue
+            try:
+                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+                monto_raw = _obtener_columna(fila, 'monto')
+                monto = _parsear_monto_importacion(monto_raw)
+                descripcion = _obtener_columna(fila, 'descripcion') or ''
+                categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
+
+                if monto < 0:
+                    tipo = 'INGRESO'
+                    categoria = categoria_otros
+                    monto_final = abs(monto)
+                else:
+                    tipo = 'EGRESO'
+                    categoria, creada = Categoria.objects.get_or_create(
+                        familia=usuario.familia,
+                        usuario=usuario,
+                        nombre=categoria_txt,
+                        tipo='EGRESO',
+                        defaults={'es_inversion': False},
+                    )
+                    if creada:
+                        categorias_creadas += 1
+                    monto_final = monto
+
+                Movimiento.objects.create(
+                    familia=usuario.familia,
+                    usuario=usuario,
+                    cuenta=cuenta_personal,
+                    tipo=tipo,
+                    ambito='PERSONAL',
+                    categoria=categoria,
+                    fecha=fecha,
+                    monto=monto_final,
+                    comentario=descripcion,
+                    metodo_pago=metodo_efectivo,
+                )
+                creados += 1
+            except ValueError as exc:
+                errores.append(f'Fila {fila_idx}: {exc}')
+
+        if dry_run:
+            transaction.set_rollback(True)
+
+    if errores:
+        return Response(
+            {
+                'error': 'La importación contiene filas inválidas.',
+                'errores': errores,
+                'movimientos_validos': creados,
+                'categorias_personales_creadas': categorias_creadas,
+                'dry_run': dry_run,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not dry_run and creados and meses_importados and usuario.familia_id:
+        services_recalculo.recalcular_familia_desde(
+            usuario.familia_id, min(meses_importados)
+        )
+        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+
+    return Response(
+        {
+            'ok': True,
+            'dry_run': dry_run,
+            'movimientos_creados': creados,
+            'movimientos_anteriores_eliminados': movimientos_anteriores_eliminados,
+            'categorias_personales_creadas': categorias_creadas,
+            'cuenta_objetivo': cuenta_personal.nombre,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def importar_honorarios_planilla(request):
+    """
+    Importa movimientos para la cuenta personal Honorarios.
+
+    Encabezados esperados:
+      - Fecha
+      - Mes/año (opcional)
+      - Gasto
+      - Ingreso
+      - Entrada (ignorado)
+      - Valor (monto real)
+      - Monto (ignorado)
+      - Descripción
+      - ID entrada (ignorado)
+
+    Reglas:
+      - Si Gasto tiene contenido -> EGRESO.
+      - Si Ingreso tiene contenido -> INGRESO.
+      - El monto siempre se toma desde columna Valor.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        return Response(
+            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+
+    try:
+        contenido = archivo.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return Response(
+            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stream = io.StringIO(contenido)
+    try:
+        sample = stream.read(4096)
+        stream.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(stream, dialect=dialect)
+
+    if not reader.fieldnames:
+        return Response(
+            {'error': 'La planilla no tiene encabezados.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
+    obligatorios = {'fecha', 'gasto', 'ingreso', 'valor'}
+    faltantes = [h for h in obligatorios if h not in normalizados]
+    if faltantes:
+        return Response(
+            {'error': f'Faltan encabezados obligatorios: {", ".join(sorted(faltantes))}.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+    if not metodo_efectivo:
+        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+    cuenta_honorarios, _ = CuentaPersonal.objects.get_or_create(
+        usuario=usuario,
+        nombre='Honorarios',
+        defaults={'descripcion': 'Cuenta para movimientos importados desde planilla de honorarios.'},
+    )
+
+    categoria_ingreso_default, _ = Categoria.objects.get_or_create(
+        familia=usuario.familia,
+        usuario=usuario,
+        nombre='Otros',
+        tipo='INGRESO',
+        defaults={'es_inversion': False},
+    )
+
+    creados = 0
+    categorias_creadas = 0
+    errores = []
+    meses_importados = set()
+
+    with transaction.atomic():
+        for fila_idx, fila in enumerate(reader, start=2):
+            fila = _reparar_fila_colapsada_honorarios(fila)
+            if _fila_vacia(fila):
+                continue
+            try:
+                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+
+                valor_txt = _obtener_columna(fila, 'valor')
+                monto = _parsear_monto_importacion(valor_txt)
+                monto_final = abs(monto)
+
+                gasto_txt = _obtener_columna(fila, 'gasto')
+                ingreso_txt = _obtener_columna(fila, 'ingreso')
+                descripcion = _obtener_columna(fila, 'descripcion') or ''
+
+                if bool(gasto_txt) == bool(ingreso_txt):
+                    raise ValueError(
+                        'debe indicar exactamente una de las columnas: Gasto o Ingreso.'
+                    )
+
+                if gasto_txt:
+                    tipo = 'EGRESO'
+                    categoria_txt = gasto_txt or 'Sin categoría'
+                    categoria, creada = Categoria.objects.get_or_create(
+                        familia=usuario.familia,
+                        usuario=usuario,
+                        nombre=categoria_txt,
+                        tipo='EGRESO',
+                        defaults={'es_inversion': False},
+                    )
+                    if creada:
+                        categorias_creadas += 1
+                else:
+                    tipo = 'INGRESO'
+                    categoria_txt = ingreso_txt.strip()
+                    if categoria_txt:
+                        categoria, creada = Categoria.objects.get_or_create(
+                            familia=usuario.familia,
+                            usuario=usuario,
+                            nombre=categoria_txt,
+                            tipo='INGRESO',
+                            defaults={'es_inversion': False},
+                        )
+                        if creada:
+                            categorias_creadas += 1
+                    else:
+                        categoria = categoria_ingreso_default
+
+                Movimiento.objects.create(
+                    familia=usuario.familia,
+                    usuario=usuario,
+                    cuenta=cuenta_honorarios,
+                    tipo=tipo,
+                    ambito='PERSONAL',
+                    categoria=categoria,
+                    fecha=fecha,
+                    monto=monto_final,
+                    comentario=descripcion,
+                    metodo_pago=metodo_efectivo,
+                )
+                creados += 1
+            except ValueError as exc:
+                errores.append(f'Fila {fila_idx}: {exc}')
+
+        if dry_run:
+            transaction.set_rollback(True)
+
+    if errores:
+        return Response(
+            {
+                'error': 'La importación contiene filas inválidas.',
+                'errores': errores,
+                'movimientos_validos': creados,
+                'categorias_personales_creadas': categorias_creadas,
+                'dry_run': dry_run,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not dry_run and creados and meses_importados and usuario.familia_id:
+        services_recalculo.recalcular_familia_desde(
+            usuario.familia_id, min(meses_importados)
+        )
+        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+
+    return Response(
+        {
+            'ok': True,
+            'dry_run': dry_run,
+            'movimientos_creados': creados,
+            'categorias_personales_creadas': categorias_creadas,
+            'cuenta_objetivo': cuenta_honorarios.nombre,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def importar_sueldos_planilla(request):
+    """
+    Importa sueldos desde CSV a IngresoComun.
+
+    Cada importación real sustituye solo los ingresos comunes del usuario autenticado
+    (no los de otros miembros de la familia). Las filas cuyo integrante no sea el
+    usuario actual se omiten.
+
+    Encabezados esperados:
+      - Integrante
+      - día
+      - Mes/año
+      - Sueldo
+      - Descripción
+      - ID entrada (ignorado)
+    """
+    usuario_auth, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario_auth.familia_id:
+        return Response(
+            {'error': 'Usuario sin familia asociada.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        return Response(
+            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+
+    try:
+        contenido = archivo.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return Response(
+            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stream = io.StringIO(contenido)
+    try:
+        sample = stream.read(4096)
+        stream.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(stream, dialect=dialect)
+
+    if not reader.fieldnames:
+        return Response(
+            {'error': 'La planilla no tiene encabezados.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    headers = {_normalizar_header(h) for h in reader.fieldnames if h}
+    if 'sueldo' not in headers:
+        return Response(
+            {'error': 'Falta encabezado obligatorio: Sueldo.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if 'dia' not in headers:
+        return Response(
+            {'error': 'Falta encabezado obligatorio: día.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    miembros = list(get_user_model().objects.filter(familia_id=usuario_auth.familia_id))
+    creados = 0
+    filas_omitidas_otros = 0
+    errores = []
+    meses_importados = set()
+
+    with transaction.atomic():
+        ingresos_anteriores_eliminados = IngresoComun.objects.filter(
+            familia_id=usuario_auth.familia_id,
+            usuario_id=usuario_auth.pk,
+        ).count()
+        IngresoComun.objects.filter(
+            familia_id=usuario_auth.familia_id,
+            usuario_id=usuario_auth.pk,
+        ).delete()
+
+        for fila_idx, fila in enumerate(reader, start=2):
+            fila = _reparar_fila_colapsada_sueldos(fila)
+            if _fila_vacia(fila):
+                continue
+            try:
+                integrante_txt = _obtener_columna(fila, 'integrante')
+                usuario_obj = _resolver_usuario_por_integrante(
+                    integrante_txt=integrante_txt,
+                    miembros=miembros,
+                    usuario_por_defecto=usuario_auth,
+                )
+                if usuario_obj.pk != usuario_auth.pk:
+                    filas_omitidas_otros += 1
+                    continue
+
+                dia_txt = _obtener_columna(fila, 'dia') or _obtener_columna(fila, 'día')
+                mes_anio_txt = _obtener_columna(fila, 'mes/año')
+                fecha_pago = _parsear_fecha_pago_desde_dia_o_mes_anio(dia_txt, mes_anio_txt)
+                mes = services_recalculo.primer_dia_mes(fecha_pago)
+                meses_importados.add(services_recalculo.primer_dia_mes(mes))
+
+                sueldo_txt = _obtener_columna(fila, 'sueldo')
+                monto = _parsear_monto_importacion(sueldo_txt)
+                if monto < 0:
+                    monto = abs(monto)
+
+                origen = _obtener_columna(fila, 'descripcion') or ''
+
+                IngresoComun.objects.create(
+                    familia=usuario_auth.familia,
+                    usuario=usuario_obj,
+                    mes=mes,
+                    fecha_pago=fecha_pago,
+                    monto=monto,
+                    origen=origen,
+                )
+                creados += 1
+            except ValueError as exc:
+                errores.append(f'Fila {fila_idx}: {exc}')
+
+        if dry_run:
+            transaction.set_rollback(True)
+
+    if errores:
+        return Response(
+            {
+                'error': 'La importación contiene filas inválidas.',
+                'errores': errores,
+                'ingresos_validos': creados,
+                'dry_run': dry_run,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not dry_run and creados and meses_importados:
+        services_recalculo.recalcular_familia_desde(
+            usuario_auth.familia_id, min(meses_importados)
+        )
+        RecalculoPendiente.objects.filter(familia_id=usuario_auth.familia_id).delete()
+
+    return Response(
+        {
+            'ok': True,
+            'dry_run': dry_run,
+            'ingresos_creados': creados,
+            'ingresos_anteriores_eliminados': ingresos_anteriores_eliminados,
+            'filas_omitidas_otros_integrantes': filas_omitidas_otros,
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def importar_gastos_comunes_planilla(request):
+    """
+    Importa movimientos desde CSV para gastos comunes.
+    Misma lógica de cuenta personal, pero guarda ambito=COMUN.
+    """
+    usuario, error = utils_auth.get_usuario_autenticado(request)
+    if error:
+        return error
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'Usuario sin familia asociada.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    archivo = request.FILES.get('archivo')
+    if not archivo:
+        return Response(
+            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+
+    try:
+        contenido = archivo.read().decode('utf-8-sig')
+    except UnicodeDecodeError:
+        return Response(
+            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    stream = io.StringIO(contenido)
+    try:
+        sample = stream.read(4096)
+        stream.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+    except csv.Error:
+        dialect = csv.excel
+    reader = csv.DictReader(stream, dialect=dialect)
+
+    if not reader.fieldnames:
+        return Response(
+            {'error': 'La planilla no tiene encabezados.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
+    if 'fecha' not in normalizados or 'monto' not in normalizados:
+        return Response(
+            {'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+    if not metodo_efectivo:
+        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+    categoria_otros, _ = Categoria.objects.get_or_create(
+        familia=usuario.familia,
+        usuario=None,
+        nombre='Otros',
+        tipo='INGRESO',
+        defaults={'es_inversion': False},
+    )
+
+    creados = 0
+    categorias_creadas = 0
+    errores = []
+    meses_importados = set()
+
+    with transaction.atomic():
+        for fila_idx, fila in enumerate(reader, start=2):
+            fila = _reparar_fila_colapsada(fila)
+            if _fila_vacia(fila):
+                continue
+            try:
+                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+                monto_raw = _obtener_columna(fila, 'monto')
+                monto = _parsear_monto_importacion(monto_raw)
+                descripcion = _obtener_columna(fila, 'descripcion') or ''
+                categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
+
+                if monto < 0:
+                    tipo = 'INGRESO'
+                    categoria = categoria_otros
+                    monto_final = abs(monto)
+                else:
+                    tipo = 'EGRESO'
+                    categoria, creada = Categoria.objects.get_or_create(
+                        familia=usuario.familia,
+                        usuario=None,
+                        nombre=categoria_txt,
+                        tipo='EGRESO',
+                        defaults={'es_inversion': False},
+                    )
+                    if creada:
+                        categorias_creadas += 1
+                    monto_final = monto
+
+                Movimiento.objects.create(
+                    familia=usuario.familia,
+                    usuario=usuario,
+                    cuenta=None,
+                    tipo=tipo,
+                    ambito='COMUN',
+                    categoria=categoria,
+                    fecha=fecha,
+                    monto=monto_final,
+                    comentario=descripcion,
+                    metodo_pago=metodo_efectivo,
+                )
+                creados += 1
+            except ValueError as exc:
+                errores.append(f'Fila {fila_idx}: {exc}')
+
+        if dry_run:
+            transaction.set_rollback(True)
+
+    if errores:
+        return Response(
+            {
+                'error': 'La importación contiene filas inválidas.',
+                'errores': errores,
+                'movimientos_validos': creados,
+                'categorias_familiares_creadas': categorias_creadas,
+                'dry_run': dry_run,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not dry_run and creados and meses_importados and usuario.familia_id:
+        services_recalculo.recalcular_familia_desde(
+            usuario.familia_id, min(meses_importados)
+        )
+        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+
+    return Response(
+        {
+            'ok': True,
+            'dry_run': dry_run,
+            'movimientos_creados': creados,
+            'categorias_familiares_creadas': categorias_creadas,
+            'ambito_objetivo': 'COMUN',
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+def _normalizar_header(header):
+    if not header:
+        return ''
+    return (
+        str(header)
+        .strip()
+        .lower()
+        .replace('á', 'a')
+        .replace('é', 'e')
+        .replace('í', 'i')
+        .replace('ó', 'o')
+        .replace('ú', 'u')
+    )
+
+
+def _obtener_columna(fila, nombre):
+    objetivo = _normalizar_header(nombre)
+    for key, value in fila.items():
+        if _normalizar_header(key) == objetivo:
+            return (value or '').strip()
+    return ''
+
+
+def _parsear_fecha_importacion(valor):
+    if not valor:
+        raise ValueError('fecha vacía.')
+    formatos = ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y')
+    for fmt in formatos:
+        try:
+            return datetime.strptime(valor, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"fecha inválida '{valor}'.")
+
+
+def _parsear_monto_importacion(valor):
+    if not valor:
+        raise ValueError('monto vacío.')
+    limpio = str(valor).replace(' ', '').replace('$', '')
+    if ',' in limpio and '.' in limpio:
+        # Formato tipo 1.234.567,89 -> 1234567.89
+        limpio = limpio.replace('.', '').replace(',', '.')
+    elif ',' in limpio:
+        # Formato decimal con coma tipo 1234,56 -> 1234.56
+        limpio = limpio.replace(',', '.')
+    elif '.' in limpio:
+        # Si hay mas de un punto, se asume separador de miles: 1.234.567 -> 1234567
+        if limpio.count('.') > 1:
+            limpio = limpio.replace('.', '')
+        else:
+            # Un solo punto puede ser decimal (1234.56) o miles (1.234).
+            # Si hay exactamente 3 digitos a la derecha, se interpreta como miles.
+            parte_entera, parte_decimal = limpio.split('.', 1)
+            if len(parte_decimal) == 3 and parte_entera.lstrip('-').isdigit():
+                limpio = f'{parte_entera}{parte_decimal}'
+    try:
+        monto = Decimal(limpio)
+    except Exception as exc:
+        raise ValueError(f"monto inválido '{valor}'.") from exc
+    if monto == 0:
+        raise ValueError('monto no puede ser 0.')
+    return monto
+
+
+def _fila_vacia(fila):
+    return all(not str(value or '').strip() for value in fila.values())
+
+
+def _reparar_fila_colapsada(fila):
+    """
+    Algunas exportaciones traen filas donde toda la linea queda dentro de "Fecha".
+    Ejemplo: "22/11/2024,11-2024,Libros,$18.900,\"El cerebro, ...\",123"
+    En esos casos intentamos reconstruir las columnas esperadas.
+    """
+    fecha = _obtener_columna(fila, 'fecha')
+    categoria = _obtener_columna(fila, 'categoria')
+    monto = _obtener_columna(fila, 'monto')
+    descripcion = _obtener_columna(fila, 'descripcion')
+
+    # Heuristica: si solo "fecha" tiene contenido y contiene comas, la fila se colapso.
+    if not fecha or ',' not in fecha:
+        return fila
+    if any([categoria, monto, descripcion]):
+        return fila
+
+    try:
+        partes = next(csv.reader([fecha], delimiter=',', quotechar='"'))
+    except Exception:
+        return fila
+
+    if len(partes) < 4:
+        return fila
+
+    # Estructura minima: Fecha, Mes/año, Categoría, Monto, [Descripción...], [ID gasto]
+    fecha_v = (partes[0] or '').strip()
+    mes_anio_v = (partes[1] or '').strip() if len(partes) > 1 else ''
+    categoria_v = (partes[2] or '').strip() if len(partes) > 2 else ''
+    monto_v = (partes[3] or '').strip() if len(partes) > 3 else ''
+
+    if len(partes) <= 4:
+        descripcion_v = ''
+        id_gasto_v = ''
+    elif len(partes) == 5:
+        descripcion_v = (partes[4] or '').strip()
+        id_gasto_v = ''
+    else:
+        descripcion_v = ','.join((p or '').strip() for p in partes[4:-1]).strip()
+        id_gasto_v = (partes[-1] or '').strip()
+
+    return {
+        'Fecha': fecha_v,
+        'Mes/año': mes_anio_v,
+        'Categoría': categoria_v,
+        'Monto': monto_v,
+        'Descripción': descripcion_v,
+        'ID gasto': id_gasto_v,
+    }
+
+
+def _reparar_fila_colapsada_honorarios(fila):
+    """
+    Variante para planilla Honorarios:
+    Fecha, Mes/año, Gasto, Ingreso, Entrada, Valor, Monto, Descripción, ID entrada
+    """
+    fecha = _obtener_columna(fila, 'fecha')
+    if not fecha or ',' not in fecha:
+        return fila
+    if any(
+        [
+            _obtener_columna(fila, 'gasto'),
+            _obtener_columna(fila, 'ingreso'),
+            _obtener_columna(fila, 'valor'),
+            _obtener_columna(fila, 'descripcion'),
+        ]
+    ):
+        return fila
+
+    try:
+        partes = next(csv.reader([fecha], delimiter=',', quotechar='"'))
+    except Exception:
+        return fila
+
+    if len(partes) < 6:
+        return fila
+
+    def _p(i):
+        return (partes[i] or '').strip() if i < len(partes) else ''
+
+    descripcion_v = ''
+    id_entrada_v = ''
+    if len(partes) > 8:
+        descripcion_v = ','.join((p or '').strip() for p in partes[7:-1]).strip()
+        id_entrada_v = (partes[-1] or '').strip()
+    elif len(partes) == 8:
+        descripcion_v = _p(7)
+    elif len(partes) == 9:
+        descripcion_v = _p(7)
+        id_entrada_v = _p(8)
+
+    return {
+        'Fecha': _p(0),
+        'Mes/año': _p(1),
+        'Gasto': _p(2),
+        'Ingreso': _p(3),
+        'Entrada': _p(4),
+        'Valor': _p(5),
+        'Monto': _p(6),
+        'Descripción': descripcion_v,
+        'ID entrada': id_entrada_v,
+    }
+
+
+def _parsear_mes_desde_dia_o_mes_anio(dia_txt, mes_anio_txt):
+    dia_txt = (dia_txt or '').strip()
+    mes_anio_txt = (mes_anio_txt or '').strip()
+
+    # Caso 1: dia viene como fecha completa (dd/mm/aaaa, dd-mm-aaaa, yyyy-mm-dd)
+    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d', '%d/%m/%y', '%d-%m-%y'):
+        try:
+            d = datetime.strptime(dia_txt, fmt).date()
+            return date(d.year, d.month, 1)
+        except ValueError:
+            pass
+
+    # Caso 2: dia numerico + mes/año
+    if dia_txt.isdigit() and mes_anio_txt:
+        m, y = _parsear_mes_anio(mes_anio_txt)
+        return date(y, m, 1)
+
+    # Caso 3: solo mes/año
+    if mes_anio_txt:
+        m, y = _parsear_mes_anio(mes_anio_txt)
+        return date(y, m, 1)
+
+    raise ValueError('no se pudo determinar el mes desde día/Mes/año.')
+
+
+def _parsear_fecha_pago_desde_dia_o_mes_anio(dia_txt, mes_anio_txt):
+    dia_txt = (dia_txt or '').strip()
+    mes_anio_txt = (mes_anio_txt or '').strip()
+
+    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d', '%d/%m/%y', '%d-%m-%y'):
+        try:
+            return datetime.strptime(dia_txt, fmt).date()
+        except ValueError:
+            pass
+
+    if dia_txt.isdigit() and mes_anio_txt:
+        day = int(dia_txt)
+        m, y = _parsear_mes_anio(mes_anio_txt)
+        try:
+            return date(y, m, day)
+        except ValueError as exc:
+            raise ValueError(f'día inválido para mes/año: {dia_txt}/{mes_anio_txt}.') from exc
+
+    if mes_anio_txt:
+        m, y = _parsear_mes_anio(mes_anio_txt)
+        return date(y, m, 1)
+
+    raise ValueError('no se pudo determinar fecha de pago desde día/Mes/año.')
+
+
+def _parsear_mes_anio(valor):
+    raw = (valor or '').strip()
+    for sep in ('-', '/'):
+        if sep in raw:
+            a, b = raw.split(sep, 1)
+            a = a.strip()
+            b = b.strip()
+            if len(a) == 4 and a.isdigit() and b.isdigit():
+                year = int(a)
+                month = int(b)
+            elif a.isdigit() and len(b) == 4 and b.isdigit():
+                month = int(a)
+                year = int(b)
+            else:
+                continue
+            if 1 <= month <= 12:
+                return month, year
+    raise ValueError(f"Mes/año inválido '{valor}'.")
+
+
+def _normalizar_texto(valor):
+    return (
+        str(valor or '')
+        .strip()
+        .lower()
+        .replace('á', 'a')
+        .replace('é', 'e')
+        .replace('í', 'i')
+        .replace('ó', 'o')
+        .replace('ú', 'u')
+    )
+
+
+def _resolver_usuario_por_integrante(integrante_txt, miembros, usuario_por_defecto):
+    if not integrante_txt:
+        return usuario_por_defecto
+
+    objetivo = _normalizar_texto(integrante_txt)
+    candidatos = []
+    for m in miembros:
+        full_name = f'{m.first_name} {m.last_name}'.strip()
+        variantes = {
+            _normalizar_texto(m.username),
+            _normalizar_texto(m.email),
+            _normalizar_texto(m.first_name),
+            _normalizar_texto(m.last_name),
+            _normalizar_texto(full_name),
+        }
+        if objetivo in variantes:
+            candidatos.append(m)
+
+    if len(candidatos) == 1:
+        return candidatos[0]
+    if len(candidatos) > 1:
+        raise ValueError(f"Integrante ambiguo '{integrante_txt}'.")
+    raise ValueError(f"Integrante no encontrado '{integrante_txt}'.")
+
+
+def _reparar_fila_colapsada_sueldos(fila):
+    """
+    Repara filas donde toda la linea quedó en "Integrante".
+    """
+    integrante = _obtener_columna(fila, 'integrante')
+    dia = _obtener_columna(fila, 'dia') or _obtener_columna(fila, 'día')
+    sueldo = _obtener_columna(fila, 'sueldo')
+    descripcion = _obtener_columna(fila, 'descripcion')
+    if not integrante or ',' not in integrante:
+        return fila
+    if any([dia, sueldo, descripcion]):
+        return fila
+
+    try:
+        partes = next(csv.reader([integrante], delimiter=',', quotechar='"'))
+    except Exception:
+        return fila
+    if len(partes) < 4:
+        return fila
+
+    integrante_v = (partes[0] or '').strip()
+    dia_v = (partes[1] or '').strip() if len(partes) > 1 else ''
+    mes_anio_v = (partes[2] or '').strip() if len(partes) > 2 else ''
+    sueldo_v = (partes[3] or '').strip() if len(partes) > 3 else ''
+    if len(partes) <= 4:
+        descripcion_v = ''
+        id_entrada_v = ''
+    elif len(partes) == 5:
+        descripcion_v = (partes[4] or '').strip()
+        id_entrada_v = ''
+    else:
+        descripcion_v = ','.join((p or '').strip() for p in partes[4:-1]).strip()
+        id_entrada_v = (partes[-1] or '').strip()
+
+    return {
+        'Integrante': integrante_v,
+        'día': dia_v,
+        'Mes/año': mes_anio_v,
+        'Sueldo': sueldo_v,
+        'Descripción': descripcion_v,
+        'ID entrada': id_entrada_v,
+    }

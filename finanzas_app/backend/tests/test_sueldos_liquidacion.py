@@ -2,61 +2,7 @@
 
 import pytest
 from decimal import Decimal
-from applications.finanzas.models import IngresoComun, Movimiento
-
-
-# ── Fixtures adicionales ──────────────────────────────────────────────────────
-
-@pytest.fixture
-def ingreso_jaime(db, usuario, familia):
-    return IngresoComun.objects.create(
-        usuario=usuario,
-        familia=familia,
-        mes='2026-03-01',
-        monto='1800000.00',
-        origen='Sueldo',
-    )
-
-
-@pytest.fixture
-def ingreso_glori(db, usuario_2, familia):
-    return IngresoComun.objects.create(
-        usuario=usuario_2,
-        familia=familia,
-        mes='2026-03-01',
-        monto='1000000.00',
-        origen='Sueldo',
-    )
-
-
-@pytest.fixture
-def gasto_comun_jaime(db, usuario, familia, categoria_egreso, metodo_efectivo):
-    return Movimiento.objects.create(
-        usuario=usuario,
-        familia=familia,
-        fecha='2026-03-10',
-        tipo='EGRESO',
-        ambito='COMUN',
-        categoria=categoria_egreso,
-        monto='320000.00',
-        comentario='Supermercado',
-        metodo_pago=metodo_efectivo,
-    )
-
-
-@pytest.fixture
-def gasto_comun_glori(db, usuario_2, familia, categoria_egreso, metodo_efectivo):
-    return Movimiento.objects.create(
-        usuario=usuario_2,
-        familia=familia,
-        fecha='2026-03-12',
-        tipo='EGRESO',
-        ambito='COMUN',
-        categoria=categoria_egreso,
-        monto='180000.00',
-        comentario='Farmacia',
-        metodo_pago=metodo_efectivo,
-    )
+from applications.finanzas.models import IngresoComun
 
 
 # ── Tests de ingresos comunes ─────────────────────────────────────────────────
@@ -206,6 +152,8 @@ class TestLiquidacion:
         assert 'gastos_comunes' in data
         assert data['periodo']['mes'] == 3
         assert data['periodo']['anio'] == 2026
+        assert 'recalculo' in data
+        assert 'pendiente' in data['recalculo']
 
     def test_retorna_ingresos_agrupados_por_usuario(
         self, client, auth_header, ingreso_jaime, ingreso_glori

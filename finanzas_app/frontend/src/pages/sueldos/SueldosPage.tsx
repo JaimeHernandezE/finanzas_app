@@ -20,6 +20,7 @@ interface IngresoMes {
   mes: number
   anio: number
   fechaIso: string
+  fechaPagoIso: string
 }
 
 const COLORES_MIEMBRO = ['#c8f060', '#60c8f0', '#f060c8', '#f0c860']
@@ -147,10 +148,18 @@ export default function SueldosPage() {
   const usuarioActualId = user ? String(user.id) : ''
 
   const ingresos: IngresoMes[] = useMemo(() => {
-    const list = (ingresosRaw ?? []) as { id: number; mes: string; monto: string; origen: string; usuario: number; autor_nombre: string }[]
+    const list = (ingresosRaw ?? []) as {
+      id: number
+      mes: string
+      fecha_pago?: string | null
+      monto: string
+      origen: string
+      usuario: number
+      autor_nombre: string
+    }[]
     return list.map(i => {
       const { mes, anio } = parseMesAnio(i.mes, mesActual, anioActual)
-      const fechaIso = `${anio}-${String(mes + 1).padStart(2, '0')}-01`
+      const fechaPagoIso = i.fecha_pago || `${anio}-${String(mes + 1).padStart(2, '0')}-01`
       return {
         id: i.id,
         usuarioId: String(i.usuario),
@@ -159,7 +168,8 @@ export default function SueldosPage() {
         monto: Number(i.monto) || 0,
         mes,
         anio,
-        fechaIso,
+        fechaIso: fechaPagoIso,
+        fechaPagoIso,
       }
     })
   }, [ingresosRaw, mesActual, anioActual])
@@ -221,15 +231,24 @@ export default function SueldosPage() {
     [miembros, usuarioActualId]
   )
 
-  const agregar = async (origen: string, monto: number) => {
+  const agregar = async (origen: string, monto: number, fechaPagoIso: string) => {
     const mesStr = `${anio}-${String(mes + 1).padStart(2, '0')}-01`
-    await finanzasApi.createIngresoComun({ mes: mesStr, monto: String(monto), origen: origen.trim() })
+    await finanzasApi.createIngresoComun({
+      mes: mesStr,
+      fecha_pago: fechaPagoIso,
+      monto: String(monto),
+      origen: origen.trim(),
+    })
     setMostrarFormNuevo(false)
     refetch()
   }
 
-  const actualizar = async (id: number, origen: string, monto: number) => {
-    await finanzasApi.updateIngresoComun(id, { origen: origen.trim(), monto: String(monto) })
+  const actualizar = async (id: number, origen: string, monto: number, fechaPagoIso: string) => {
+    await finanzasApi.updateIngresoComun(id, {
+      fecha_pago: fechaPagoIso,
+      origen: origen.trim(),
+      monto: String(monto),
+    })
     setEditandoId(null)
     refetch()
   }
@@ -312,6 +331,7 @@ export default function SueldosPage() {
         {mostrarFormNuevo && (
           <FormNuevoIngreso
             onGuardar={agregar}
+            fechaInicialIso={`${anio}-${String(mes + 1).padStart(2, '0')}-01`}
             onCancelar={() => setMostrarFormNuevo(false)}
           />
         )}
@@ -333,7 +353,7 @@ export default function SueldosPage() {
                 <FilaEdicion
                   key={ing.id}
                   ingreso={ing}
-                  onGuardar={(origen, monto) => actualizar(ing.id, origen, monto)}
+                  onGuardar={(origen, monto, fechaPagoIso) => actualizar(ing.id, origen, monto, fechaPagoIso)}
                   onCancelar={() => setEditandoId(null)}
                 />
               ) : (
@@ -389,23 +409,27 @@ export default function SueldosPage() {
 
 function FormNuevoIngreso({
   onGuardar,
+  fechaInicialIso,
   onCancelar,
 }: {
-  onGuardar: (origen: string, monto: number) => void
+  onGuardar: (origen: string, monto: number, fechaPagoIso: string) => void
+  fechaInicialIso: string
   onCancelar: () => void
 }) {
   const [origen, setOrigen] = useState('')
   const [montoStr, setMontoStr] = useState('')
+  const [fechaPagoIso, setFechaPagoIso] = useState(fechaInicialIso)
 
   const monto = montoClpANumero(montoStr)
-  const valido = origen.trim() !== '' && monto > 0
+  const valido = origen.trim() !== '' && monto > 0 && !!fechaPagoIso
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!valido) return
-    onGuardar(origen.trim(), monto)
+    onGuardar(origen.trim(), monto, fechaPagoIso)
     setOrigen('')
     setMontoStr('')
+    setFechaPagoIso(fechaInicialIso)
   }
 
   return (
@@ -424,6 +448,13 @@ function FormNuevoIngreso({
         value={montoStr}
         onChange={setMontoStr}
         aria-label="Monto"
+      />
+      <input
+        type="date"
+        className={styles.fechaPagoInput}
+        value={fechaPagoIso}
+        onChange={e => setFechaPagoIso(e.target.value)}
+        aria-label="Fecha de pago"
       />
       <button type="submit" className={styles.btnIcon} disabled={!valido} title="Guardar">
         ✓
@@ -472,19 +503,20 @@ function FilaEdicion({
   onCancelar,
 }: {
   ingreso: IngresoMes
-  onGuardar: (origen: string, monto: number) => void
+  onGuardar: (origen: string, monto: number, fechaPagoIso: string) => void
   onCancelar: () => void
 }) {
   const [origen, setOrigen] = useState(ingreso.origen)
   const [montoStr, setMontoStr] = useState(String(ingreso.monto))
+  const [fechaPagoIso, setFechaPagoIso] = useState(ingreso.fechaPagoIso)
 
   const monto = montoClpANumero(montoStr)
-  const valido = origen.trim() !== '' && monto > 0
+  const valido = origen.trim() !== '' && monto > 0 && !!fechaPagoIso
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!valido) return
-    onGuardar(origen.trim(), monto)
+    onGuardar(origen.trim(), monto, fechaPagoIso)
   }
 
   return (
@@ -503,6 +535,13 @@ function FilaEdicion({
           value={montoStr}
           onChange={setMontoStr}
           aria-label="Monto"
+        />
+        <input
+          type="date"
+          className={styles.fechaPagoInput}
+          value={fechaPagoIso}
+          onChange={e => setFechaPagoIso(e.target.value)}
+          aria-label="Fecha de pago"
         />
         <button type="submit" className={styles.btnIcon} disabled={!valido} title="Guardar">
           ✓

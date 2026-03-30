@@ -5,6 +5,7 @@ import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
+import { formatMontoNetoContribucion } from '@/utils/montoClp'
 import styles from './CuentaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -16,10 +17,13 @@ interface Movimiento {
   fecha: string
   comentario: string
   categoria_nombre: string
-  monto: number
+  categoria_es_inversion?: boolean
+  monto: number | string
   tipo: 'INGRESO' | 'EGRESO'
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   autor_nombre?: string
+  /** PK de IngresoComun si el movimiento es el ingreso declarado al fondo común (sueldo). */
+  ingreso_comun?: number | null
 }
 
 interface Cuenta {
@@ -67,9 +71,27 @@ const hoyISO = () => {
   return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`
 }
 
-const montoSeguro = (valor: unknown) => {
-  const n = typeof valor === 'number' ? valor : Number(valor)
-  return Number.isFinite(n) ? n : 0
+function toMontoNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const txt = value.trim()
+    if (!txt) return 0
+    const parsed = Number(txt)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+/**
+ * Alineado al backend: no cuenta sueldos (ingreso vinculado a ingreso común);
+ * egresos solo gastos corrientes (no categoría inversión). TC no entra al neto.
+ */
+function contribucionSaldo(m: Movimiento): number {
+  if (m.tipo === 'INGRESO' && m.ingreso_comun != null) return 0
+  if (m.tipo === 'EGRESO' && m.categoria_es_inversion) return 0
+  const monto = toMontoNumber(m.monto)
+  if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return 0
+  return m.tipo === 'EGRESO' ? monto : -monto
 }
 
 function groupByDate(movimientos: Movimiento[]): GrupoFecha[] {
@@ -216,7 +238,7 @@ function MovimientoRow({
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
   const esCredito = mov.metodo_pago_tipo === 'CREDITO'
-  const monto = montoSeguro(mov.monto)
+  const monto = toMontoNumber(mov.monto)
 
   return (
     <div className={styles.movRow}>
@@ -273,24 +295,16 @@ function DateGroup({
   onDelete: (mov: Movimiento) => void
 }) {
   const { formatMonto } = useConfig()
-  // El resumen diario representa gasto del día; no descuenta ingresos.
-  const subtotalEgresos = grupo.movimientos.reduce((acc, m) => {
-    if (m.tipo !== 'EGRESO') return acc
-    if (m.metodo_pago_tipo === 'CREDITO') return acc
-    return acc + montoSeguro(m.monto)
-  }, 0)
-  const mostrarSubtotal = subtotalEgresos > 0
+  const subtotal = grupo.movimientos.reduce((acc, m) => acc + contribucionSaldo(m), 0)
 
   return (
     <div className={styles.grupo}>
       <div className={styles.grupoHeader}>
         <span className={styles.grupoLabel}>{grupo.label.toUpperCase()}</span>
-        {mostrarSubtotal && (
-          <>
-            <span className={styles.grupoSep}> — </span>
-            <span className={styles.grupoSubtotal}>{formatMonto(subtotalEgresos)}</span>
-          </>
-        )}
+        <span className={styles.grupoSep}> — </span>
+        <span className={styles.grupoSubtotal}>
+          {formatMontoNetoContribucion(subtotal, formatMonto)}
+        </span>
       </div>
       {grupo.movimientos.map(m => (
         <MovimientoRow
@@ -330,7 +344,7 @@ function DeleteModal({
   onConfirm: () => void
 }) {
   const { formatMonto } = useConfig()
-  const monto = montoSeguro(mov.monto)
+  const monto = toMontoNumber(mov.monto)
   return (
     <div className={styles.modalOverlay} onClick={onCancel}>
       <div className={styles.modalCard} onClick={e => e.stopPropagation()}>
@@ -362,6 +376,7 @@ function DeleteModal({
 export default function CuentaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { formatMonto } = useConfig()
   const { data: cuentasData, loading: cuentasLoading, error: cuentasError } =
     useCuentasPersonales()
 
@@ -393,6 +408,7 @@ export default function CuentaPage() {
 
   const { movimientos, loading, error, refetch, eliminar } = useMovimientos({
     cuenta: id ? Number(id) : undefined,
+    ambito: 'PERSONAL',
     mes: mes + 1,
     anio,
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
@@ -439,6 +455,7 @@ export default function CuentaPage() {
   const returnTo = `/gastos/cuenta/${id}`
   const irNuevo = () =>
     navigate(`/gastos/nuevo?ambito=PERSONAL&cuenta=${id}&returnTo=${encodeURIComponent(returnTo)}`)
+  const irResumen = () => navigate(`/gastos/cuenta/${id}/resumen`)
   const irEditar = (movId: number) =>
     navigate(`/gastos/${movId}/editar?returnTo=${encodeURIComponent(returnTo)}`)
 
@@ -451,7 +468,16 @@ export default function CuentaPage() {
   }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
 
   const grupos = groupByDate(movimientosFiltrados)
-  const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.length > 0
+
+  const sinFiltrosRestrictivos =
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+
+  const sumaMostrada = useMemo(
+    () => movimientosFiltrados.reduce((acc, m) => acc + contribucionSaldo(m), 0),
+    [movimientosFiltrados],
+  )
+
+  const hayFiltros = !sinFiltrosRestrictivos
 
   if (cuentasLoading) return <Cargando />
   if (cuentasError) return <ErrorCarga mensaje={cuentasError} />
@@ -484,9 +510,18 @@ export default function CuentaPage() {
             <button className={styles.mesBtn} onClick={irSiguiente} disabled={esActual} aria-label="Mes siguiente">›</button>
           </div>
         </div>
-        <button className={`${styles.btnPrimary} ${styles.btnNuevoHeader}`} onClick={irNuevo}>
-          + Nuevo gasto
-        </button>
+        <div className={styles.headerActions}>
+          <button type="button" className={styles.btnGhost} onClick={irResumen}>
+            Resumen
+          </button>
+          <button
+            type="button"
+            className={`${styles.btnPrimary} ${styles.btnNuevoHeader}`}
+            onClick={irNuevo}
+          >
+            + Nuevo gasto
+          </button>
+        </div>
       </div>
 
       {/* ── Barra de filtros ── */}
@@ -512,9 +547,31 @@ export default function CuentaPage() {
           )}
         </button>
 
+        <button type="button" className={`${styles.btnGhost} ${styles.btnNuevoBar}`} onClick={irResumen}>
+          Resumen
+        </button>
+
         <button className={`${styles.btnPrimary} ${styles.btnNuevoBar}`} onClick={irNuevo}>
           + Nuevo
         </button>
+      </div>
+
+      <div className={styles.totalSuma}>
+        <div>
+          <div className={styles.totalSumaLabel}>
+            {sinFiltrosRestrictivos
+              ? `Total ${MESES[mes]} ${anio}`
+              : 'Total (filtros activos)'}
+          </div>
+          {!sinFiltrosRestrictivos && (
+            <div className={styles.totalSumaHint}>
+              Tipo, búsqueda o panel lateral
+            </div>
+          )}
+        </div>
+        <span className={styles.totalSumaMonto}>
+          {formatMontoNetoContribucion(sumaMostrada, formatMonto)}
+        </span>
       </div>
 
       {/* ── Listado ── */}

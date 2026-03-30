@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch
 from applications.usuarios.models import Usuario, Familia
-from applications.finanzas.models import Categoria, MetodoPago, Tarjeta
+from applications.finanzas.models import Categoria, IngresoComun, MetodoPago, Movimiento, Tarjeta
 
 
 # ── Fixtures de base de datos ─────────────────────────────────────────────────
@@ -185,7 +185,6 @@ def categoria_ingreso(db):
 @pytest.fixture
 def movimiento_efectivo(db, usuario, familia, categoria_egreso, metodo_efectivo):
     """Movimiento simple de efectivo sin cuotas."""
-    from applications.finanzas.models import Movimiento
     return Movimiento.objects.create(
         usuario=usuario,
         familia=familia,
@@ -202,7 +201,6 @@ def movimiento_efectivo(db, usuario, familia, categoria_egreso, metodo_efectivo)
 @pytest.fixture
 def movimiento_credito(db, usuario, familia, categoria_egreso, metodo_credito, tarjeta):
     """Movimiento con crédito — el signal genera cuotas automáticamente."""
-    from applications.finanzas.models import Movimiento
     return Movimiento.objects.create(
         usuario=usuario,
         familia=familia,
@@ -221,7 +219,6 @@ def movimiento_credito(db, usuario, familia, categoria_egreso, metodo_credito, t
 @pytest.fixture
 def movimiento_comun(db, usuario, familia, categoria_egreso, metodo_efectivo):
     """Movimiento de ámbito común."""
-    from applications.finanzas.models import Movimiento
     return Movimiento.objects.create(
         usuario=usuario,
         familia=familia,
@@ -231,5 +228,59 @@ def movimiento_comun(db, usuario, familia, categoria_egreso, metodo_efectivo):
         categoria=categoria_egreso,
         monto='62300.00',
         comentario='Agua + Luz',
+        metodo_pago=metodo_efectivo,
+    )
+
+
+# ── Fixtures liquidación / ingresos comunes (compartidos con test_recalculo) ─
+
+@pytest.fixture
+def ingreso_jaime(db, usuario, familia):
+    return IngresoComun.objects.create(
+        usuario=usuario,
+        familia=familia,
+        mes='2026-03-01',
+        monto='1800000.00',
+        origen='Sueldo',
+    )
+
+
+@pytest.fixture
+def ingreso_glori(db, usuario_2, familia):
+    return IngresoComun.objects.create(
+        usuario=usuario_2,
+        familia=familia,
+        mes='2026-03-01',
+        monto='1000000.00',
+        origen='Sueldo',
+    )
+
+
+@pytest.fixture
+def gasto_comun_jaime(db, usuario, familia, categoria_egreso, metodo_efectivo):
+    return Movimiento.objects.create(
+        usuario=usuario,
+        familia=familia,
+        fecha='2026-03-10',
+        tipo='EGRESO',
+        ambito='COMUN',
+        categoria=categoria_egreso,
+        monto='320000.00',
+        comentario='Supermercado',
+        metodo_pago=metodo_efectivo,
+    )
+
+
+@pytest.fixture
+def gasto_comun_glori(db, usuario_2, familia, categoria_egreso, metodo_efectivo):
+    return Movimiento.objects.create(
+        usuario=usuario_2,
+        familia=familia,
+        fecha='2026-03-12',
+        tipo='EGRESO',
+        ambito='COMUN',
+        categoria=categoria_egreso,
+        monto='180000.00',
+        comentario='Farmacia',
         metodo_pago=metodo_efectivo,
     )

@@ -2,6 +2,7 @@ from django.contrib import admin
 from .models import (
     Categoria, CuentaPersonal, Cuota, IngresoComun,
     MetodoPago, Movimiento, Presupuesto, Tarjeta,
+    SueldoEstimadoProrrateoMensual,
 )
 
 
@@ -55,3 +56,10 @@ class IngresoComunAdmin(admin.ModelAdmin):
     list_display = ['usuario', 'mes', 'monto', 'origen', 'familia', 'movimiento']
     list_filter  = ['familia']
     readonly_fields = ['movimiento']
+
+
+@admin.register(SueldoEstimadoProrrateoMensual)
+class SueldoEstimadoProrrateoMensualAdmin(admin.ModelAdmin):
+    list_display = ['usuario', 'mes', 'monto', 'actualizado_at']
+    list_filter = ['mes']
+    raw_id_fields = ['usuario']

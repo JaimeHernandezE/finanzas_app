@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_DOWN
 from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
-from django.db.models.signals import post_delete, post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 from dateutil.relativedelta import relativedelta
 
@@ -16,6 +16,7 @@ from .models import (
     Movimiento,
     Cuota,
 )
+from . import services_recalculo
 
 # Nombre estable de la categoría global para ingresos generados desde IngresoComun.
 CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN = 'Ingreso declarado (fondo común)'
@@ -68,6 +69,64 @@ def _asegurar_cuenta_personal(usuario):
     return cuenta
 
 
+@receiver(pre_save, sender=Movimiento)
+def _cache_movimiento_fecha_resumen(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            prev = Movimiento.objects.get(pk=instance.pk)
+            instance._fecha_previa_resumen = prev.fecha
+        except Movimiento.DoesNotExist:
+            pass
+
+
+@receiver(post_save, sender=Movimiento)
+def invalidar_resumen_tras_movimiento_comun(sender, instance, **kwargs):
+    if instance.ambito != 'COMUN' or not instance.familia_id:
+        return
+    meses = {services_recalculo.primer_dia_mes(instance.fecha)}
+    prev = getattr(instance, '_fecha_previa_resumen', None)
+    if prev:
+        meses.add(services_recalculo.primer_dia_mes(prev))
+    services_recalculo.invalidar_snapshots_resumen_historico(instance.familia_id, meses)
+
+
+@receiver(post_delete, sender=Movimiento)
+def invalidar_resumen_borrar_movimiento_comun(sender, instance, **kwargs):
+    if instance.ambito != 'COMUN' or not instance.familia_id:
+        return
+    services_recalculo.invalidar_snapshots_resumen_historico(
+        instance.familia_id,
+        [services_recalculo.primer_dia_mes(instance.fecha)],
+    )
+
+
+@receiver(pre_save, sender=IngresoComun)
+def _cache_ingreso_comun_mes_resumen(sender, instance, **kwargs):
+    if instance.pk:
+        try:
+            prev = IngresoComun.objects.get(pk=instance.pk)
+            instance._mes_previo_resumen = prev.mes
+        except IngresoComun.DoesNotExist:
+            pass
+
+
+@receiver(post_save, sender=IngresoComun)
+def invalidar_resumen_tras_ingreso_comun(sender, instance, **kwargs):
+    meses = {services_recalculo.primer_dia_mes(instance.mes)}
+    prev = getattr(instance, '_mes_previo_resumen', None)
+    if prev:
+        meses.add(services_recalculo.primer_dia_mes(prev))
+    services_recalculo.invalidar_snapshots_resumen_historico(instance.familia_id, meses)
+
+
+@receiver(post_delete, sender=IngresoComun)
+def invalidar_resumen_borrar_ingreso_comun(sender, instance, **kwargs):
+    services_recalculo.invalidar_snapshots_resumen_historico(
+        instance.familia_id,
+        [services_recalculo.primer_dia_mes(instance.mes)],
+    )
+
+
 @receiver(post_save, sender=IngresoComun)
 def sincronizar_movimiento_desde_ingreso_comun(sender, instance, created, **kwargs):
     """
@@ -77,18 +136,7 @@ def sincronizar_movimiento_desde_ingreso_comun(sender, instance, created, **kwar
     metodo = _obtener_metodo_efectivo()
     categoria = _obtener_categoria_ingreso_declarado()
 
-    payload = {
-        'familia_id': instance.familia_id,
-        'usuario_id': instance.usuario_id,
-        'cuenta_id': cuenta.pk,
-        'tipo': 'INGRESO',
-        'ambito': 'PERSONAL',
-        'categoria_id': categoria.pk,
-        'metodo_pago_id': metodo.pk,
-        'fecha': instance.mes,
-        'monto': instance.monto,
-        'comentario': instance.origen or '',
-    }
+    fecha_mov = instance.fecha_pago or instance.mes
 
     if created or not instance.movimiento_id:
         mov = Movimiento.objects.create(
@@ -99,19 +147,59 @@ def sincronizar_movimiento_desde_ingreso_comun(sender, instance, created, **kwar
             ambito='PERSONAL',
             categoria=categoria,
             metodo_pago=metodo,
-            fecha=instance.mes,
+            fecha=fecha_mov,
             monto=instance.monto,
             comentario=instance.origen or '',
         )
         IngresoComun.objects.filter(pk=instance.pk).update(movimiento_id=mov.pk)
     else:
-        Movimiento.objects.filter(pk=instance.movimiento_id).update(**payload)
+        mov = Movimiento.objects.get(pk=instance.movimiento_id)
+        mov.familia_id = instance.familia_id
+        mov.usuario_id = instance.usuario_id
+        mov.cuenta = cuenta
+        mov.tipo = 'INGRESO'
+        mov.ambito = 'PERSONAL'
+        mov.categoria = categoria
+        mov.metodo_pago = metodo
+        mov.fecha = fecha_mov
+        mov.monto = instance.monto
+        mov.comentario = instance.origen or ''
+        mov.save()
+
+
+@receiver(post_save, sender=IngresoComun)
+def dispatch_recalculo_snapshots_tras_ingreso_comun(sender, instance, **kwargs):
+    """
+    Liquidación usa el mes declarado en IngresoComun (puede diferir del mes del Movimiento).
+    Debe ejecutarse después de sincronizar_movimiento_desde_ingreso_comun.
+    """
+    if not instance.familia_id:
+        return
+    meses = {services_recalculo.primer_dia_mes(instance.mes)}
+    prev = getattr(instance, '_mes_previo_resumen', None)
+    if prev:
+        meses.add(services_recalculo.primer_dia_mes(prev))
+    services_recalculo.dispatch_recalculo_multiples_meses(instance.familia_id, meses)
 
 
 @receiver(post_delete, sender=IngresoComun)
 def eliminar_movimiento_vinculado_ingreso_comun(sender, instance, **kwargs):
     if instance.movimiento_id:
         Movimiento.objects.filter(pk=instance.movimiento_id).delete()
+
+
+@receiver(post_delete, sender=IngresoComun)
+def dispatch_recalculo_snapshots_borrar_ingreso_comun(sender, instance, **kwargs):
+    """
+    Tras borrar el Movimiento vinculado: recalcula liquidación por mes declarado en IngresoComun.
+    Debe ir después de eliminar_movimiento_vinculado_ingreso_comun.
+    """
+    if not instance.familia_id:
+        return
+    services_recalculo.dispatch_recalculo_multiples_meses(
+        instance.familia_id,
+        services_recalculo.meses_afectados_por_ingreso_comun(instance, None),
+    )
 
 
 def calcular_mes_base(fecha_gasto: date, dia_facturacion: int | None) -> date:
@@ -201,3 +289,25 @@ def generar_cuotas(sender, instance, created, **kwargs):
         ))
 
     Cuota.objects.bulk_create(cuotas)
+
+
+@receiver(post_save, sender=Movimiento)
+def dispatch_recalculo_snapshots_tras_movimiento(sender, instance, **kwargs):
+    """Recalcula snapshots mensuales (liquidación, saldos por cuenta) al crear/editar movimiento."""
+    if not instance.familia_id:
+        return
+    meses = {services_recalculo.primer_dia_mes(instance.fecha)}
+    prev = getattr(instance, '_fecha_previa_resumen', None)
+    if prev:
+        meses.add(services_recalculo.primer_dia_mes(prev))
+    services_recalculo.dispatch_recalculo_multiples_meses(instance.familia_id, meses)
+
+
+@receiver(post_delete, sender=Movimiento)
+def dispatch_recalculo_snapshots_borrar_movimiento(sender, instance, **kwargs):
+    if not instance.familia_id:
+        return
+    services_recalculo.dispatch_recalculo_multiples_meses(
+        instance.familia_id,
+        {services_recalculo.primer_dia_mes(instance.fecha)},
+    )
