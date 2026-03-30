@@ -3,9 +3,11 @@
 import csv
 import io
 import logging
+import traceback
 from datetime import date, datetime
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Min, OuterRef, ProtectedError, Q, Subquery, Sum
 from django.contrib.auth import get_user_model
@@ -1640,8 +1642,6 @@ def importar_cuenta_personal_planilla(request):
     errores = []
     meses_importados = set()
     movimientos_para_crear = []
-    movimientos_para_crear = []
-    movimientos_para_crear = []
 
     vinculados_ingreso_comun = IngresoComun.objects.filter(
         familia_id=usuario.familia_id,
@@ -2162,110 +2162,122 @@ def importar_gastos_comunes_planilla(request):
     categorias_creadas = 0
     errores = []
     meses_importados = set()
+    movimientos_para_crear = []
 
-    with transaction.atomic():
-        for fila_idx, fila in enumerate(reader, start=2):
-            fila = _reparar_fila_colapsada(fila)
-            if _fila_vacia(fila):
-                continue
-            try:
-                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
-                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
-                monto_raw = _obtener_columna(fila, 'monto')
-                monto = _parsear_monto_importacion(monto_raw)
-                descripcion = _obtener_columna(fila, 'descripcion') or ''
-                categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
+    try:
+        with transaction.atomic():
+            for fila_idx, fila in enumerate(reader, start=2):
+                fila = _reparar_fila_colapsada(fila)
+                if _fila_vacia(fila):
+                    continue
+                try:
+                    fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                    meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+                    monto_raw = _obtener_columna(fila, 'monto')
+                    monto = _parsear_monto_importacion(monto_raw)
+                    descripcion = _obtener_columna(fila, 'descripcion') or ''
+                    categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
 
-                if monto < 0:
-                    tipo = 'INGRESO'
-                    categoria = categoria_otros
-                    monto_final = abs(monto)
-                else:
-                    tipo = 'EGRESO'
-                    categoria, creada = Categoria.objects.get_or_create(
-                        familia=usuario.familia,
-                        usuario=None,
-                        nombre=categoria_txt,
-                        tipo='EGRESO',
-                        defaults={'es_inversion': False},
+                    if monto < 0:
+                        tipo = 'INGRESO'
+                        categoria = categoria_otros
+                        monto_final = abs(monto)
+                    else:
+                        tipo = 'EGRESO'
+                        categoria, creada = Categoria.objects.get_or_create(
+                            familia=usuario.familia,
+                            usuario=None,
+                            nombre=categoria_txt,
+                            tipo='EGRESO',
+                            defaults={'es_inversion': False},
+                        )
+                        if creada:
+                            categorias_creadas += 1
+                        monto_final = monto
+
+                    movimientos_para_crear.append(
+                        Movimiento(
+                            familia=usuario.familia,
+                            usuario=usuario,
+                            cuenta=None,
+                            tipo=tipo,
+                            ambito='COMUN',
+                            categoria=categoria,
+                            fecha=fecha,
+                            monto=monto_final,
+                            comentario=descripcion,
+                            metodo_pago=metodo_efectivo,
+                        )
                     )
-                    if creada:
-                        categorias_creadas += 1
-                    monto_final = monto
+                    creados += 1
+                except ValueError as exc:
+                    errores.append(f'Fila {fila_idx}: {exc}')
 
-                movimientos_para_crear.append(
-                    Movimiento(
-                    familia=usuario.familia,
-                    usuario=usuario,
-                    cuenta=None,
-                    tipo=tipo,
-                    ambito='COMUN',
-                    categoria=categoria,
-                    fecha=fecha,
-                    monto=monto_final,
-                    comentario=descripcion,
-                    metodo_pago=metodo_efectivo,
-                )
-                )
-                creados += 1
-            except ValueError as exc:
-                errores.append(f'Fila {fila_idx}: {exc}')
+            if movimientos_para_crear:
+                # Evita disparar señales por fila; el recálculo se hace una sola vez al final.
+                try:
+                    Movimiento.objects.bulk_create(movimientos_para_crear)
+                except Exception:
+                    logger.exception(
+                        "Error en bulk_create de importacion gastos comunes. usuario_id=%s familia_id=%s filas=%s",
+                        getattr(usuario, 'id', None),
+                        getattr(usuario, 'familia_id', None),
+                        len(movimientos_para_crear),
+                    )
+                    raise
 
-        if movimientos_para_crear:
-            # Evita disparar señales por fila; el recálculo se hace una sola vez al final.
+            if dry_run:
+                transaction.set_rollback(True)
+
+        if errores:
+            return Response(
+                {
+                    'error': 'La importación contiene filas inválidas.',
+                    'errores': errores,
+                    'movimientos_validos': creados,
+                    'categorias_familiares_creadas': categorias_creadas,
+                    'dry_run': dry_run,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not dry_run and creados and meses_importados and usuario.familia_id:
+            # Para importaciones grandes, evitar recálculo síncrono en request web:
+            # dejamos el recálculo marcado como pendiente para proceso diferido.
             try:
-                Movimiento.objects.bulk_create(movimientos_para_crear)
+                services_recalculo.merge_recalculo_pendiente(
+                    usuario.familia_id, min(meses_importados)
+                )
             except Exception:
                 logger.exception(
-                    "Error en bulk_create de importacion gastos comunes. usuario_id=%s familia_id=%s filas=%s",
+                    "Error marcando recálculo pendiente post importación. usuario_id=%s familia_id=%s desde_mes=%s",
                     getattr(usuario, 'id', None),
                     getattr(usuario, 'familia_id', None),
-                    len(movimientos_para_crear),
+                    min(meses_importados),
                 )
                 raise
 
-        if dry_run:
-            transaction.set_rollback(True)
-
-    if errores:
         return Response(
             {
-                'error': 'La importación contiene filas inválidas.',
-                'errores': errores,
-                'movimientos_validos': creados,
-                'categorias_familiares_creadas': categorias_creadas,
+                'ok': True,
                 'dry_run': dry_run,
+                'movimientos_creados': creados,
+                'categorias_familiares_creadas': categorias_creadas,
+                'ambito_objetivo': 'COMUN',
+                'recalculo': 'pendiente',
             },
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_200_OK,
         )
-
-    if not dry_run and creados and meses_importados and usuario.familia_id:
-        # Para importaciones grandes, evitar recálculo síncrono en request web:
-        # dejamos el recálculo marcado como pendiente para proceso diferido.
-        try:
-            services_recalculo.merge_recalculo_pendiente(
-                usuario.familia_id, min(meses_importados)
-            )
-        except Exception:
-            logger.exception(
-                "Error marcando recálculo pendiente post importación. usuario_id=%s familia_id=%s desde_mes=%s",
-                getattr(usuario, 'id', None),
-                getattr(usuario, 'familia_id', None),
-                min(meses_importados),
-            )
-            raise
-
-    return Response(
-        {
-            'ok': True,
-            'dry_run': dry_run,
-            'movimientos_creados': creados,
-            'categorias_familiares_creadas': categorias_creadas,
-            'ambito_objetivo': 'COMUN',
-            'recalculo': 'pendiente',
-        },
-        status=status.HTTP_200_OK,
-    )
+    except Exception as exc:
+        logger.exception(
+            "importar_gastos_comunes_planilla falló. usuario_id=%s familia_id=%s",
+            getattr(usuario, 'id', None),
+            getattr(usuario, 'familia_id', None),
+        )
+        payload = {'error': 'Error interno al importar gastos comunes.', 'detalle': str(exc)}
+        if settings.DEBUG:
+            payload['traceback'] = traceback.format_exc()
+        return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 def _normalizar_header(header):
