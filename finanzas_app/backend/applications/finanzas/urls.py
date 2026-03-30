@@ -49,6 +49,9 @@ urlpatterns = [
         name='presupuesto-finanzas-detalle',
     ),
 
+    # Pago de tarjeta
+    path('pagar-tarjeta/', views.pagar_tarjeta, name='pagar-tarjeta'),
+
     # Liquidación
     path('liquidacion/', views.liquidacion, name='liquidacion'),
 ]
