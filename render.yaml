@@ -6,7 +6,10 @@ services:
     plan: free
     rootDir: finanzas_app/backend
     buildCommand: "./build.sh"
-    startCommand: "gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60"
+    # exec + bash -c: asegura expansión de $PORT. 1 worker: menos RAM en plan free.
+    # healthCheckPath: endpoint que responde 200 (Render usa esto además del escaneo de puerto).
+    healthCheckPath: /api/usuarios/config/
+    startCommand: 'bash -c "exec gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --graceful-timeout 30 --access-logfile - --error-logfile -"'
     envVars:
       - key: DEBUG
         value: "False"
