@@ -2,6 +2,9 @@
 
 import pytest
 from unittest.mock import patch
+from rest_framework import status
+from rest_framework.response import Response
+
 from applications.usuarios.models import Usuario, Familia
 from applications.finanzas.models import Categoria, IngresoComun, MetodoPago, Movimiento, Tarjeta
 
@@ -63,12 +66,26 @@ def usuario_otra_familia(db, otra_familia):
 
 # ── Fixture de autenticación ──────────────────────────────────────────────────
 
-# Usado por el mock de get_usuario_autenticado para devolver el usuario del test actual.
-_current_usuario = None
+# Bearer token (sin prefijo) → usuario. Evita el bug de un único global cuando un test
+# pide auth_header y auth_header_2: el último fixture ya no pisa al usuario del primero.
+_token_a_usuario: dict[str, Usuario] = {}
 
 
-def _mock_get_usuario(request):
-    return (_current_usuario, None)
+def _mock_get_usuario_autenticado(request):
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return None, Response(
+            {'error': 'Token no proporcionado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    token = auth_header.split('Bearer ', 1)[1].strip()
+    usuario = _token_a_usuario.get(token)
+    if usuario is None:
+        return None, Response(
+            {'error': 'Usuario no registrado.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return (usuario, None)
 
 
 def _make_auth_header_fixture(usuario_fixture_name, header_value):
@@ -76,14 +93,17 @@ def _make_auth_header_fixture(usuario_fixture_name, header_value):
 
     @pytest.fixture
     def _fixture(request):
-        global _current_usuario
         usuario = request.getfixturevalue(usuario_fixture_name)
-        _current_usuario = usuario
+        token = header_value.split('Bearer ', 1)[1].strip()
+        _token_a_usuario[token] = usuario
         try:
-            with patch('applications.utils.get_usuario_autenticado', side_effect=_mock_get_usuario):
+            with patch(
+                'applications.utils.get_usuario_autenticado',
+                side_effect=_mock_get_usuario_autenticado,
+            ):
                 yield {'HTTP_AUTHORIZATION': header_value}
         finally:
-            _current_usuario = None
+            _token_a_usuario.pop(token, None)
 
     return _fixture
 
