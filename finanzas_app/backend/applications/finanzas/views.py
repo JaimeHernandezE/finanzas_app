@@ -1636,6 +1636,7 @@ def importar_cuenta_personal_planilla(request):
     categorias_creadas = 0
     errores = []
     meses_importados = set()
+    movimientos_para_crear = []
 
     vinculados_ingreso_comun = IngresoComun.objects.filter(
         familia_id=usuario.familia_id,
@@ -2187,7 +2188,8 @@ def importar_gastos_comunes_planilla(request):
                         categorias_creadas += 1
                     monto_final = monto
 
-                Movimiento.objects.create(
+                movimientos_para_crear.append(
+                    Movimiento(
                     familia=usuario.familia,
                     usuario=usuario,
                     cuenta=None,
@@ -2199,9 +2201,14 @@ def importar_gastos_comunes_planilla(request):
                     comentario=descripcion,
                     metodo_pago=metodo_efectivo,
                 )
+                )
                 creados += 1
             except ValueError as exc:
                 errores.append(f'Fila {fila_idx}: {exc}')
+
+        if movimientos_para_crear:
+            # Evita disparar señales por fila; el recálculo se hace una sola vez al final.
+            Movimiento.objects.bulk_create(movimientos_para_crear)
 
         if dry_run:
             transaction.set_rollback(True)
