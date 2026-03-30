@@ -116,14 +116,38 @@ function etiquetaMetodoPagoUsuario(metodoTipo: MetodoTipo): string {
 
 /** "25000" → "$ 25.000"  (vacío → "") */
 function formatearMiles(raw: string): string {
-  const digits = raw.replace(/\D/g, '')
-  if (!digits) return ''
-  return '$ ' + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const s = raw.trim().replace(',', '.')
+  if (!s) return ''
+  const [intRaw, decRaw] = s.split('.')
+  const intDigits = (intRaw ?? '').replace(/\D/g, '')
+  if (!intDigits) return ''
+  const intFormatted = intDigits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  const decDigits = (decRaw ?? '').replace(/\D/g, '').slice(0, 2)
+  return decDigits ? `$ ${intFormatted}.${decDigits}` : `$ ${intFormatted}`
 }
 
 /** "$ 25.000" → "25000" */
 function parsearDigitos(display: string): string {
   return display.replace(/\D/g, '')
+}
+
+/** "30000.50" -> "30000.50" (max 2 decimales). Devuelve '' si inválido/vacío. */
+function parsearMontoDecimal(raw: string): string {
+  const filtered = raw.trim().replace(/,/g, '.').replace(/[^0-9.]/g, '')
+  if (!filtered) return ''
+  const parts = filtered.split('.').filter((p) => p.length > 0)
+  if (!parts.length) return ''
+  if (parts.length === 1) return parts[0]
+
+  const last = parts[parts.length - 1]
+  const intDigits = parts.slice(0, -1).join('')
+
+  // Heurística: si el último grupo tiene 3 dígitos, tratamos el punto como separador de miles.
+  if (last.length === 3) return parts.join('')
+
+  // Si no, tratamos el último grupo como parte decimal (máximo 2).
+  const decDigits = last.slice(0, 2).padEnd(2, '0')
+  return decDigits ? `${intDigits}.${decDigits}` : intDigits
 }
 
 /** "2025-03-15" → "15/03/2025" */
@@ -163,6 +187,7 @@ function formInicial() {
     categoria: 0,
     tarjeta: 0,
     num_cuotas: '',
+    monto_cuota: '',
     fecha: todayDisplay(),
     ambito: 'COMUN' as 'COMUN' | 'PERSONAL',
     cuenta: 0,
@@ -293,6 +318,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             categoria: Number(data.categoria),
             tarjeta: data.tarjeta != null ? Number(data.tarjeta) : 0,
             num_cuotas: data.num_cuotas != null ? String(data.num_cuotas) : '',
+            monto_cuota: data.monto_cuota != null ? String(data.monto_cuota) : '',
             fecha: isoToDisplay(fechaIso),
             ambito: data.ambito as 'COMUN' | 'PERSONAL',
             cuenta: data.cuenta != null ? Number(data.cuenta) : 0,
@@ -371,6 +397,20 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       router.replace('/(tabs)/gastos')
     }, [esStandalone, editar, router, iniciarEdicion])
 
+    // ── Edición en modo standalone ──
+    // En el modo overlay (gastos) la edición se dispara desde el ref, pero en la pantalla completa
+    // `nuevo-movimiento?editar=...` debemos iniciar la edición desde el query param.
+    useEffect(() => {
+      if (!esStandalone) return
+      if (!editar) return
+      const idNum = parseInt(String(editar), 10)
+      if (!Number.isFinite(idNum)) {
+        router.replace('/(tabs)/index')
+        return
+      }
+      void iniciarEdicion(idNum)
+    }, [esStandalone, editar, router, iniciarEdicion])
+
     // Categorías ordenadas alfabéticamente, filtradas por tipo
     const categoriasFiltradas = useMemo(
       () =>
@@ -394,18 +434,28 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       [form.monto],
     )
 
-    /** Vista previa monto ÷ cuotas (igual que la web: solo calculado, no manual). */
+    /** Vista previa de la cuota (prioriza la cuota manual si se ingresa). */
     const previewMontoCuotaCredito = useMemo(() => {
       if (metodoTipo !== 'CREDITO' || !form.num_cuotas.trim()) return null
       const n = parseInt(form.num_cuotas, 10)
       if (!Number.isFinite(n) || n < NUM_CUOTAS_MIN || montoEnteroForm <= 0) return null
-      return Math.ceil(montoEnteroForm / n)
-    }, [metodoTipo, form.num_cuotas, montoEnteroForm])
+
+      const manualRaw = form.monto_cuota.trim()
+      if (manualRaw) {
+        const manual = parsearMontoDecimal(manualRaw)
+        const manualNum = manual ? Number(manual) : NaN
+        if (!manual || !Number.isFinite(manualNum) || manualNum <= 0) return null
+        return manual
+      }
+
+      return String(Math.ceil(montoEnteroForm / n))
+    }, [metodoTipo, form.num_cuotas, form.monto_cuota, montoEnteroForm])
 
     function onElegirMetodoPago(m: MetodoTipo) {
       if (metodoTipo === 'CREDITO' && m !== 'CREDITO') {
         setField('tarjeta', 0)
         setField('num_cuotas', '')
+        setField('monto_cuota', '')
       }
       setMetodoTipo(m)
     }
@@ -502,6 +552,15 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           )
           return
         }
+
+        if (form.monto_cuota.trim()) {
+          const manual = parsearMontoDecimal(form.monto_cuota)
+          const manualNum = manual ? Number(manual) : NaN
+          if (!manual || !Number.isFinite(manualNum) || manualNum <= 0) {
+            Alert.alert('Valor cuota', 'Ingresa un valor de cuota manual mayor a 0.')
+            return
+          }
+        }
       }
 
       // Cuenta personal: la web solo exige cuenta si hay cuentas propias disponibles
@@ -522,6 +581,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           : null
       const montoCuotaCalculado =
         cuotas && cuotas > 0 && monto > 0 ? Math.ceil(monto / cuotas) : null
+      const montoCuotaManual =
+        tipo === 'EGRESO' && metodoTipo === 'CREDITO' && form.monto_cuota.trim()
+          ? parsearMontoDecimal(form.monto_cuota) || null
+          : null
 
       const payload = {
         tipo,
@@ -538,9 +601,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         num_cuotas:
           tipo === 'EGRESO' && metodoTipo === 'CREDITO' && cuotas ? cuotas : null,
         monto_cuota:
-          tipo === 'EGRESO' && metodoTipo === 'CREDITO' && montoCuotaCalculado
-            ? montoCuotaCalculado
-            : null,
+          tipo === 'EGRESO' && metodoTipo === 'CREDITO' ? montoCuotaManual ?? montoCuotaCalculado : null,
       }
 
       setSaving(true)
@@ -826,15 +887,24 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
               placeholder={`Ej: 12 (${NUM_CUOTAS_MIN}–${NUM_CUOTAS_MAX})`}
               className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
             />
+            <Text className="text-xs text-muted font-semibold mb-1">Valor cuota (opcional)</Text>
+            <TextInput
+              value={form.monto_cuota}
+              onChangeText={(v) => setField('monto_cuota', parsearMontoDecimal(v))}
+              keyboardType="numeric"
+              placeholder="Se calcula automático"
+              className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
+            />
             <Text className="text-xs text-muted mb-2">
-              Si no indicas valor de cuota, se divide monto ÷ cuotas (redondeo arriba); la diferencia de
-              centavos va a la primera cuota.
+              Si indicas un valor de cuota manual, se usa ese monto. Si lo dejas vacío, se divide monto ÷
+              cuotas (redondeo arriba); la diferencia de centavos va a la primera cuota.
             </Text>
             {previewMontoCuotaCredito != null && form.num_cuotas.trim() !== '' && (
               <Text className="text-sm text-dark font-medium">
                 {form.num_cuotas.trim()} cuota
                 {parseInt(form.num_cuotas, 10) !== 1 ? 's' : ''} de{' '}
                 {formatearMiles(String(previewMontoCuotaCredito))}
+                {form.monto_cuota.trim() ? ' (manual)' : ' (calculado)'}
               </Text>
             )}
           </View>

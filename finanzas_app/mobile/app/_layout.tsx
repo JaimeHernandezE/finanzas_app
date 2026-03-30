@@ -1,4 +1,4 @@
-import '../setApiBaseUrl'
+import '../lib/apiConfig'
 import { Slot } from 'expo-router'
 import { ConfigProvider } from '@finanzas/shared/context/ConfigContext'
 import { AuthProvider } from '../context/AuthContext'

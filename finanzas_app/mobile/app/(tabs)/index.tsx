@@ -307,6 +307,14 @@ export default function DashboardScreen() {
               <View className="bg-white rounded-2xl p-5">
                 <Text className="text-sm text-muted mb-1">Deuda tarjetas</Text>
                 <Text className="text-[28px] font-bold text-danger">{formatMonto(Math.abs(deudaTc))}</Text>
+              {deudaTc > 0 && (
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/tarjetas' as never)}
+                  className="bg-accent rounded-xl px-4 py-3 mt-4 items-center"
+                >
+                  <Text className="text-dark font-bold text-sm">Ir a pagar tarjeta</Text>
+                </TouchableOpacity>
+              )}
               </View>
 
               <View className="bg-dark rounded-2xl p-5">

@@ -23,7 +23,7 @@ Documento para **replicar el mismo enfoque en otras apps**: decisiones, orden de
 | **Firebase: no inicializar con config vacía** | En release, `initializeApp` sin `apiKey`/`projectId` puede tumbar la app al arrancar. Usar comprobación previa y/o init perezoso. |
 | **Cliente HTTP: token desde SecureStore primero** | `navigator.product === 'ReactNative'` **ya no es fiable** en RN/Hermes reciente; si el cliente cree que es “web”, lee `localStorage` y las peticiones van **sin** `Authorization` aunque el login haya guardado el token en SecureStore. |
 | **`__DEV__` en bloqueo biométrico** | En `expo start` + emulador evita quedar bloqueado por huella simulada; en **release** `__DEV__` es `false`. |
-| **Monorepo: URL del API definida en `mobile/`, inyectada en `shared/`** | En paquetes fuera de `mobile/`, `process.env.EXPO_PUBLIC_API_URL` a veces **no se sustituye** en el bundle de EAS → el cliente sigue usando `localhost` y aparece *Network Error* en release. Solución: `mobile/lib/apiConfig.ts` + `setApiBaseUrl()` al arranque (`mobile/setApiBaseUrl.ts` importado primero en `app/_layout.tsx`). |
+| **Monorepo: URL del API definida en `mobile/`, inyectada en `shared/`** | En paquetes fuera de `mobile/`, `process.env.EXPO_PUBLIC_API_URL` a veces **no se sustituye** en el bundle de EAS → *Network Error*. Solución: `mobile/lib/apiConfig.ts` (primer import en `app/_layout.tsx`) llama `setApiBaseUrl()`; `shared/api/baseUrl.ts` también guarda la URL en **`globalThis`** por si Metro **duplica** el módulo y `_override` queda en otra instancia. |
 
 ---
 
@@ -62,7 +62,7 @@ Documento para **replicar el mismo enfoque en otras apps**: decisiones, orden de
 |------|-------------------------|
 | Firebase lazy + `isFirebaseConfigured()` | `mobile/lib/firebase.ts`, `mobile/app/_layout.tsx`, `mobile/components/ConfiguracionFaltante.tsx` |
 | Cliente axios: SecureStore → luego localStorage | `shared/api/client.ts` |
-| URL API en monorepo (EAS inyecta en `mobile/`) | `mobile/lib/apiConfig.ts`, `mobile/setApiBaseUrl.ts`, `shared/api/baseUrl.ts` (primer import en `app/_layout.tsx`) |
+| URL API en monorepo (EAS inyecta en `mobile/`) | `mobile/lib/apiConfig.ts`, `shared/api/baseUrl.ts` (`globalThis` + `setApiBaseUrl`), primer import en `app/_layout.tsx` |
 | Biometría solo en release | `mobile/components/AppLock.tsx` |
 | API URL en `AuthContext` | `mobile/context/AuthContext.tsx` (`API_BASE_URL` desde `apiConfig`) |
 | Lista de env de ejemplo | `mobile/.env.example` |

@@ -1,18 +1,20 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
-import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
+import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
+import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -28,14 +30,47 @@ interface Tarjeta {
 
 interface Cuota {
   id: number
-  descripcion: string
-  monto_cuota: string | number
-  cuota_numero: number
-  total_cuotas: number
+  movimiento: number
+  numero: number
+  monto: string | number
+  mes_facturacion: string
   estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
   incluir: boolean
-  movimiento_descripcion?: string
-  ambito?: 'PERSONAL' | 'COMUN'
+}
+
+type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
+
+interface CargoAdicional {
+  id: number
+  descripcion: string
+  monto: number
+}
+
+interface MovimientoCredito {
+  id: number
+  fecha: string
+  tipo: 'INGRESO' | 'EGRESO'
+  ambito: 'PERSONAL' | 'COMUN'
+  monto: string | number
+  comentario: string
+  categoria_nombre: string
+  cuenta: number | null
+  cuenta_nombre?: string | null
+  tarjeta: number | null
+  tarjeta_nombre?: string | null
+  usuario?: number | string
+}
+
+interface Categoria {
+  id: number
+  nombre: string
+  tipo: string
+}
+
+interface MetodoPago {
+  id: number
+  nombre: string
+  tipo: string
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -65,10 +100,86 @@ function parseDia(val: string): number | null {
 
 const FORM_VACIO = { nombre: '', banco: '', diaFac: '', diaVen: '' }
 
+type FormTarjetaState = typeof FORM_VACIO
+
+function FormTarjeta(props: {
+  form: FormTarjetaState
+  setForm: Dispatch<SetStateAction<FormTarjetaState>>
+  formError: string | null
+  guardando: boolean
+  titulo: string
+  onGuardar: () => void
+  onCancelar: () => void
+}) {
+  const { form, setForm, formError, guardando, titulo, onGuardar, onCancelar } = props
+  return (
+    <View className="bg-white border border-border rounded-xl p-4 mb-3">
+      <Text className="text-xs font-semibold text-muted mb-3">{titulo}</Text>
+      <TextInput
+        value={form.nombre}
+        onChangeText={(v) => setForm((f) => ({ ...f, nombre: v }))}
+        placeholder="Nombre (ej: Visa BCI)"
+        placeholderTextColor="#888884"
+        className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+      />
+      <TextInput
+        value={form.banco}
+        onChangeText={(v) => setForm((f) => ({ ...f, banco: v }))}
+        placeholder="Banco (ej: BCI, Santander)"
+        placeholderTextColor="#888884"
+        className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+      />
+      <View className="flex-row gap-2 mb-2">
+        <View className="flex-1">
+          <Text className="text-muted text-[10px] mb-1 ml-1">Día cierre</Text>
+          <TextInput
+            value={form.diaFac}
+            onChangeText={(v) => setForm((f) => ({ ...f, diaFac: v }))}
+            placeholder="1–31"
+            placeholderTextColor="#888884"
+            keyboardType="numeric"
+            className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
+          />
+        </View>
+        <View className="flex-1">
+          <Text className="text-muted text-[10px] mb-1 ml-1">Día vencimiento</Text>
+          <TextInput
+            value={form.diaVen}
+            onChangeText={(v) => setForm((f) => ({ ...f, diaVen: v }))}
+            placeholder="1–31"
+            placeholderTextColor="#888884"
+            keyboardType="numeric"
+            className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
+          />
+        </View>
+      </View>
+      {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
+      <View className="flex-row gap-2">
+        <TouchableOpacity
+          onPress={onCancelar}
+          className="flex-1 border border-border rounded-lg py-2.5 items-center"
+        >
+          <Text className="text-dark text-sm font-semibold">Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={onGuardar}
+          disabled={guardando}
+          className="flex-1 bg-dark rounded-lg py-2.5 items-center"
+        >
+          <Text className="text-white text-sm font-semibold">
+            {guardando ? 'Guardando…' : 'Guardar'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function TarjetasScreen() {
   const { formatMonto } = useConfig()
+  const router = useRouter()
 
   // ── CRUD tarjetas ──
   const { data: tarjetasRaw, loading: loadingTarjetas, refetch: refetchTarjetas } = useTarjetas()
@@ -85,21 +196,129 @@ export default function TarjetasScreen() {
   const [tarjetaId, setTarjetaId] = useState<number | null>(null)
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
-  const [vista, setVista] = useState<'FACTURADO' | 'PAGADO'>('FACTURADO')
+  const [vistaActiva, setVistaActiva] = useState<VistaTarjeta>('UTILIZADO')
   const [actualizando, setActualizando] = useState<Set<number>>(new Set())
+  const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
+  const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
+  const [cargoDesc, setCargoDesc] = useState('')
+  const [cargoMonto, setCargoMonto] = useState('')
+  const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
+  const [guardandoPago, setGuardandoPago] = useState(false)
+  const [exitoPostPago, setExitoPostPago] = useState(false)
+  const [totalPagado, setTotalPagado] = useState(0)
+
+  // ── Modal nuevo gasto (para flujo +Gasto en web) ──
+  const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
+  const [nuevoAmbito, setNuevoAmbito] = useState<'PERSONAL' | 'COMUN'>('PERSONAL')
+  const [nuevoCuentaId, setNuevoCuentaId] = useState<number | null>(null)
+  const [nuevoCategoriaId, setNuevoCategoriaId] = useState<number | null>(null)
+  const [nuevoFecha, setNuevoFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [nuevoMonto, setNuevoMonto] = useState('')
+  const [nuevoNumCuotas, setNuevoNumCuotas] = useState('1')
+  const [nuevoComentario, setNuevoComentario] = useState('')
+  const [guardandoNuevoGasto, setGuardandoNuevoGasto] = useState(false)
+  const [nuevoGastoError, setNuevoGastoError] = useState<string | null>(null)
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
   const tarjetaIdEfectivo = tarjetaId ?? tarjetas[0]?.id ?? null
 
   const { data: cuotasData, loading: loadingCuotas, error: errorCuotas, refetch: refetchCuotas } = useApi<Cuota[]>(
-    () => movimientosApi.getCuotas({
-      tarjeta: tarjetaIdEfectivo ?? undefined,
-      mes: mes + 1,
-      anio,
-    }) as Promise<{ data: Cuota[] }>,
+    () => {
+      if (tarjetaIdEfectivo == null) return Promise.resolve({ data: [] as Cuota[] })
+      return movimientosApi.getCuotas({
+        tarjeta: tarjetaIdEfectivo,
+        mes: mes + 1,
+        anio,
+      }) as Promise<{ data: Cuota[] }>
+    },
     [tarjetaIdEfectivo, mes, anio],
   )
   const cuotas = cuotasData ?? []
+
+  // ── Utilizado / control de avance ──
+  const { data: cuotasTarjetaData, loading: loadingCuotasTarjeta, error: errorCuotasTarjeta, refetch: refetchCuotasTarjeta } =
+    useApi<Cuota[]>(
+      () => {
+        if (tarjetaIdEfectivo == null) return Promise.resolve({ data: [] as Cuota[] })
+        return movimientosApi.getCuotas({ tarjeta: tarjetaIdEfectivo }) as Promise<{ data: Cuota[] }>
+      },
+      [tarjetaIdEfectivo],
+    )
+  const cuotasTarjeta = cuotasTarjetaData ?? []
+
+  const toMonthIndex = (fechaIso: string): number | null => {
+    if (!fechaIso) return null
+    const d = new Date(fechaIso)
+    if (!Number.isFinite(d.getTime())) return null
+    return d.getFullYear() * 12 + d.getMonth()
+  }
+
+  const maxMesActivoIdx = useMemo(() => {
+    const activos = cuotasTarjeta.filter((c) => c.estado !== 'PAGADO')
+    if (activos.length === 0) return null
+    const idxs = activos
+      .map((c) => toMonthIndex(c.mes_facturacion))
+      .filter((v): v is number => v !== null)
+    if (idxs.length === 0) return null
+    return Math.max(...idxs)
+  }, [cuotasTarjeta])
+
+  const puedeAvanzar = maxMesActivoIdx !== null && anio * 12 + mes < maxMesActivoIdx
+
+  // ── Movimientos utilizados (para vista UTILIZADO) ──
+  const { data: movPersonalData, loading: movPersonalLoading, error: movPersonalError, refetch: refetchMovPersonal } =
+    useApi<MovimientoCredito[]>(
+      () => {
+        if (tarjetaIdEfectivo == null) return Promise.resolve({ data: [] as MovimientoCredito[] })
+        return movimientosApi.getMovimientos({
+          tipo: 'EGRESO',
+          ambito: 'PERSONAL',
+          solo_mios: true,
+          metodo: 'CREDITO',
+        }) as Promise<{ data: MovimientoCredito[] }>
+      },
+      [tarjetaIdEfectivo],
+    )
+
+  const { data: movComunData, loading: movComunLoading, error: movComunError, refetch: refetchMovComun } = useApi<
+    MovimientoCredito[]
+  >(
+    () => {
+      if (tarjetaIdEfectivo == null) return Promise.resolve({ data: [] as MovimientoCredito[] })
+      return movimientosApi.getMovimientos({
+        tipo: 'EGRESO',
+        ambito: 'COMUN',
+        metodo: 'CREDITO',
+      }) as Promise<{ data: MovimientoCredito[] }>
+    },
+    [tarjetaIdEfectivo],
+  )
+
+  const movPersonal = movPersonalData ?? []
+  const movComun = movComunData ?? []
+
+  // ── Catálogos para +Gasto ──
+  const { data: categoriasData } = useCategorias()
+  const categoriasEgreso = useMemo(() => {
+    const list = (categoriasData ?? []) as Categoria[]
+    return list.filter((c) => c.tipo === 'EGRESO').sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+  }, [categoriasData])
+
+  const { data: metodosData, loading: loadingMetodosPago } = useMetodosPago()
+  const metodoCreditoId = useMemo(() => {
+    const list = (metodosData ?? []) as MetodoPago[]
+    const normalizar = (raw: string) => raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase()
+    const m = list.find((x) => normalizar(String(x.tipo ?? '')) === 'CREDITO')
+    return m?.id ?? null
+  }, [metodosData])
+
+  const { data: cuentasRes } = useApi<CuentaPersonalApi[]>(
+    () => finanzasApi.getCuentasPersonales(),
+    [],
+  )
+  const cuentasPropias = useMemo(() => {
+    return ((cuentasRes ?? []) as CuentaPersonalApi[]).filter((c) => c.es_propia).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+  }, [cuentasRes])
 
   const omitirPrimerFoco = useRef(true)
   useFocusEffect(
@@ -207,30 +426,115 @@ export default function TarjetasScreen() {
   }
 
   function irSiguiente() {
-    if (esActual) return
+    if (!puedeAvanzar) return
     if (mes === 11) { setMes(0); setAnio((a) => a + 1) }
     else setMes((m) => m + 1)
   }
 
-  const cuotasFiltradas = useMemo(
-    () => cuotas.filter((c) => c.estado === vista),
-    [cuotas, vista],
-  )
+  const cuotasFiltradas = cuotas
 
   const cuotasIncluidas = useMemo(
-    () => cuotasFiltradas.filter((c) => c.incluir),
-    [cuotasFiltradas],
+    () => cuotas.filter((c) => c.incluir && c.estado !== 'PAGADO'),
+    [cuotas],
   )
 
   const totalIncluido = useMemo(
-    () => cuotasIncluidas.reduce((s, c) => s + montoNum(c.monto_cuota), 0),
+    () => cuotasIncluidas.reduce((s, c) => s + montoNum(c.monto), 0),
     [cuotasIncluidas],
   )
 
   const totalFull = useMemo(
-    () => cuotasFiltradas.reduce((s, c) => s + montoNum(c.monto_cuota), 0),
-    [cuotasFiltradas],
+    () => cuotas.reduce((s, c) => s + montoNum(c.monto), 0),
+    [cuotas],
   )
+
+  const totalExcluido = useMemo(
+    () => cuotas.filter((c) => !c.incluir).reduce((s, c) => s + montoNum(c.monto), 0),
+    [cuotas],
+  )
+
+  const cargosTotal = useMemo(() => cargosAdicionales.reduce((s, c) => s + montoNum(c.monto), 0), [cargosAdicionales])
+  const total = totalIncluido + cargosTotal
+
+  const cuotasIncluidasCount = useMemo(
+    () => cuotas.filter((c) => c.incluir && c.estado !== 'PAGADO').length,
+    [cuotas],
+  )
+
+  const cuotasExcluidasCount = useMemo(
+    () => cuotas.filter((c) => !c.incluir).length,
+    [cuotas],
+  )
+
+  const estadoPorMovimiento = useMemo(() => {
+    const map = new Map<number, 'ACTIVO' | 'PAGADO'>()
+    for (const c of cuotasTarjeta) {
+      const movId = c.movimiento
+      const prev = map.get(movId)
+      if (c.estado !== 'PAGADO') map.set(movId, 'ACTIVO')
+      else if (!prev) map.set(movId, 'PAGADO')
+    }
+    return map
+  }, [cuotasTarjeta])
+
+  const utilizadoPersonalVisible = useMemo(() => {
+    return movPersonal
+      .filter((m) => m.tarjeta === tarjetaIdEfectivo && estadoPorMovimiento.has(m.id))
+      .filter((m) => estadoPorMovimiento.get(m.id) != null)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, 10)
+  }, [movPersonal, tarjetaIdEfectivo, estadoPorMovimiento])
+
+  const utilizadoComunVisible = useMemo(() => {
+    return movComun
+      .filter((m) => m.tarjeta === tarjetaIdEfectivo && estadoPorMovimiento.has(m.id))
+      .filter((m) => estadoPorMovimiento.get(m.id) != null)
+      .sort((a, b) => b.fecha.localeCompare(a.fecha))
+      .slice(0, 10)
+  }, [movComun, tarjetaIdEfectivo, estadoPorMovimiento])
+
+  const totalCuotasPorMovimiento = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const c of cuotasTarjeta) {
+      const prev = map.get(c.movimiento) ?? 0
+      map.set(c.movimiento, Math.max(prev, c.numero))
+    }
+    return map
+  }, [cuotasTarjeta])
+
+  const utilizadoPersonalPorCuenta = useMemo(() => {
+    const map = new Map<
+      string,
+      { cuentaNombre: string; total: number; movimientos: MovimientoCredito[] }
+    >()
+
+    for (const m of movPersonal) {
+      if (tarjetaIdEfectivo == null) continue
+      if (m.tarjeta !== tarjetaIdEfectivo) continue
+      if (estadoPorMovimiento.get(m.id) !== 'ACTIVO') continue
+      const cuentaNombre = (m.cuenta_nombre ?? 'Sin cuenta').trim()
+      const key = String(m.cuenta ?? 'sin-cuenta')
+      const entry = map.get(key) ?? { cuentaNombre, total: 0, movimientos: [] }
+      entry.total += montoNum(m.monto)
+      entry.movimientos.push(m)
+      map.set(key, entry)
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
+  }, [movPersonal, tarjetaIdEfectivo, estadoPorMovimiento])
+
+  const totalDeudaActiva = useMemo(
+    () => cuotasTarjeta.filter((c) => c.estado !== 'PAGADO').reduce((s, c) => s + montoNum(c.monto), 0),
+    [cuotasTarjeta],
+  )
+
+  const totalDeudaActivaPersonal = useMemo(() => {
+    return utilizadoPersonalVisible
+      .filter((m) => estadoPorMovimiento.get(m.id) === 'ACTIVO')
+      .reduce((s, m) => s + montoNum(m.monto), 0)
+  }, [utilizadoPersonalVisible, estadoPorMovimiento])
+
+  const totalDeudaActivaComun = Math.max(0, totalDeudaActiva - totalDeudaActivaPersonal)
 
   async function toggleIncluir(cuota: Cuota) {
     setActualizando((prev) => new Set(prev).add(cuota.id))
@@ -244,92 +548,135 @@ export default function TarjetasScreen() {
     }
   }
 
-  async function marcarPagadas() {
-    const pendientes = cuotasFiltradas.filter((c) => c.incluir)
-    if (pendientes.length === 0) return
-    Alert.alert(
-      'Marcar como pagadas',
-      `¿Marcar ${pendientes.length} cuota${pendientes.length !== 1 ? 's' : ''} como PAGADO?`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Confirmar',
-          onPress: async () => {
-            setActualizando(new Set(pendientes.map((c) => c.id)))
-            try {
-              await Promise.all(pendientes.map((c) => movimientosApi.updateCuota(c.id, { estado: 'PAGADO' })))
-              void refetchCuotas()
-            } catch {
-              Alert.alert('Error', 'No se pudieron marcar todas las cuotas.')
-            } finally {
-              setActualizando(new Set())
-            }
-          },
-        },
-      ],
-    )
+  function parseMontoEnteroDesdeInput(input: string): number {
+    const digits = input.replace(/\D/g, '')
+    if (!digits) return 0
+    return parseInt(digits, 10)
   }
 
-  // ── Formulario inline ──
-
-  function FormTarjeta({ onGuardar, titulo }: { onGuardar: () => void; titulo: string }) {
-    return (
-      <View className="bg-white border border-border rounded-xl p-4 mb-3">
-        <Text className="text-xs font-semibold text-muted mb-3">{titulo}</Text>
-        <TextInput
-          value={form.nombre}
-          onChangeText={(v) => setForm((f) => ({ ...f, nombre: v }))}
-          placeholder="Nombre (ej: Visa BCI)"
-          placeholderTextColor="#888884"
-          className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
-        />
-        <TextInput
-          value={form.banco}
-          onChangeText={(v) => setForm((f) => ({ ...f, banco: v }))}
-          placeholder="Banco (ej: BCI, Santander)"
-          placeholderTextColor="#888884"
-          className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
-        />
-        <View className="flex-row gap-2 mb-2">
-          <View className="flex-1">
-            <Text className="text-muted text-[10px] mb-1 ml-1">Día cierre</Text>
-            <TextInput
-              value={form.diaFac}
-              onChangeText={(v) => setForm((f) => ({ ...f, diaFac: v }))}
-              placeholder="1–31"
-              placeholderTextColor="#888884"
-              keyboardType="numeric"
-              className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-muted text-[10px] mb-1 ml-1">Día vencimiento</Text>
-            <TextInput
-              value={form.diaVen}
-              onChangeText={(v) => setForm((f) => ({ ...f, diaVen: v }))}
-              placeholder="1–31"
-              placeholderTextColor="#888884"
-              keyboardType="numeric"
-              className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
-            />
-          </View>
-        </View>
-        {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
-        <View className="flex-row gap-2">
-          <TouchableOpacity onPress={cancelarForm} className="flex-1 border border-border rounded-lg py-2.5 items-center">
-            <Text className="text-dark text-sm font-semibold">Cancelar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={onGuardar}
-            disabled={guardando}
-            className="flex-1 bg-dark rounded-lg py-2.5 items-center"
-          >
-            <Text className="text-white text-sm font-semibold">{guardando ? 'Guardando…' : 'Guardar'}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    )
+  function agregarCargoAdicional() {
+    const desc = cargoDesc.trim()
+    const monto = parseMontoEnteroDesdeInput(cargoMonto)
+    if (!desc) {
+      Alert.alert('Falta descripción', 'Ingresa una descripción para el cargo.')
+      return
+    }
+    if (!Number.isFinite(monto) || monto <= 0) {
+      Alert.alert('Monto inválido', 'Ingresa un monto mayor a 0.')
+      return
+    }
+    setCargosAdicionales((prev) => [...prev, { id: Date.now(), descripcion: desc, monto }])
+    setCargoDesc('')
+    setCargoMonto('')
+    setFormularioCargoVisible(false)
   }
+
+  function eliminarCargoAdicional(id: number) {
+    setCargosAdicionales((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  async function registrarPago() {
+    const cuotasPorPagar = cuotas.filter((c) => c.incluir && c.estado !== 'PAGADO')
+    if (cuotasPorPagar.length === 0 && total <= 0) return
+
+    setModalConfirmarPago(false)
+    setGuardandoPago(true)
+    try {
+      setActualizando(new Set(cuotasPorPagar.map((c) => c.id)))
+      await Promise.all(
+        cuotasPorPagar.map((c) => movimientosApi.updateCuota(c.id, { estado: 'PAGADO' })),
+      )
+      setCargosAdicionales([])
+      setTotalPagado(total)
+      setExitoPostPago(true)
+      void refetchCuotas()
+      void refetchCuotasTarjeta()
+    } catch {
+      Alert.alert('Error', 'No se pudo registrar el pago.')
+    } finally {
+      setActualizando(new Set())
+      setGuardandoPago(false)
+    }
+  }
+
+  function abrirModalNuevoGasto() {
+    setNuevoGastoError(null)
+    setNuevoAmbito('PERSONAL')
+    setNuevoCuentaId(cuentasPropias[0]?.id ?? null)
+    setNuevoCategoriaId(categoriasEgreso[0]?.id ?? null)
+    setNuevoFecha(new Date().toISOString().slice(0, 10))
+    setNuevoMonto('')
+    setNuevoNumCuotas('1')
+    setNuevoComentario('')
+    setModalNuevoGasto(true)
+  }
+
+  async function guardarNuevoGasto() {
+    setNuevoGastoError(null)
+    if (tarjetaIdEfectivo == null || metodoCreditoId == null) {
+      Alert.alert('Falta datos', 'No hay método de crédito configurado o tarjeta seleccionada.')
+      return
+    }
+    const monto = parseMontoEnteroDesdeInput(nuevoMonto)
+    const n = parseInt(nuevoNumCuotas, 10)
+
+    if (!monto || monto <= 0) {
+      setNuevoGastoError('Ingresa un monto mayor a 0.')
+      return
+    }
+    if (!Number.isFinite(n) || n < 1 || n > 48) {
+      setNuevoGastoError('Ingresa un número de cuotas entre 1 y 48.')
+      return
+    }
+    if (!nuevoCategoriaId) {
+      setNuevoGastoError('Selecciona una categoría.')
+      return
+    }
+    if (nuevoAmbito === 'PERSONAL' && (nuevoCuentaId == null || !Number.isFinite(nuevoCuentaId))) {
+      setNuevoGastoError('Selecciona una cuenta personal.')
+      return
+    }
+
+    const fechaIso = nuevoFecha.trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaIso)) {
+      setNuevoGastoError('Fecha inválida. Usa formato YYYY-MM-DD.')
+      return
+    }
+
+    setGuardandoNuevoGasto(true)
+    try {
+      await movimientosApi.createMovimiento({
+        fecha: fechaIso,
+        tipo: 'EGRESO',
+        ambito: nuevoAmbito,
+        categoria: nuevoCategoriaId,
+        cuenta: nuevoAmbito === 'PERSONAL' ? nuevoCuentaId : null,
+        monto: String(monto),
+        comentario: nuevoComentario.trim(),
+        metodo_pago: metodoCreditoId,
+        tarjeta: tarjetaIdEfectivo,
+        num_cuotas: n,
+      })
+
+      setModalNuevoGasto(false)
+      setModalConfirmarPago(false)
+      void refetchCuotas()
+      void refetchCuotasTarjeta()
+      void refetchMovPersonal()
+      void refetchMovComun()
+      // Al crear un nuevo gasto, conviene volver a ver cuotas del mes.
+      setVistaActiva('FACTURADO')
+    } catch {
+      Alert.alert('Error', 'No se pudo crear el gasto con crédito.')
+    } finally {
+      setGuardandoNuevoGasto(false)
+    }
+  }
+
+  const tarjetaSeleccionada = useMemo(
+    () => tarjetas.find((t) => t.id === tarjetaIdEfectivo) ?? null,
+    [tarjetas, tarjetaIdEfectivo],
+  )
 
   // ── Render ──
 
@@ -364,7 +711,18 @@ export default function TarjetasScreen() {
 
           {!loadingTarjetas && tarjetas.map((t) => {
             if (editandoId === t.id) {
-              return <FormTarjeta key={t.id} titulo={`Editar ${t.nombre}`} onGuardar={guardarEdicion} />
+              return (
+                <FormTarjeta
+                  key={t.id}
+                  titulo={`Editar ${t.nombre}`}
+                  form={form}
+                  setForm={setForm}
+                  formError={formError}
+                  guardando={guardando}
+                  onGuardar={guardarEdicion}
+                  onCancelar={cancelarForm}
+                />
+              )
             }
             const seleccionada = t.id === tarjetaIdEfectivo
             return (
@@ -412,17 +770,40 @@ export default function TarjetasScreen() {
           })}
 
           {agregando && (
-            <FormTarjeta titulo="Nueva tarjeta" onGuardar={guardarNueva} />
+            <FormTarjeta
+              titulo="Nueva tarjeta"
+              form={form}
+              setForm={setForm}
+              formError={formError}
+              guardando={guardando}
+              onGuardar={guardarNueva}
+              onCancelar={cancelarForm}
+            />
           )}
 
-          {/* ── Sección: Cuotas (solo si hay tarjeta seleccionada) ── */}
+          {/* ── Sección: Pagar tarjeta (flujo completo) ── */}
           {tarjetaIdEfectivo != null && (
             <>
               <View className="h-px bg-border my-5" />
 
-              <Text className="text-xs font-bold text-muted uppercase tracking-wide mb-3">
-                Cuotas — {tarjetas.find((t) => t.id === tarjetaIdEfectivo)?.nombre}
+              <Text className="text-xs font-bold text-muted uppercase tracking-wide mb-2">
+                Pagar tarjeta
               </Text>
+              {tarjetaSeleccionada && (
+                <Text className="text-dark font-semibold text-sm mb-3">
+                  {tarjetaSeleccionada.nombre}
+                </Text>
+              )}
+
+              {tarjetaSeleccionada?.dia_facturacion != null && (
+                <Text className="text-muted text-xs mb-4">
+                  Ciclo: del {tarjetaSeleccionada.dia_facturacion + 1} del mes anterior al{' '}
+                  {tarjetaSeleccionada.dia_facturacion} de este mes
+                  {tarjetaSeleccionada.dia_vencimiento != null
+                    ? ` · Vence el ${tarjetaSeleccionada.dia_vencimiento} del mes siguiente`
+                    : ''}
+                </Text>
+              )}
 
               {/* Navegación mes */}
               <View className="flex-row items-center gap-2 mb-4">
@@ -437,129 +818,588 @@ export default function TarjetasScreen() {
                 </Text>
                 <TouchableOpacity
                   onPress={irSiguiente}
-                  disabled={esActual}
-                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${esActual ? 'border-border/40' : 'border-border'}`}
+                  disabled={!puedeAvanzar}
+                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                    !puedeAvanzar ? 'border-border/40' : 'border-border'
+                  }`}
                 >
-                  <Text className={`text-lg ${esActual ? 'text-border' : 'text-dark'}`}>›</Text>
+                  <Text className={`text-lg ${!puedeAvanzar ? 'text-border' : 'text-dark'}`}>›</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Toggle Por pagar / Pagado */}
+              {/* Tabs Utilizado / Facturado */}
               <View className="flex-row border border-border rounded-lg overflow-hidden mb-4 bg-white">
-                {(['FACTURADO', 'PAGADO'] as const).map((v, i) => (
+                {(['UTILIZADO', 'FACTURADO'] as const).map((v, i) => (
                   <TouchableOpacity
                     key={v}
-                    onPress={() => setVista(v)}
-                    className={`flex-1 py-2.5 items-center ${i > 0 ? 'border-l border-border' : ''} ${vista === v ? 'bg-dark' : 'bg-white'}`}
+                    onPress={() => setVistaActiva(v)}
+                    className={`flex-1 py-2.5 items-center ${
+                      i > 0 ? 'border-l border-border' : ''
+                    } ${vistaActiva === v ? 'bg-dark' : 'bg-white'}`}
                   >
-                    <Text className={`text-xs font-semibold ${vista === v ? 'text-white' : 'text-muted'}`}>
-                      {v === 'FACTURADO' ? 'Por pagar' : 'Pagado'}
+                    <Text className={`text-xs font-semibold ${vistaActiva === v ? 'text-white' : 'text-muted'}`}>
+                      {v === 'UTILIZADO' ? 'Utilizado' : 'Facturado'}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {/* Resumen totales */}
-              {!loadingCuotas && cuotasFiltradas.length > 0 && (
-                <View className="bg-dark rounded-2xl px-5 py-4 mb-4">
-                  <View className="flex-row justify-between items-center">
-                    <View>
-                      <Text className="text-white/60 text-xs uppercase tracking-wide">
-                        {vista === 'FACTURADO' ? 'Seleccionado a pagar' : 'Total pagado'}
-                      </Text>
-                      <Text className="text-white text-xl font-bold mt-0.5">
-                        {formatMonto(vista === 'FACTURADO' ? totalIncluido : totalFull)}
-                      </Text>
-                    </View>
-                    {vista === 'FACTURADO' && totalFull !== totalIncluido && (
-                      <View>
-                        <Text className="text-white/40 text-xs text-right">Total facturado</Text>
-                        <Text className="text-white/60 text-sm font-semibold text-right">{formatMonto(totalFull)}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* Lista cuotas */}
-              {loadingCuotas ? (
-                <View className="py-8 items-center">
-                  <ActivityIndicator color="#0f0f0f" />
-                </View>
-              ) : errorCuotas ? (
-                <View className="bg-danger/10 border border-danger/30 rounded-xl p-4">
-                  <Text className="text-danger text-sm text-center">{errorCuotas}</Text>
-                  <TouchableOpacity onPress={refetchCuotas} className="mt-2">
-                    <Text className="text-dark font-semibold text-sm text-center underline">Reintentar</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : cuotasFiltradas.length === 0 ? (
-                <View className="bg-white border border-border rounded-2xl p-8 items-center">
-                  <Text className="text-muted text-sm text-center">
-                    {vista === 'FACTURADO' ? 'Sin cuotas por pagar este mes.' : 'Sin cuotas pagadas este mes.'}
+              {exitoPostPago ? (
+                <View className="bg-white border border-border rounded-2xl p-5 mb-4">
+                  <Text className="text-dark font-bold text-lg mb-2">Pago registrado</Text>
+                  <Text className="text-muted text-sm mb-2">
+                    {tarjetaSeleccionada?.nombre ?? 'Tarjeta'} — {MESES[mes]} {anio}
                   </Text>
+                  <Text className="text-dark font-bold text-2xl mb-4">{formatMonto(totalPagado)}</Text>
+                  <View className="flex-row gap-3">
+                    {puedeAvanzar && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setExitoPostPago(false)
+                          if (puedeAvanzar) {
+                            if (mes === 11) { setMes(0); setAnio((a) => a + 1) }
+                            else setMes((m) => m + 1)
+                          }
+                        }}
+                        className="flex-1 border border-border rounded-xl py-3 items-center"
+                      >
+                        <Text className="text-dark font-semibold text-sm">Ver otro mes</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setExitoPostPago(false)
+                        router.push('/(tabs)/index' as never)
+                      }}
+                      className={`flex-1 ${puedeAvanzar ? 'bg-dark rounded-xl py-3 items-center' : 'bg-dark rounded-xl py-3 items-center'}`}
+                    >
+                      <Text className="text-white font-semibold text-sm">Ir al dashboard</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               ) : (
                 <>
-                  <View className="bg-white border border-border rounded-xl overflow-hidden mb-4">
-                    {cuotasFiltradas.map((cuota, idx) => {
-                      const badge = ESTADO_BADGE[cuota.estado]
-                      const cargando = actualizando.has(cuota.id)
-                      const isLast = idx === cuotasFiltradas.length - 1
-                      return (
-                        <View
-                          key={cuota.id}
-                          className={`px-4 py-3 flex-row items-center ${!isLast ? 'border-b border-border' : ''}`}
-                        >
-                          {vista === 'FACTURADO' && (
-                            <TouchableOpacity
-                              onPress={() => toggleIncluir(cuota)}
-                              disabled={cargando}
-                              className={`w-5 h-5 rounded border mr-3 items-center justify-center ${cuota.incluir ? 'bg-dark border-dark' : 'border-border'}`}
-                            >
-                              {cargando
-                                ? <ActivityIndicator size="small" color={cuota.incluir ? '#fff' : '#0f0f0f'} />
-                                : cuota.incluir && <Text className="text-white text-xs font-bold">✓</Text>
-                              }
-                            </TouchableOpacity>
-                          )}
-                          <View className="flex-1 min-w-0 mr-2">
-                            <Text className="text-dark font-medium text-sm" numberOfLines={2}>
-                              {cuota.descripcion || cuota.movimiento_descripcion || '—'}
+                  {vistaActiva === 'UTILIZADO' ? (
+                    <>
+                      {loadingCuotasTarjeta || movPersonalLoading || movComunLoading ? (
+                        <View className="py-8 items-center">
+                          <ActivityIndicator color="#0f0f0f" />
+                        </View>
+                      ) : errorCuotasTarjeta || movPersonalError || movComunError ? (
+                        <View className="bg-danger/10 border border-danger/30 rounded-xl p-4">
+                          <Text className="text-danger text-sm text-center">
+                            {errorCuotasTarjeta || movPersonalError || movComunError || 'Error al cargar datos.'}
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => {
+                              void refetchCuotasTarjeta()
+                              void refetchMovPersonal()
+                              void refetchMovComun()
+                            }}
+                            className="mt-2"
+                          >
+                            <Text className="text-dark font-semibold text-sm text-center underline">Reintentar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <>
+                          <View className="bg-dark rounded-2xl p-5 mb-4">
+                            <Text className="text-white/60 text-xs uppercase tracking-wide mb-1">Utilizado</Text>
+                            <Text className="text-white font-bold text-2xl mb-1">
+                              {formatMonto(totalDeudaActiva)}
                             </Text>
-                            <Text className="text-muted text-xs mt-0.5">
-                              Cuota {cuota.cuota_numero}/{cuota.total_cuotas}
-                              {cuota.ambito === 'COMUN' ? ' · Común' : ''}
+                            <Text className="text-white/60 text-xs">
+                              Personales: {formatMonto(totalDeudaActivaPersonal)} · Comunes: {formatMonto(totalDeudaActivaComun)}
                             </Text>
                           </View>
-                          <View className="items-end gap-1">
-                            <Text className="text-dark font-semibold text-sm">
-                              {formatMonto(montoNum(cuota.monto_cuota))}
-                            </Text>
-                            <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
-                              <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
-                                {badge.label}
+
+                          <View className="mb-5">
+                            <Text className="text-xs text-muted font-semibold uppercase mb-3">Gastos personales</Text>
+                            {utilizadoPersonalPorCuenta.length === 0 ? (
+                              <Text className="text-muted text-sm">Sin movimientos personales para este período.</Text>
+                            ) : (
+                              utilizadoPersonalPorCuenta.slice(0, 3).map((g) => (
+                                <View key={g.cuentaNombre} className="bg-white border border-border rounded-xl p-4 mb-3">
+                                  <View className="flex-row items-center justify-between mb-2">
+                                    <Text className="text-dark font-semibold text-sm">{g.cuentaNombre}</Text>
+                                    <Text className="text-dark font-semibold text-sm">{formatMonto(g.total)}</Text>
+                                  </View>
+                                  {g.movimientos.slice(0, 4).map((m) => {
+                                    const estado = estadoPorMovimiento.get(m.id) ?? 'PAGADO'
+                                    return (
+                                      <View key={m.id} className="flex-row items-center justify-between py-2 border-t border-border">
+                                        <View className="flex-1 pr-2">
+                                          <Text className="text-muted text-xs">
+                                            {m.fecha}
+                                          </Text>
+                                          <Text className="text-dark text-sm font-medium" numberOfLines={1}>
+                                            {m.comentario || '—'}
+                                          </Text>
+                                          <Text className="text-muted text-xs">{m.categoria_nombre}</Text>
+                                        </View>
+                                        <View
+                                          className="px-2 py-1 rounded-lg"
+                                          style={{
+                                            backgroundColor: estado === 'ACTIVO' ? '#fff7ed' : '#f0fdf4',
+                                          }}
+                                        >
+                                          <Text
+                                            className="text-xs font-semibold"
+                                            style={{ color: estado === 'ACTIVO' ? '#f59e0b' : '#22c55e' }}
+                                          >
+                                            {estado === 'ACTIVO' ? 'Activo' : 'Pagado'}
+                                          </Text>
+                                        </View>
+                                      </View>
+                                    )
+                                  })}
+                                </View>
+                              ))
+                            )}
+                            {utilizadoPersonalPorCuenta.length > 0 && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  const first = utilizadoPersonalPorCuenta[0]?.movimientos[0]
+                                  if (first?.cuenta != null) router.push(`/cuenta/${first.cuenta}` as never)
+                                }}
+                                className="mt-2"
+                              >
+                                <Text className="text-dark font-semibold text-sm underline">Ver detalle</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+
+                          <View>
+                            <Text className="text-xs text-muted font-semibold uppercase mb-3">Gastos comunes</Text>
+                            {utilizadoComunVisible.length === 0 ? (
+                              <Text className="text-muted text-sm">Sin movimientos comunes para este período.</Text>
+                            ) : (
+                              <View className="bg-white border border-border rounded-xl p-4 mb-3">
+                                {utilizadoComunVisible.slice(0, 6).map((m) => {
+                                  const estado = estadoPorMovimiento.get(m.id) ?? 'PAGADO'
+                                  return (
+                                    <View key={m.id} className="flex-row items-center justify-between py-2 border-t border-border">
+                                      <View className="flex-1 pr-2">
+                                        <Text className="text-muted text-xs">{m.fecha}</Text>
+                                        <Text className="text-dark text-sm font-medium" numberOfLines={1}>
+                                          {m.comentario || '—'}
+                                        </Text>
+                                        <Text className="text-muted text-xs">{m.categoria_nombre}</Text>
+                                      </View>
+                                      <View
+                                        className="px-2 py-1 rounded-lg"
+                                        style={{ backgroundColor: estado === 'ACTIVO' ? '#fff7ed' : '#f0fdf4' }}
+                                      >
+                                        <Text
+                                          className="text-xs font-semibold"
+                                          style={{ color: estado === 'ACTIVO' ? '#f59e0b' : '#22c55e' }}
+                                        >
+                                          {estado === 'ACTIVO' ? 'Activo' : 'Pagado'}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  )
+                                })}
+                              </View>
+                            )}
+                            {utilizadoComunVisible.length > 0 && (
+                              <TouchableOpacity onPress={() => router.push('/(tabs)/gastos' as never)} className="mt-2">
+                                <Text className="text-dark font-semibold text-sm underline">Ver detalle</Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {/* FACTURADO */}
+                      {loadingCuotas ? (
+                        <View className="py-8 items-center">
+                          <ActivityIndicator color="#0f0f0f" />
+                        </View>
+                      ) : errorCuotas ? (
+                        <View className="bg-danger/10 border border-danger/30 rounded-xl p-4">
+                          <Text className="text-danger text-sm text-center">{errorCuotas}</Text>
+                          <TouchableOpacity onPress={refetchCuotas} className="mt-2">
+                            <Text className="text-dark font-semibold text-sm text-center underline">Reintentar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : cuotas.length === 0 ? (
+                        <View className="bg-white border border-border rounded-2xl p-8 items-center">
+                          <Text className="text-muted text-sm text-center">Sin cuotas para este período.</Text>
+                        </View>
+                      ) : (
+                        <>
+                          <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-xs text-muted font-semibold uppercase">Cuotas del mes</Text>
+                            <View
+                              className="px-3 py-1 rounded-full"
+                              style={{
+                                backgroundColor: cuotas.some((c) => c.estado !== 'PAGADO') ? '#fff7ed' : '#f0fdf4',
+                              }}
+                            >
+                              <Text
+                                className="text-xs font-semibold"
+                                style={{ color: cuotas.some((c) => c.estado !== 'PAGADO') ? '#f59e0b' : '#22c55e' }}
+                              >
+                                {cuotas.some((c) => c.estado !== 'PAGADO') ? 'Pendiente' : 'Pagado'}
                               </Text>
                             </View>
                           </View>
-                        </View>
-                      )
-                    })}
-                  </View>
 
-                  {vista === 'FACTURADO' && cuotasIncluidas.length > 0 && (
-                    <TouchableOpacity
-                      onPress={marcarPagadas}
-                      className="bg-dark rounded-xl py-3.5 items-center"
-                    >
-                      <Text className="text-white font-bold text-sm">
-                        Marcar {cuotasIncluidas.length} cuota{cuotasIncluidas.length !== 1 ? 's' : ''} como pagadas
-                      </Text>
-                      <Text className="text-white/60 text-xs mt-0.5">{formatMonto(totalIncluido)}</Text>
-                    </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={abrirModalNuevoGasto}
+                            className="bg-accent rounded-xl px-4 py-3 items-center mb-4"
+                          >
+                            <Text className="text-dark font-bold text-sm">+ Gasto</Text>
+                          </TouchableOpacity>
+
+                          <View className="bg-white border border-border rounded-xl overflow-hidden mb-4">
+                            {cuotas.map((cuota, idx) => {
+                              const badge = ESTADO_BADGE[cuota.estado]
+                              const cargando = actualizando.has(cuota.id)
+                              const isLast = idx === cuotas.length - 1
+                              const deshabilitado = cuota.estado === 'PAGADO'
+                              const totalCuotasMovimiento = totalCuotasPorMovimiento.get(cuota.movimiento)
+                              return (
+                                <View
+                                  key={cuota.id}
+                                  className={`px-4 py-3 flex-row items-center ${!isLast ? 'border-b border-border' : ''}`}
+                                >
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      if (deshabilitado) return
+                                      toggleIncluir(cuota)
+                                    }}
+                                    disabled={deshabilitado || cargando}
+                                    className={`w-5 h-5 rounded border mr-3 items-center justify-center ${
+                                      cuota.incluir ? 'bg-dark border-dark' : 'border-border'
+                                    }`}
+                                  >
+                                    {cargando ? (
+                                      <ActivityIndicator size="small" color={cuota.incluir ? '#fff' : '#0f0f0f'} />
+                                    ) : cuota.incluir ? (
+                                      <Text className="text-white text-xs font-bold">✓</Text>
+                                    ) : null}
+                                  </TouchableOpacity>
+
+                                  <View className="flex-1 min-w-0 mr-2">
+                                    <Text className="text-dark font-medium text-sm" numberOfLines={1}>
+                                      Cuota {cuota.numero}/{totalCuotasMovimiento ?? cuota.numero}
+                                    </Text>
+                                    <Text className="text-muted text-xs mt-0.5">{cuota.estado}</Text>
+                                  </View>
+
+                                  <View className="items-end gap-1">
+                                    <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(cuota.monto))}</Text>
+                                    <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
+                                      <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
+                                        {badge.label}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              )
+                            })}
+                          </View>
+
+                          {/* CARGOS ADICIONALES */}
+                          <View className="bg-white border border-border rounded-xl p-4 mb-4">
+                            <View className="flex-row items-center justify-between mb-3">
+                              <Text className="text-xs text-muted font-semibold uppercase">Cargos adicionales</Text>
+                              {!formularioCargoVisible && (
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    setFormularioCargoVisible(true)
+                                    setCargoDesc('')
+                                    setCargoMonto('')
+                                  }}
+                                  className="px-3 py-2 rounded-lg bg-white border border-border"
+                                >
+                                  <Text className="text-dark font-semibold text-sm">+ Agregar</Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+
+                            {formularioCargoVisible && (
+                              <View className="mb-3">
+                                <TextInput
+                                  value={cargoDesc}
+                                  onChangeText={setCargoDesc}
+                                  placeholder="Descripción (ej: Interés marzo)"
+                                  placeholderTextColor="#888884"
+                                  className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+                                />
+                                <TextInput
+                                  value={cargoMonto}
+                                  onChangeText={(v) => setCargoMonto(v.replace(/\\D/g, '').slice(0, 12))}
+                                  keyboardType="numeric"
+                                  placeholder="Monto"
+                                  placeholderTextColor="#888884"
+                                  className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+                                />
+                                <View className="flex-row gap-2">
+                                  <TouchableOpacity
+                                    onPress={agregarCargoAdicional}
+                                    className="flex-1 bg-dark rounded-lg py-2.5 items-center"
+                                  >
+                                    <Text className="text-white font-semibold text-sm">✓</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      setFormularioCargoVisible(false)
+                                      setCargoDesc('')
+                                      setCargoMonto('')
+                                    }}
+                                    className="flex-1 border border-border rounded-lg py-2.5 items-center"
+                                  >
+                                    <Text className="text-dark font-semibold text-sm">Cancelar</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            )}
+
+                            {cargosAdicionales.length === 0 ? (
+                              <Text className="text-muted text-sm">Sin cargos adicionales.</Text>
+                            ) : (
+                              <View>
+                                {cargosAdicionales.map((c) => (
+                                  <View key={c.id} className="flex-row items-center justify-between py-2 border-t border-border">
+                                    <View className="flex-1 pr-3">
+                                      <Text className="text-dark font-semibold text-sm" numberOfLines={1}>
+                                        {c.descripcion}
+                                      </Text>
+                                      <Text className="text-muted text-xs">Intereses TC</Text>
+                                    </View>
+                                    <Text className="text-dark font-semibold text-sm mr-2">{formatMonto(c.monto)}</Text>
+                                    <TouchableOpacity onPress={() => eliminarCargoAdicional(c.id)} hitSlop={8}>
+                                      <Text className="text-danger text-sm">🗑</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+
+                          {/* TOTALES + REGISTRAR PAGO */}
+                          <View className="bg-dark rounded-2xl px-5 py-4 mb-4">
+                            <View className="flex-row justify-between items-center mb-1">
+                              <Text className="text-white/60 text-xs uppercase tracking-wide">Incluido</Text>
+                              <Text className="text-white font-bold text-sm">{formatMonto(totalIncluido)}</Text>
+                            </View>
+                            <View className="flex-row justify-between items-center mb-1">
+                              <Text className="text-white/60 text-xs uppercase tracking-wide">Excluido</Text>
+                              <Text className="text-white font-bold text-sm">{formatMonto(totalExcluido)}</Text>
+                            </View>
+                            {cargosTotal > 0 && (
+                              <View className="flex-row justify-between items-center mb-1">
+                                <Text className="text-white/60 text-xs uppercase tracking-wide">Cargos</Text>
+                                <Text className="text-white font-bold text-sm">{formatMonto(cargosTotal)}</Text>
+                              </View>
+                            )}
+
+                            <View className="h-px bg-white/10 my-3" />
+
+                            <View className="flex-row justify-between items-center mb-3">
+                              <Text className="text-white/60 text-xs uppercase tracking-wide">Total a pagar</Text>
+                              <Text className="text-white font-bold text-xl">{formatMonto(total)}</Text>
+                            </View>
+
+                            <TouchableOpacity
+                              disabled={guardandoPago || total === 0 || cuotasIncluidasCount === 0}
+                              onPress={() => setModalConfirmarPago(true)}
+                              className={`rounded-xl py-3.5 items-center ${guardandoPago || total === 0 || cuotasIncluidasCount === 0 ? 'bg-white/20' : 'bg-accent'}`}
+                            >
+                              <Text className="text-dark font-bold text-sm">
+                                {guardandoPago ? 'Registrando…' : 'Registrar pago'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </>
                   )}
                 </>
               )}
+
+              {/* Modal confirmación pago */}
+              <Modal visible={modalConfirmarPago} transparent animationType="fade" onRequestClose={() => setModalConfirmarPago(false)}>
+                <View className="flex-1 bg-black/50 justify-center px-6">
+                  <View className="bg-white rounded-2xl p-5">
+                    <Text className="text-lg font-bold text-dark mb-2">Registrar pago</Text>
+                    <Text className="text-muted text-sm mb-3">
+                      {tarjetaSeleccionada?.nombre ?? 'Tarjeta'} — {MESES[mes]} {anio}
+                    </Text>
+                    <Text className="text-dark text-sm mb-2">
+                      {cuotasIncluidasCount} cuota{cuotasIncluidasCount !== 1 ? 's' : ''} incluidas
+                    </Text>
+                    {cuotasExcluidasCount > 0 && (
+                      <Text className="text-muted text-sm mb-3">
+                        {cuotasExcluidasCount} cuota{cuotasExcluidasCount !== 1 ? 's' : ''} pasa(n) al mes siguiente
+                      </Text>
+                    )}
+                    <Text className="text-dark font-bold text-base mb-4">
+                      Total a pagar {formatMonto(total)}
+                    </Text>
+                    <View className="flex-row gap-3">
+                      <TouchableOpacity
+                        onPress={() => setModalConfirmarPago(false)}
+                        className="flex-1 border border-border rounded-xl py-3 items-center"
+                      >
+                        <Text className="text-dark font-semibold text-sm">Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => void registrarPago()}
+                        disabled={guardandoPago}
+                        className="flex-1 bg-dark rounded-xl py-3 items-center"
+                      >
+                        <Text className="text-white font-semibold text-sm">{guardandoPago ? 'Confirmando…' : 'Confirmar'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              </Modal>
+
+              {/* Modal nuevo gasto (flujo crédito) */}
+              <Modal visible={modalNuevoGasto} transparent animationType="slide" onRequestClose={() => setModalNuevoGasto(false)}>
+                <View className="flex-1 bg-black/50 justify-center px-6">
+                  <ScrollView className="bg-white rounded-2xl p-5 max-h-[90%]">
+                    <Text className="text-lg font-bold text-dark mb-1">Nuevo gasto</Text>
+                    <Text className="text-muted text-sm mb-4">
+                      Método: Crédito · Tarjeta: {tarjetaSeleccionada?.nombre ?? '—'}
+                    </Text>
+
+                    {/* Tipo (fijado a EGRESO por cuotas) */}
+                    <View className="flex-row items-center justify-between mb-4">
+                      <Text className="text-xs text-muted font-semibold uppercase">Tipo</Text>
+                      <Text className="text-dark font-semibold">Egreso</Text>
+                    </View>
+
+                    {/* Ámbito */}
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Ámbito</Text>
+                    <View className="flex-row border border-border rounded-lg overflow-hidden mb-4 bg-white">
+                      {(['PERSONAL', 'COMUN'] as const).map((v, i) => (
+                        <TouchableOpacity
+                          key={v}
+                          onPress={() => setNuevoAmbito(v)}
+                          className={`flex-1 py-2.5 items-center ${i > 0 ? 'border-l border-border' : ''} ${
+                            nuevoAmbito === v ? 'bg-dark' : 'bg-white'
+                          }`}
+                        >
+                          <Text className={`text-xs font-semibold ${nuevoAmbito === v ? 'text-white' : 'text-muted'}`}>
+                            {v === 'PERSONAL' ? 'Personal' : 'Común'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {nuevoAmbito === 'PERSONAL' && (
+                      <View className="mb-4">
+                        <Text className="text-xs text-muted font-semibold uppercase mb-2">Cuenta personal</Text>
+                        {cuentasPropias.length === 0 ? (
+                          <Text className="text-danger text-sm">No tienes cuentas personales disponibles.</Text>
+                        ) : (
+                          <View className="flex-row flex-wrap gap-2">
+                            {cuentasPropias.map((c) => (
+                              <TouchableOpacity
+                                key={c.id}
+                                onPress={() => setNuevoCuentaId(c.id)}
+                                className={`px-3 py-1.5 rounded-lg border ${
+                                  nuevoCuentaId === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
+                                }`}
+                              >
+                                <Text className={`text-xs font-medium ${nuevoCuentaId === c.id ? 'text-white' : 'text-dark'}`}>
+                                  {c.nombre}
+                                </Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    )}
+
+                    {/* Categoría */}
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Categoría</Text>
+                    <View className="border border-border rounded-xl p-3 mb-4">
+                      {categoriasEgreso.length === 0 ? (
+                        <Text className="text-muted text-sm">Cargando categorías…</Text>
+                      ) : (
+                        <ScrollView style={{ maxHeight: 160 }}>
+                          {categoriasEgreso.map((c) => (
+                            <TouchableOpacity
+                              key={c.id}
+                              onPress={() => setNuevoCategoriaId(c.id)}
+                              className={`px-3 py-2 rounded-lg mb-2 ${
+                                nuevoCategoriaId === c.id ? 'bg-accent' : 'bg-white'
+                              } border border-border`}
+                            >
+                              <Text className="text-dark font-medium text-sm">{c.nombre}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </ScrollView>
+                      )}
+                    </View>
+
+                    {/* Fecha + Monto + Cuotas */}
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Fecha</Text>
+                    <TextInput
+                      value={nuevoFecha}
+                      onChangeText={setNuevoFecha}
+                      placeholder="YYYY-MM-DD"
+                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
+                    />
+
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Monto (CLP)</Text>
+                    <TextInput
+                      value={nuevoMonto}
+                      onChangeText={(v) => setNuevoMonto(v.replace(/\D/g, '').slice(0, 12))}
+                      placeholder="Ej: 50000"
+                      keyboardType="numeric"
+                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
+                    />
+
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">N° cuotas</Text>
+                    <TextInput
+                      value={nuevoNumCuotas}
+                      onChangeText={(v) => setNuevoNumCuotas(v.replace(/\D/g, '').slice(0, 2))}
+                      keyboardType="numeric"
+                      placeholder="1–48"
+                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
+                    />
+
+                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Comentario (opcional)</Text>
+                    <TextInput
+                      value={nuevoComentario}
+                      onChangeText={setNuevoComentario}
+                      placeholder="Ej: Supermercado"
+                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
+                    />
+
+                    {nuevoGastoError && (
+                      <Text className="text-danger text-sm mb-4">{nuevoGastoError}</Text>
+                    )}
+
+                    <View className="flex-row gap-3">
+                      <TouchableOpacity
+                        onPress={() => setModalNuevoGasto(false)}
+                        className="flex-1 border border-border rounded-xl py-3 items-center"
+                      >
+                        <Text className="text-dark font-semibold text-sm">Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        disabled={guardandoNuevoGasto}
+                        onPress={() => void guardarNuevoGasto()}
+                        className="flex-1 bg-dark rounded-xl py-3 items-center"
+                      >
+                        <Text className="text-white font-semibold text-sm">
+                          {guardandoNuevoGasto ? 'Creando…' : 'Guardar gasto'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+                </View>
+              </Modal>
             </>
           )}
         </View>
