@@ -172,7 +172,12 @@ def metodos_pago(request):
 
     _asegurar_catalogo_metodos_pago()
 
-    metodos = MetodoPago.objects.all().order_by('tipo')
+    # Si por cualquier motivo hay duplicados en DB, devolvemos 1 por tipo.
+    por_tipo: dict[str, MetodoPago] = {}
+    for m in MetodoPago.objects.all().order_by('tipo', 'pk'):
+        if m.tipo not in por_tipo:
+            por_tipo[m.tipo] = m
+    metodos = [por_tipo[t] for t, _ in MetodoPago.TIPO_CHOICES if t in por_tipo]
     return Response(MetodoPagoSerializer(metodos, many=True).data)
 
 

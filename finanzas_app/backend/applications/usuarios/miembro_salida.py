@@ -36,7 +36,13 @@ def usuario_tiene_registros_en_familia(usuario_id: int, familia_id: int) -> tupl
     if Tarjeta.objects.filter(usuario_id=usuario_id).exists():
         return True, 'Tiene tarjetas registradas.'
 
-    if CuentaPersonal.objects.filter(usuario_id=usuario_id).exists():
+    # La signal crea automáticamente la cuenta 'Personal'; no bloqueará la salida si
+    # no hay cuentas adicionales.
+    if (
+        CuentaPersonal.objects.filter(usuario_id=usuario_id)
+        .exclude(nombre__iexact='Personal')
+        .exists()
+    ):
         return True, 'Tiene cuentas personales.'
 
     if TutorCuenta.objects.filter(tutor_id=usuario_id).exists():
