@@ -395,29 +395,6 @@ export default function TarjetasScreen() {
     }
   }
 
-  function confirmarEliminar(t: Tarjeta) {
-    Alert.alert(
-      'Eliminar tarjeta',
-      `¿Eliminar "${t.nombre}"? Se perderán las cuotas asociadas.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await catalogosApi.deleteTarjeta(t.id)
-              if (tarjetaId === t.id) setTarjetaId(null)
-              void refetchTarjetas()
-            } catch {
-              Alert.alert('Error', 'No se pudo eliminar (¿tiene cuotas activas?).')
-            }
-          },
-        },
-      ],
-    )
-  }
-
   // ── Helpers cuotas ──
 
   function irAnterior() {
@@ -759,10 +736,13 @@ export default function TarjetasScreen() {
                     <Text className="text-dark text-xs font-semibold">Editar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    onPress={() => confirmarEliminar(t)}
-                    className="flex-1 border border-danger/40 rounded-lg py-1.5 items-center"
+                    onPress={() => {
+                      setTarjetaId(t.id)
+                      setVistaActiva('FACTURADO')
+                    }}
+                    className="flex-1 bg-dark rounded-lg py-1.5 items-center"
                   >
-                    <Text className="text-danger text-xs font-semibold">Eliminar</Text>
+                    <Text className="text-white text-xs font-semibold">Pagar tarjeta</Text>
                   </TouchableOpacity>
                 </View>
               </View>
