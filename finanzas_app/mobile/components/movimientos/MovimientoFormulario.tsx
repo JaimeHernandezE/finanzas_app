@@ -51,6 +51,8 @@ interface Categoria {
   id: number
   nombre: string
   tipo: string
+  categoria_padre: number | null
+  es_padre: boolean
 }
 interface MetodoPago {
   id: number
@@ -250,6 +252,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [vinculoIngresoComun, setVinculoIngresoComun] = useState(false)
     const [loadingDetalle, setLoadingDetalle] = useState(false)
     const [showCategoriaPicker, setShowCategoriaPicker] = useState(false)
+    const [busquedaCategoria, setBusquedaCategoria] = useState('')
     /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
     const { data: catData } = useCategorias({
@@ -410,14 +413,41 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       void iniciarEdicion(idNum)
     }, [esStandalone, editar, router, iniciarEdicion])
 
-    // Categorías ordenadas alfabéticamente, filtradas por tipo
-    const categoriasFiltradas = useMemo(
+    // Categorías filtradas por tipo (las del picker usan busquedaCategoria adicionalmente)
+    const categoriasPorTipo = useMemo(
       () =>
         categorias
           .filter((c) => c.tipo === tipo)
           .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
       [categorias, tipo],
     )
+
+    /**
+     * Categorías visibles en el picker según búsqueda y jerarquía:
+     * - Si hay texto de búsqueda: muestra todas las que coincidan (padre o hija)
+     * - Si no hay búsqueda: primero las padres (con sus hijas debajo), luego las sin padre
+     */
+    const categoriasFiltradas = useMemo(() => {
+      const query = busquedaCategoria.trim().toLowerCase()
+      if (query) {
+        return categoriasPorTipo.filter((c) =>
+          c.nombre.toLowerCase().includes(query),
+        )
+      }
+      // Sin búsqueda: agrupar por padre
+      const padres = categoriasPorTipo.filter((c) => c.es_padre)
+      const hijas = categoriasPorTipo.filter((c) => !c.es_padre && c.categoria_padre != null)
+      const sueltas = categoriasPorTipo.filter((c) => !c.es_padre && c.categoria_padre == null)
+      const resultado: (Categoria & { _esHija?: boolean })[] = []
+      for (const padre of padres) {
+        resultado.push(padre)
+        for (const hija of hijas.filter((h) => h.categoria_padre === padre.id)) {
+          resultado.push({ ...hija, _esHija: true })
+        }
+      }
+      resultado.push(...sueltas)
+      return resultado
+    }, [categoriasPorTipo, busquedaCategoria])
 
     const categoriaNombre = useMemo(() => {
       return categorias.find((c) => c.id === form.categoria)?.nombre ?? null
@@ -643,43 +673,85 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const tituloPrincipal =
       loadingDetalle ? 'Cargando…' : editingId != null ? 'Editar movimiento' : 'Nuevo movimiento'
 
-    // ── Picker de categorías (Modal) ──────────────────────────────────────────
+    // ── Picker de categorías (Modal con buscador) ────────────────────────────
     const categoriaPicker = (
       <Modal
         visible={showCategoriaPicker}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowCategoriaPicker(false)}
+        onRequestClose={() => {
+          setShowCategoriaPicker(false)
+          setBusquedaCategoria('')
+        }}
         statusBarTranslucent
       >
         <View className="flex-1 bg-black/50 justify-end">
-          <View className="bg-white rounded-t-2xl" style={{ maxHeight: '70%' }}>
+          <View className="bg-white rounded-t-2xl" style={{ maxHeight: '75%' }}>
+            {/* Header */}
             <View className="flex-row items-center justify-between px-5 py-4 border-b border-border">
               <Text className="text-dark font-bold text-base">Seleccionar categoría</Text>
-              <TouchableOpacity onPress={() => setShowCategoriaPicker(false)}>
+              <TouchableOpacity onPress={() => {
+                setShowCategoriaPicker(false)
+                setBusquedaCategoria('')
+              }}>
                 <Text className="text-muted text-2xl leading-none">×</Text>
               </TouchableOpacity>
             </View>
+            {/* Buscador */}
+            <View className="px-4 py-2 border-b border-border">
+              <TextInput
+                value={busquedaCategoria}
+                onChangeText={setBusquedaCategoria}
+                placeholder="Buscar categoría…"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+                className="bg-surface border border-border rounded-lg px-3 py-2 text-dark text-sm"
+              />
+            </View>
+            {/* Lista */}
             <ScrollView keyboardShouldPersistTaps="handled">
-              {categoriasFiltradas.map((cat, i) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  onPress={() => {
-                    setField('categoria', cat.id)
-                    setShowCategoriaPicker(false)
-                  }}
-                  className={`px-5 py-4 flex-row items-center justify-between ${
-                    i < categoriasFiltradas.length - 1 ? 'border-b border-border' : ''
-                  }`}
-                >
-                  <Text className={`text-sm ${form.categoria === cat.id ? 'font-bold text-dark' : 'text-dark'}`}>
-                    {cat.nombre}
-                  </Text>
-                  {form.categoria === cat.id && (
-                    <Text className="text-accent font-bold">✓</Text>
-                  )}
-                </TouchableOpacity>
-              ))}
+              {categoriasFiltradas.length === 0 ? (
+                <View className="px-5 py-8 items-center">
+                  <Text className="text-muted text-sm">Sin resultados para «{busquedaCategoria}»</Text>
+                </View>
+              ) : (
+                categoriasFiltradas.map((cat, i) => {
+                  const esHija = '_esHija' in cat && cat._esHija === true
+                  const esPadre = cat.es_padre && !('_esHija' in cat)
+                  const esUltima = i === categoriasFiltradas.length - 1
+                  return (
+                    <TouchableOpacity
+                      key={cat.id}
+                      onPress={esPadre ? undefined : () => {
+                        setField('categoria', cat.id)
+                        setShowCategoriaPicker(false)
+                        setBusquedaCategoria('')
+                      }}
+                      activeOpacity={esPadre ? 1 : 0.7}
+                      className={`flex-row items-center justify-between ${
+                        esUltima ? '' : 'border-b border-border'
+                      } ${esHija ? 'pl-10 pr-5 py-3' : 'px-5 py-4'} ${
+                        esPadre ? 'bg-surface' : 'bg-white'
+                      }`}
+                    >
+                      <Text
+                        className={`text-sm flex-1 ${
+                          esPadre
+                            ? 'font-semibold text-muted'
+                            : form.categoria === cat.id
+                            ? 'font-bold text-dark'
+                            : 'text-dark'
+                        }`}
+                      >
+                        {esPadre ? cat.nombre.toUpperCase() : cat.nombre}
+                      </Text>
+                      {form.categoria === cat.id && !esPadre && (
+                        <Text className="text-accent font-bold ml-2">✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  )
+                })
+              )}
             </ScrollView>
             <View style={{ height: Math.max(insets.bottom, 12) }} />
           </View>
@@ -788,7 +860,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         ) : (
           <TouchableOpacity
-            onPress={() => setShowCategoriaPicker(true)}
+            onPress={() => { setShowCategoriaPicker(true); setBusquedaCategoria('') }}
             className="border border-border rounded-lg px-3 py-2.5 mb-4 bg-white flex-row items-center justify-between"
           >
             <Text className={categoriaNombre ? 'text-dark font-medium' : 'text-muted'}>
