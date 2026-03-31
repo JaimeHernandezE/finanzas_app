@@ -67,7 +67,8 @@ export default function MovimientoFormPage() {
     if (ambito !== 'PERSONAL') return
     if (!cuentasOpciones.length) return
     if (!cuentaSeleccionada || !cuentasOpciones.some(c => c.value === cuentaSeleccionada)) {
-      setCuentaSeleccionada(searchParams.get('cuenta') ?? cuentasOpciones[0]?.value ?? '')
+      const cuentaDefault = searchParams.get('cuenta') ?? cuentasOpciones[0]?.value
+      setCuentaSeleccionada(cuentaDefault != null ? String(cuentaDefault) : '')
     }
   }, [ambito, cuentasOpciones, cuentaSeleccionada, searchParams])
 
