@@ -7,17 +7,6 @@
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://finanzas-app-api-9gou.onrender.com",
-        "EXPO_PUBLIC_FIREBASE_API_KEY": "REEMPLAZAR",
-        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "REEMPLAZAR",
-        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "REEMPLAZAR",
-        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "REEMPLAZAR",
-        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "REEMPLAZAR",
-        "EXPO_PUBLIC_FIREBASE_APP_ID": "REEMPLAZAR",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "REEMPLAZAR",
-        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "REEMPLAZAR"
       }
     },
     "production": {
