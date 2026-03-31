@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Button, Input, Select, Textarea } from '@/components/ui'
-import type { SelectOption } from '@/components/ui'
+import { Button, Input, Select, Textarea, CategoriaSelect } from '@/components/ui'
+import type { SelectOption } from '@/components/ui' // usado en tarjetaOpciones / cuentasOpciones
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
@@ -84,7 +84,7 @@ export default function MovimientoEditarPage() {
         : undefined,
   })
 
-  const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
+  const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string; categoria_padre: number | null; es_padre: boolean }[]
   const tarjetas = (tarjetasData ?? []) as { id: number; nombre: string }[]
   const metodos = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
 
@@ -96,10 +96,6 @@ export default function MovimientoEditarPage() {
     [cuentasData],
   )
 
-  const categoriaOpciones: SelectOption[] = useMemo(() => {
-    const filtradas = categorias.filter(c => c.tipo === tipo)
-    return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
-  }, [categorias, tipo])
 
   const tarjetaOpciones: SelectOption[] = useMemo(
     () => tarjetas.map(t => ({ value: String(t.id), label: t.nombre })),
@@ -469,13 +465,12 @@ export default function MovimientoEditarPage() {
             )}
 
             <div className={styles.row}>
-              <Select
-                name="categoria"
-                label="Categoría"
-                options={categoriaOpciones}
+              <CategoriaSelect
+                categorias={categorias}
+                tipo={tipo}
                 value={categoriaId}
-                onChange={e => setCategoriaId(e.target.value)}
-                placeholder="Selecciona…"
+                onChange={setCategoriaId}
+                label="Categoría"
                 error={errors.categoria}
               />
               <Input

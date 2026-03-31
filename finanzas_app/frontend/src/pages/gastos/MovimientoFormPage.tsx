@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
+import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
@@ -52,9 +52,10 @@ export default function MovimientoFormPage() {
         ? Number(cuentaSeleccionada)
         : undefined,
   })
-  const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
+  const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string; categoria_padre: number | null; es_padre: boolean }[]
   const tarjetas   = (tarjetasData ?? []) as { id: number; nombre: string }[]
   const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
+  const [categoriaId, setCategoriaId] = useState<string>('')
   const [metodo,    setMetodo]    = useState<Metodo>('DEBITO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
@@ -72,10 +73,8 @@ export default function MovimientoFormPage() {
     }
   }, [ambito, cuentasOpciones, cuentaSeleccionada, searchParams])
 
-  const categoriaOpciones: SelectOption[] = useMemo(() => {
-    const filtradas = categorias.filter(c => c.tipo === tipo)
-    return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
-  }, [categorias, tipo])
+  // Reset categoría cuando cambia tipo o cuenta (puede que la seleccionada ya no esté disponible)
+  useEffect(() => { setCategoriaId('') }, [tipo, cuentaSeleccionada])
 
   const tarjetaOpciones: SelectOption[] = useMemo(() =>
     tarjetas.map(t => ({ value: String(t.id), label: t.nombre })),
@@ -106,7 +105,7 @@ export default function MovimientoFormPage() {
     const next: FormErrors = {}
 
     if (!monto || montoNum <= 0) next.monto = 'El monto es obligatorio.'
-    if (!data.get('categoria')) next.categoria = 'Selecciona una categoría.'
+    if (!categoriaId) next.categoria = 'Selecciona una categoría.'
     if (metodo === 'CREDITO') {
       if (!data.get('tarjeta'))  next.tarjeta   = 'Selecciona una tarjeta.'
       if (!numCuotas)            next.numCuotas = 'Ingresa el número de cuotas.'
@@ -129,7 +128,6 @@ export default function MovimientoFormPage() {
     setLoading(true)
     setErrors({})
     try {
-      const categoriaId = data.get('categoria')
       const payload: Record<string, unknown> = {
         fecha: (data.get('fecha') as string) || new Date().toISOString().split('T')[0],
         tipo,
@@ -233,13 +231,13 @@ export default function MovimientoFormPage() {
 
           {/* Categoría + Fecha */}
           <div className={styles.row}>
-            <Select
-              name="categoria"
+            <CategoriaSelect
+              categorias={categorias}
+              tipo={tipo}
+              value={categoriaId}
+              onChange={setCategoriaId}
               label="Categoría"
-              options={categoriaOpciones}
-              placeholder="Selecciona…"
               error={errors.categoria}
-              required
             />
             <Input
               name="fecha"

@@ -13,3 +13,6 @@ export type { TextareaProps } from './Textarea/Textarea'
 export { Cargando, ErrorCarga } from './EstadoCarga'
 export { default as InputMontoClp } from './InputMontoClp/InputMontoClp'
 export type { InputMontoClpProps } from './InputMontoClp/InputMontoClp'
+
+export { default as CategoriaSelect } from './CategoriaSelect/CategoriaSelect'
+export type { CategoriaOption } from './CategoriaSelect/CategoriaSelect'
