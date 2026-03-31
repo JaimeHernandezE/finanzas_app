@@ -392,7 +392,7 @@ export default function GastosComunesPage() {
   const [sidebarAbierto,    setSidebarAbierto]    = useState(false)
   const [movimientoAEliminar, setMovimientoAEliminar] = useState<MovimientoComun | null>(null)
 
-  const { data: categoriasData } = useCategorias()
+  const { data: categoriasData } = useCategorias({ ambito: 'FAMILIAR' })
   const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
 
   const { data: miembrosRaw } = useApi(() => familiaApi.getMiembros(), [])

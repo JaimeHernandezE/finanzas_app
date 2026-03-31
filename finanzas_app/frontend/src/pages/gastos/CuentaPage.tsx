@@ -403,7 +403,10 @@ export default function CuentaPage() {
   const [sidebarAbierto,     setSidebarAbierto]     = useState(false)
   const [movimientoAEliminar, setMovimientoAEliminar] = useState<Movimiento | null>(null)
 
-  const { data: categoriasData } = useCategorias()
+  const { data: categoriasData } = useCategorias({
+    ambito: 'PERSONAL',
+    cuenta: id ? Number(id) : undefined,
+  })
   const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
 
   const { movimientos, loading, error, refetch, eliminar } = useMovimientos({

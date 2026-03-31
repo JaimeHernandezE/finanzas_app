@@ -480,7 +480,9 @@ def movimientos(request):
         q = request.GET.get('q')
 
         if cuenta:
-            qs = qs.filter(cuenta_id=cuenta)
+            qs = qs.filter(
+                Q(cuenta_id=cuenta) | Q(categoria__cuenta_personal_id=cuenta)
+            )
         if ambito:
             qs = qs.filter(ambito=ambito)
         if solo_mios in ('1', 'true', 'True', 'yes', 'on'):
