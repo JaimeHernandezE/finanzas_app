@@ -12,6 +12,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
+import { queryClient } from '../../lib/queryClient'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
@@ -573,6 +574,7 @@ export default function TarjetasScreen() {
       const totalCuotasPagadas = cuotasPorPagar.reduce((s, c) => s + montoNum(c.monto), 0)
       setTotalPagado(totalCuotasPagadas)
       setExitoPostPago(true)
+      void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
       void refetchCuotas()
       void refetchCuotasTarjeta()
       void refetchMovPersonal()
@@ -641,6 +643,7 @@ export default function TarjetasScreen() {
       })
       setMenuPagoVisible(false)
       setVistaActiva('FACTURADO')
+      void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
       void refetchCuotas()
       void refetchCuotasTarjeta()
       void refetchMovPersonal()

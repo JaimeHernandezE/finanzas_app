@@ -24,6 +24,7 @@ import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hoo
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { useApi } from '@finanzas/shared/hooks/useApi'
+import { queryClient } from '@/lib/queryClient'
 
 export type MovimientoFormularioRef = {
   abrirNuevoComun: () => void
@@ -480,6 +481,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             monto: montoPayloadDesdeForm(monto),
             comentario: form.comentario.trim(),
           })
+          void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${idCuentaTrasGuardar || cuentaFija}` as never)
@@ -605,6 +607,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         } else {
           await movimientosApi.createMovimiento(payload)
         }
+        void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
         const cuentaDestino =
           payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
         if (esStandalone && cuentaFija != null) {
