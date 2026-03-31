@@ -3,6 +3,7 @@
 import csv
 import io
 import logging
+import re
 import traceback
 from datetime import date, datetime
 from decimal import Decimal
@@ -2293,12 +2294,21 @@ def _obtener_columna(fila, nombre):
 def _parsear_fecha_importacion(valor):
     if not valor:
         raise ValueError('fecha vacía.')
+    candidato = str(valor).strip()
     formatos = ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y')
     for fmt in formatos:
         try:
-            return datetime.strptime(valor, fmt).date()
+            return datetime.strptime(candidato, fmt).date()
         except ValueError:
             continue
+    # Fila colapsada sin reparar: "8/2/2025,02-2025,Otros,..."
+    if ',' in candidato:
+        primero = candidato.split(',', 1)[0].strip()
+        for fmt in formatos:
+            try:
+                return datetime.strptime(primero, fmt).date()
+            except ValueError:
+                continue
     raise ValueError(f"fecha inválida '{valor}'.")
 
 
@@ -2335,6 +2345,38 @@ def _fila_vacia(fila):
     return all(not str(value or '').strip() for value in fila.values())
 
 
+def _parece_fecha_con_fila_colapsada_cuenta_personal(fecha: str) -> bool:
+    """True si el valor en Fecha parece ser toda la fila (fecha + mes/año + resto)."""
+    s = (fecha or '').strip()
+    if ',' not in s:
+        return False
+    return bool(re.match(r'^\d{1,2}/\d{1,2}/\d{4},', s))
+
+
+def _partir_campos_cuenta_personal_colapsada(blob: str):
+    """
+    Separa Fecha, Mes/año, Categoría, Monto y resto (descripción / ID) desde un texto colapsado.
+    Usa csv.reader y, si falla o faltan campos, un patrón tolerante a comillas rotas.
+    """
+    blob = (blob or '').strip()
+    partes = []
+    try:
+        partes = next(csv.reader([blob], delimiter=',', quotechar='"'))
+    except Exception:
+        partes = []
+    if len(partes) >= 4:
+        return partes
+    m = re.match(
+        r'^(\d{1,2}/\d{1,2}/\d{4}),([^,]+),([^,]+),([^,]+)(?:,(.*))?$',
+        blob,
+        re.DOTALL,
+    )
+    if not m:
+        return None
+    g5 = (m.group(5) or '').strip() if m.lastindex >= 5 else ''
+    return [m.group(1), m.group(2), m.group(3), m.group(4), g5]
+
+
 def _reparar_fila_colapsada(fila):
     """
     Algunas exportaciones traen filas donde toda la linea queda dentro de "Fecha".
@@ -2346,18 +2388,15 @@ def _reparar_fila_colapsada(fila):
     monto = _obtener_columna(fila, 'monto')
     descripcion = _obtener_columna(fila, 'descripcion')
 
-    # Heuristica: si solo "fecha" tiene contenido y contiene comas, la fila se colapso.
+    # Heuristica: fila colapsada en Fecha, o Fecha contiene dd/mm/yyyy,... aunque haya ruido en otras columnas.
     if not fecha or ',' not in fecha:
         return fila
-    if any([categoria, monto, descripcion]):
+    solo_fecha_llena = not any([categoria, monto, descripcion])
+    if not solo_fecha_llena and not _parece_fecha_con_fila_colapsada_cuenta_personal(fecha):
         return fila
 
-    try:
-        partes = next(csv.reader([fecha], delimiter=',', quotechar='"'))
-    except Exception:
-        return fila
-
-    if len(partes) < 4:
+    partes = _partir_campos_cuenta_personal_colapsada(fecha)
+    if not partes or len(partes) < 4:
         return fila
 
     # Estructura minima: Fecha, Mes/año, Categoría, Monto, [Descripción...], [ID gasto]
