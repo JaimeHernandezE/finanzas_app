@@ -1,14 +1,48 @@
-import { useApi } from './useApi'
+import { useQuery } from '@tanstack/react-query'
 import { catalogosApi } from '../api/catalogos'
 
+// Los catálogos (categorías, métodos de pago, tarjetas) cambian muy poco.
+// staleTime: Infinity → nunca se marcan como stale por tiempo; solo se
+// refrescan manualmente (refetch) o al montar por primera vez sin cache.
+
 export function useCategorias() {
-  return useApi(() => catalogosApi.getCategorias())
+  const q = useQuery({
+    queryKey: ['categorias'],
+    queryFn: () => catalogosApi.getCategorias().then((r) => r.data),
+    staleTime: Infinity,
+  })
+  return {
+    data: q.data ?? null,
+    loading: q.isPending,
+    error: q.error ? String(q.error) : null,
+    refetch: q.refetch,
+  }
 }
 
 export function useMetodosPago() {
-  return useApi(() => catalogosApi.getMetodosPago())
+  const q = useQuery({
+    queryKey: ['metodosPago'],
+    queryFn: () => catalogosApi.getMetodosPago().then((r) => r.data),
+    staleTime: Infinity,
+  })
+  return {
+    data: q.data ?? null,
+    loading: q.isPending,
+    error: q.error ? String(q.error) : null,
+    refetch: q.refetch,
+  }
 }
 
 export function useTarjetas() {
-  return useApi(() => catalogosApi.getTarjetas())
+  const q = useQuery({
+    queryKey: ['tarjetas'],
+    queryFn: () => catalogosApi.getTarjetas().then((r) => r.data),
+    staleTime: 1000 * 60 * 30,
+  })
+  return {
+    data: q.data ?? null,
+    loading: q.isPending,
+    error: q.error ? String(q.error) : null,
+    refetch: q.refetch,
+  }
 }

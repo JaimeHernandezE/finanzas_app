@@ -1,18 +1,23 @@
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { finanzasApi, type CuentaPersonalApi } from '@/api/finanzas'
-import { useApi } from './useApi'
 
 /**
  * Cuentas propias + tuteladas del usuario autenticado.
- * Sin sesión devuelve lista vacía (no llama al API).
+ * Sin sesión (enabled: false) no hace fetch y devuelve lista vacía.
  */
 export function useCuentasPersonales() {
   const { user } = useAuth()
-  return useApi<CuentaPersonalApi[]>(
-    async () => {
-      if (!user) return { data: [] }
-      return finanzasApi.getCuentasPersonales()
-    },
-    [user?.email ?? ''],
-  )
+  const q = useQuery<CuentaPersonalApi[]>({
+    queryKey: ['cuentasPersonales', user?.email ?? ''],
+    queryFn: () => finanzasApi.getCuentasPersonales().then((r) => r.data),
+    enabled: !!user,
+    staleTime: 1000 * 60 * 30,
+  })
+  return {
+    data: q.data ?? null,
+    loading: q.isPending,
+    error: q.error ? String(q.error) : null,
+    refetch: q.refetch,
+  }
 }
