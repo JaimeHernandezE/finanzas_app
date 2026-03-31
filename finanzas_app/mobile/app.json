@@ -3,7 +3,7 @@
     "owner": "jaimehernandeze",
     "name": "Finanzas Familiares",
     "slug": "finanzas-familiares",
-    "scheme": "com.hernandezValle.finanzas",
+    "scheme": "finanzas",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,17 +14,29 @@
       "backgroundColor": "#ffffff"
     },
     "platforms": [
-      "android",
-      "ios"
+      "android"
     ],
     "android": {
-      "package": "com.hernandezValle.finanzas"
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "backgroundColor": "#c8f060"
+      },
+      "package": "com.hernandezValle.finanzas",
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-router",
       "expo-font",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Permite verificar tu identidad para acceder a la app."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
