@@ -225,12 +225,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       editar?: string
     }>()
 
-    const { data: catData } = useCategorias()
     const { data: metData, loading: loadingMetodos } = useMetodosPago()
     const { data: tarjetasData } = useTarjetas()
-    const categorias = (catData as Categoria[] | null) ?? []
-    const metodos = (metData as MetodoPago[] | null) ?? []
-    const tarjetas = (tarjetasData as Tarjeta[] | null) ?? []
 
     const { data: cuentasRes } = useApi<CuentaPersonalApi[]>(() => finanzasApi.getCuentasPersonales(), [])
     const cuentasPropias = useMemo(() => {
@@ -256,6 +252,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [showCategoriaPicker, setShowCategoriaPicker] = useState(false)
     /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
+    const { data: catData } = useCategorias({
+      ambito: form.ambito === 'COMUN' ? 'FAMILIAR' : 'PERSONAL',
+      tipo,
+      cuenta: form.ambito === 'PERSONAL' && form.cuenta > 0 ? form.cuenta : undefined,
+    })
+    const categorias = (catData as Categoria[] | null) ?? []
+    const metodos = (metData as MetodoPago[] | null) ?? []
+    const tarjetas = (tarjetasData as Tarjeta[] | null) ?? []
 
     const cerrarForm = useCallback(() => {
       if (esStandalone && cuentaFija != null) {

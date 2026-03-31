@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
@@ -27,7 +27,6 @@ export default function MovimientoFormPage() {
   const { formatMonto } = useConfig()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { data: categoriasData } = useCategorias()
   const { data: tarjetasData } = useTarjetas()
   const { data: metodosData } = useMetodosPago()
   const { data: cuentasData } = useCuentasPersonales()
@@ -40,12 +39,22 @@ export default function MovimientoFormPage() {
     [cuentasData],
   )
 
+  const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
+  const ambito: Ambito = searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL'
+  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>(
+    searchParams.get('cuenta') ?? '',
+  )
+  const { data: categoriasData } = useCategorias({
+    ambito: ambito === 'COMUN' ? 'FAMILIAR' : 'PERSONAL',
+    tipo,
+    cuenta:
+      ambito === 'PERSONAL' && cuentaSeleccionada
+        ? Number(cuentaSeleccionada)
+        : undefined,
+  })
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
   const tarjetas   = (tarjetasData ?? []) as { id: number; nombre: string }[]
   const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
-
-  const [tipo,      setTipo]      = useState<Tipo>('EGRESO')
-  const ambito: Ambito = searchParams.get('ambito') === 'COMUN' ? 'COMUN' : 'PERSONAL'
   const [metodo,    setMetodo]    = useState<Metodo>('DEBITO')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
@@ -54,6 +63,14 @@ export default function MovimientoFormPage() {
   const [errors,    setErrors]    = useState<FormErrors>({})
   const returnToParam = searchParams.get('returnTo')
   const returnTo = returnToParam && returnToParam.startsWith('/') ? returnToParam : null
+  useEffect(() => {
+    if (ambito !== 'PERSONAL') return
+    if (!cuentasOpciones.length) return
+    if (!cuentaSeleccionada || !cuentasOpciones.some(c => c.value === cuentaSeleccionada)) {
+      setCuentaSeleccionada(searchParams.get('cuenta') ?? cuentasOpciones[0]?.value ?? '')
+    }
+  }, [ambito, cuentasOpciones, cuentaSeleccionada, searchParams])
+
   const categoriaOpciones: SelectOption[] = useMemo(() => {
     const filtradas = categorias.filter(c => c.tipo === tipo)
     return filtradas.map(c => ({ value: String(c.id), label: c.nombre }))
@@ -200,7 +217,8 @@ export default function MovimientoFormPage() {
               options={cuentasOpciones}
               placeholder="Selecciona cuenta…"
               error={errors.cuenta}
-              defaultValue={searchParams.get('cuenta') ?? cuentasOpciones[0]?.value}
+              value={cuentaSeleccionada}
+              onChange={e => setCuentaSeleccionada(e.target.value)}
               required
             />
           )}

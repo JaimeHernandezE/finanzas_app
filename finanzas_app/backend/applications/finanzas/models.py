@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -36,6 +37,63 @@ class Categoria(models.Model):
         help_text="Si es null, la categoría es compartida en la familia. "
                   "Si tiene valor, es privada de este usuario."
     )
+    cuenta_personal = models.ForeignKey(
+        'finanzas.CuentaPersonal',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='categorias',
+        help_text=(
+            "Cuenta personal opcional para categorías privadas del usuario. "
+            "Permite filtrar categorías personales por cuenta."
+        ),
+    )
+    categoria_padre = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='subcategorias',
+        help_text='Categoría padre para agrupar subcategorías.',
+    )
+
+    @property
+    def es_padre(self) -> bool:
+        return self.subcategorias.exists()
+
+    def clean(self):
+        errors = {}
+
+        if self.categoria_padre_id:
+            if self.categoria_padre_id == self.id:
+                errors['categoria_padre'] = 'Una categoría no puede ser su propio padre.'
+            else:
+                padre = self.categoria_padre
+                if padre is not None:
+                    if padre.categoria_padre_id is not None:
+                        errors['categoria_padre'] = (
+                            'No se permiten nietas: el padre no puede tener padre.'
+                        )
+                    if padre.tipo != self.tipo:
+                        errors['categoria_padre'] = (
+                            'La categoría padre debe tener el mismo tipo.'
+                        )
+
+        # Categoría familiar (familia + usuario null): no puede ir ligada a cuenta.
+        if self.familia_id and self.usuario_id is None and self.cuenta_personal_id is not None:
+            errors['cuenta_personal'] = (
+                'Las categorías familiares no pueden vincularse a una cuenta personal.'
+            )
+
+        # Categoría personal: si tiene cuenta, debe pertenecer al mismo usuario.
+        if self.usuario_id and self.cuenta_personal_id:
+            if self.cuenta_personal is not None and self.cuenta_personal.usuario_id != self.usuario_id:
+                errors['cuenta_personal'] = (
+                    'La cuenta personal debe pertenecer al mismo usuario de la categoría.'
+                )
+
+        if errors:
+            raise ValidationError(errors)
 
     def __str__(self):
         return self.nombre

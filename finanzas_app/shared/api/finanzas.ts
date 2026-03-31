@@ -60,6 +60,7 @@ export const finanzasApi = {
     mes: string
     monto: string
     ambito: 'FAMILIAR' | 'PERSONAL'
+    cuenta?: number
   }) => client.post('/api/finanzas/presupuestos/', data),
 
   patchPresupuesto: (id: number, data: { monto: string }) =>

@@ -22,6 +22,9 @@ export interface Categoria {
   es_inversion: boolean
   familia:     number | null
   usuario:     number | null
+  cuenta_personal: number | null
+  categoria_padre: number | null
+  es_padre: boolean
 }
 
 export interface MetodoPago {

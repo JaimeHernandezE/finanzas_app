@@ -5,10 +5,18 @@ import { catalogosApi } from '../api/catalogos'
 // staleTime: Infinity → nunca se marcan como stale por tiempo; solo se
 // refrescan manualmente (refetch) o al montar por primera vez sin cache.
 
-export function useCategorias() {
+interface CategoriasParams {
+  ambito?: 'FAMILIAR' | 'PERSONAL'
+  cuenta?: number
+  tipo?: 'INGRESO' | 'EGRESO'
+  solo_padres?: boolean
+  solo_hijas?: boolean
+}
+
+export function useCategorias(params?: CategoriasParams) {
   const q = useQuery({
-    queryKey: ['categorias'],
-    queryFn: () => catalogosApi.getCategorias().then((r) => r.data),
+    queryKey: ['categorias', params ?? {}],
+    queryFn: () => catalogosApi.getCategorias(params).then((r) => r.data),
     staleTime: Infinity,
   })
   return {

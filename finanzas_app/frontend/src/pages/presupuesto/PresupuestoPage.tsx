@@ -217,7 +217,11 @@ export default function PresupuestoPage() {
     [mes, anio, ambito, cuentaPersonalId],
   )
 
-  const { data: categoriasData } = useCategorias()
+  const { data: categoriasData } = useCategorias({
+    ambito,
+    tipo: 'EGRESO',
+    cuenta: ambito === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
+  })
   const categoriasEgreso = useMemo(
     () =>
       ((categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]).filter(
@@ -337,6 +341,7 @@ export default function PresupuestoPage() {
         mes: mesApi,
         monto: String(monto),
         ambito,
+        cuenta: ambito === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
       })
       setNewCategoryId('')
       setNewCategoryMonto('')
@@ -371,6 +376,7 @@ export default function PresupuestoPage() {
         mes: mesApi,
         monto: String(monto),
         ambito,
+        cuenta: ambito === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
       })
       setAssignKey(null)
       setAssignMontoValue('')

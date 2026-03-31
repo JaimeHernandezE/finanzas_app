@@ -1,19 +1,32 @@
 import client from './client'
 
 export const catalogosApi = {
-  getCategorias: () =>
-    client.get('/api/finanzas/categorias/'),
+  getCategorias: (params?: {
+    ambito?: 'FAMILIAR' | 'PERSONAL'
+    cuenta?: number
+    tipo?: 'INGRESO' | 'EGRESO'
+    solo_padres?: boolean
+    solo_hijas?: boolean
+  }) => client.get('/api/finanzas/categorias/', { params }),
 
   createCategoria: (data: {
     nombre: string
     tipo: 'INGRESO' | 'EGRESO'
     ambito: 'FAMILIAR' | 'PERSONAL'
     es_inversion?: boolean
+    cuenta_personal?: number | null
+    categoria_padre?: number | null
   }) => client.post('/api/finanzas/categorias/', data),
 
   updateCategoria: (
     id: number,
-    data: Partial<{ nombre: string; tipo: string; es_inversion: boolean }>
+    data: Partial<{
+      nombre: string
+      tipo: string
+      es_inversion: boolean
+      cuenta_personal: number | null
+      categoria_padre: number | null
+    }>
   ) => client.put(`/api/finanzas/categorias/${id}/`, data),
 
   deleteCategoria: (id: number) =>

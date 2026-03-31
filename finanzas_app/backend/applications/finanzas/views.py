@@ -67,6 +67,28 @@ def _asegurar_catalogo_metodos_pago():
             MetodoPago.objects.create(nombre=nombre, tipo=tipo)
 
 
+def _as_bool(value):
+    return str(value).lower() in ('1', 'true', 'yes', 'on')
+
+
+def _parse_cuenta_personal_usuario(usuario, cuenta_raw):
+    if cuenta_raw in (None, ''):
+        return None, None
+    try:
+        cuenta_id = int(cuenta_raw)
+    except (TypeError, ValueError):
+        return None, Response(
+            {'error': 'cuenta debe ser numérica.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not CuentaPersonal.objects.filter(pk=cuenta_id, usuario=usuario).exists():
+        return None, Response(
+            {'error': 'Cuenta personal no válida.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return cuenta_id, None
+
+
 # ── CATEGORÍAS ────────────────────────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
@@ -75,9 +97,7 @@ def _asegurar_catalogo_metodos_pago():
 def categorias(request):
     """
     GET  → Lista categorías visibles para el usuario:
-           globales (familia=None, usuario=None) +
-           de su familia +
-           personales suyas
+           familiares de su familia + personales suyas (sin globales).
     POST → Crea una categoría nueva (familiar o personal según body)
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
@@ -85,10 +105,59 @@ def categorias(request):
         return error
 
     if request.method == 'GET':
-        q_globales = Q(familia__isnull=True, usuario__isnull=True)
+        ambito = (request.GET.get('ambito') or '').upper()
+        tipo = (request.GET.get('tipo') or '').upper()
+        solo_padres = _as_bool(request.GET.get('solo_padres', '0'))
+        solo_hijas = _as_bool(request.GET.get('solo_hijas', '0'))
+        cuenta_id, err_resp = _parse_cuenta_personal_usuario(
+            usuario, request.GET.get('cuenta')
+        )
+        if err_resp:
+            return err_resp
+
         q_personales = Q(usuario=usuario)
-        q_familia = Q(familia=usuario.familia, usuario__isnull=True) if usuario.familia else Q(pk__in=[])
-        qs = Categoria.objects.filter(q_globales | q_familia | q_personales).order_by('tipo', 'nombre')
+        q_familia = (
+            Q(familia=usuario.familia, usuario__isnull=True)
+            if usuario.familia
+            else Q(pk__in=[])
+        )
+        qs = Categoria.objects.filter(q_familia | q_personales)
+
+        if ambito == 'FAMILIAR':
+            qs = qs.filter(
+                familia=usuario.familia,
+                usuario__isnull=True,
+                cuenta_personal__isnull=True,
+            )
+        elif ambito == 'PERSONAL':
+            qs = qs.filter(usuario=usuario)
+            if cuenta_id is not None:
+                qs = qs.filter(cuenta_personal_id=cuenta_id)
+        elif ambito:
+            return Response(
+                {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if tipo in ('INGRESO', 'EGRESO'):
+            qs = qs.filter(tipo=tipo)
+        elif tipo:
+            return Response(
+                {'error': 'tipo debe ser INGRESO o EGRESO.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if solo_padres and solo_hijas:
+            return Response(
+                {'error': 'solo_padres y solo_hijas no pueden usarse juntos.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if solo_padres:
+            qs = qs.filter(categoria_padre__isnull=True)
+        if solo_hijas:
+            qs = qs.filter(categoria_padre__isnull=False)
+
+        qs = qs.order_by('tipo', 'nombre')
         return Response(CategoriaSerializer(qs, many=True).data)
 
     if request.method == 'POST':
@@ -100,9 +169,27 @@ def categorias(request):
         serializer = CategoriaSerializer(data=data)
         if serializer.is_valid():
             if ambito == 'FAMILIAR':
-                serializer.save(familia=usuario.familia, usuario=None)
+                serializer.save(
+                    familia=usuario.familia,
+                    usuario=None,
+                    cuenta_personal=None,
+                )
+            elif ambito == 'PERSONAL':
+                cuenta_id, err_resp = _parse_cuenta_personal_usuario(
+                    usuario, request.data.get('cuenta_personal')
+                )
+                if err_resp:
+                    return err_resp
+                serializer.save(
+                    familia=usuario.familia,
+                    usuario=usuario,
+                    cuenta_personal_id=cuenta_id,
+                )
             else:
-                serializer.save(familia=usuario.familia, usuario=usuario)
+                return Response(
+                    {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -152,7 +239,13 @@ def categoria_detalle(request, pk):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     if request.method == 'PUT':
-        allowed_keys = {'nombre', 'tipo', 'es_inversion'}
+        allowed_keys = {
+            'nombre',
+            'tipo',
+            'es_inversion',
+            'categoria_padre',
+            'cuenta_personal',
+        }
         data = {k: v for k, v in request.data.items() if k in allowed_keys}
         serializer = CategoriaSerializer(categoria, data=data, partial=True)
         if serializer.is_valid():
@@ -696,16 +789,26 @@ def ingreso_comun_detalle(request, pk):
 
 # ── PRESUPUESTO MENSUAL (familia / personal) ─────────────────────────────────
 
-def _categoria_accesible(usuario, categoria_id):
-    """Categoría global, familiar o personal del usuario."""
+def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
+    """Categoría familiar o personal del usuario (sin globales)."""
     try:
         cid = int(categoria_id)
     except (TypeError, ValueError):
         return None
-    q_glob = Q(familia__isnull=True, usuario__isnull=True)
-    q_fam = Q(familia=usuario.familia, usuario__isnull=True) if usuario.familia_id else Q(pk__in=[])
-    q_per = Q(usuario=usuario)
-    return Categoria.objects.filter(pk=cid).filter(q_glob | q_fam | q_per).first()
+
+    qs = Categoria.objects.filter(pk=cid)
+    if ambito == 'FAMILIAR':
+        return qs.filter(
+            familia=usuario.familia,
+            usuario__isnull=True,
+            cuenta_personal__isnull=True,
+        ).first()
+    if ambito == 'PERSONAL':
+        qs = qs.filter(usuario=usuario)
+        if cuenta_id is not None:
+            qs = qs.filter(cuenta_personal_id=cuenta_id)
+        return qs.first()
+    return None
 
 
 def _puede_editar_presupuesto(usuario, presupuesto):
@@ -739,7 +842,11 @@ def presupuesto_mes(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     ambito = (request.GET.get('ambito') or 'FAMILIAR').upper()
-    cuenta_id = request.GET.get('cuenta')
+    cuenta_id, err_resp = _parse_cuenta_personal_usuario(
+        usuario, request.GET.get('cuenta')
+    )
+    if err_resp:
+        return err_resp
     if ambito not in ('FAMILIAR', 'PERSONAL'):
         return Response(
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
@@ -758,6 +865,9 @@ def presupuesto_mes(request):
             familia_id=usuario.familia_id,
             mes=mes_first,
             usuario__isnull=True,
+            categoria__familia_id=usuario.familia_id,
+            categoria__usuario__isnull=True,
+            categoria__cuenta_personal__isnull=True,
         ).select_related('categoria')
         mov_qs = Movimiento.objects.filter(
             familia_id=usuario.familia_id,
@@ -766,12 +876,16 @@ def presupuesto_mes(request):
             tipo='EGRESO',
             ambito='COMUN',
             oculto=False,
+            categoria__familia_id=usuario.familia_id,
+            categoria__usuario__isnull=True,
+            categoria__cuenta_personal__isnull=True,
         ).exclude(metodo_pago__tipo='CREDITO')
     else:
         pres_qs = Presupuesto.objects.filter(
             familia_id=usuario.familia_id,
             mes=mes_first,
             usuario=usuario,
+            categoria__usuario=usuario,
         ).select_related('categoria')
         mov_qs = Movimiento.objects.filter(
             familia_id=usuario.familia_id,
@@ -781,21 +895,11 @@ def presupuesto_mes(request):
             tipo='EGRESO',
             ambito='PERSONAL',
             oculto=False,
+            categoria__usuario=usuario,
         ).exclude(metodo_pago__tipo='CREDITO')
-        if cuenta_id:
-            try:
-                cuenta_int = int(cuenta_id)
-            except (TypeError, ValueError):
-                return Response(
-                    {'error': 'cuenta debe ser numérica.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            if not CuentaPersonal.objects.filter(pk=cuenta_int, usuario=usuario).exists():
-                return Response(
-                    {'error': 'Cuenta personal no válida.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            mov_qs = mov_qs.filter(cuenta_id=cuenta_int)
+        if cuenta_id is not None:
+            mov_qs = mov_qs.filter(cuenta_id=cuenta_id, categoria__cuenta_personal_id=cuenta_id)
+            pres_qs = pres_qs.filter(categoria__cuenta_personal_id=cuenta_id)
 
     gastos_por_cat = {
         row['categoria_id']: row['t'] or 0
@@ -843,10 +947,27 @@ def presupuestos_create(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    cat = _categoria_accesible(usuario, request.data.get('categoria'))
+    ambito = (request.data.get('ambito') or 'FAMILIAR').upper()
+    if ambito not in ('FAMILIAR', 'PERSONAL'):
+        return Response(
+            {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    cuenta_id, err_resp = _parse_cuenta_personal_usuario(
+        usuario, request.data.get('cuenta')
+    )
+    if err_resp:
+        return err_resp
+
+    cat = _categoria_accesible(
+        usuario,
+        request.data.get('categoria'),
+        ambito=ambito,
+        cuenta_id=cuenta_id,
+    )
     if not cat:
         return Response(
-            {'error': 'Categoría no válida o no accesible.'},
+            {'error': 'Categoría no válida o no accesible para el ámbito/cuenta.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -868,7 +989,6 @@ def presupuestos_create(request):
     if monto < 0:
         return Response({'error': 'monto no puede ser negativo.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    ambito = (request.data.get('ambito') or 'FAMILIAR').upper()
     if ambito == 'FAMILIAR':
         p, _ = Presupuesto.objects.update_or_create(
             familia=usuario.familia,

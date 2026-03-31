@@ -52,7 +52,6 @@ export default function MovimientoEditarPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const id = Number(idParam)
-  const { data: categoriasData } = useCategorias()
   const { data: tarjetasData } = useTarjetas()
   const { data: metodosData } = useMetodosPago()
   const { data: cuentasData } = useCuentasPersonales()
@@ -76,6 +75,14 @@ export default function MovimientoEditarPage() {
   const [errors, setErrors] = useState<FormErrors>({})
   const returnToParam = searchParams.get('returnTo')
   const returnTo = returnToParam && returnToParam.startsWith('/') ? returnToParam : null
+  const { data: categoriasData } = useCategorias({
+    ambito: ambito === 'COMUN' ? 'FAMILIAR' : 'PERSONAL',
+    tipo,
+    cuenta:
+      ambito === 'PERSONAL' && cuentaId
+        ? Number(cuentaId)
+        : undefined,
+  })
 
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]
   const tarjetas = (tarjetasData ?? []) as { id: number; nombre: string }[]

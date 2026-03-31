@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useCategorias } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { catalogosApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import styles from './CategoriasPage.module.scss'
@@ -15,9 +16,22 @@ interface Categoria {
   tipo: 'INGRESO' | 'EGRESO'
   esInversion: boolean
   ambito: 'GLOBAL' | 'FAMILIAR' | 'PERSONAL'
+  cuentaPersonal: number | null
+  categoriaPadre: number | null
+  esPadre: boolean
 }
 
-function mapApiToCategoria(c: { id: number; nombre: string; tipo: string; es_inversion?: boolean; familia?: number | null; usuario?: number | null }): Categoria {
+function mapApiToCategoria(c: {
+  id: number
+  nombre: string
+  tipo: string
+  es_inversion?: boolean
+  familia?: number | null
+  usuario?: number | null
+  cuenta_personal?: number | null
+  categoria_padre?: number | null
+  es_padre?: boolean
+}): Categoria {
   const ambito: Categoria['ambito'] =
     !c.familia && !c.usuario ? 'GLOBAL'
     : c.familia && !c.usuario ? 'FAMILIAR'
@@ -28,6 +42,9 @@ function mapApiToCategoria(c: { id: number; nombre: string; tipo: string; es_inv
     tipo: c.tipo as 'INGRESO' | 'EGRESO',
     esInversion: !!c.es_inversion,
     ambito,
+    cuentaPersonal: c.cuenta_personal ?? null,
+    categoriaPadre: c.categoria_padre ?? null,
+    esPadre: !!c.es_padre,
   }
 }
 
@@ -70,8 +87,19 @@ function SegmentedControl({
 
 export default function CategoriasPage() {
   const { data: categoriasRaw, loading, error, refetch } = useCategorias()
+  const { data: cuentasData } = useCuentasPersonales()
   const categorias = useMemo(
-    () => ((categoriasRaw ?? []) as { id: number; nombre: string; tipo: string; es_inversion?: boolean; familia?: number | null; usuario?: number | null }[]).map(mapApiToCategoria),
+    () => ((categoriasRaw ?? []) as {
+      id: number
+      nombre: string
+      tipo: string
+      es_inversion?: boolean
+      familia?: number | null
+      usuario?: number | null
+      cuenta_personal?: number | null
+      categoria_padre?: number | null
+      es_padre?: boolean
+    }[]).map(mapApiToCategoria),
     [categoriasRaw],
   )
 
@@ -82,9 +110,13 @@ export default function CategoriasPage() {
   const [editNombre, setEditNombre] = useState('')
   const [editTipo, setEditTipo] = useState<'INGRESO' | 'EGRESO'>('EGRESO')
   const [editEsInversion, setEditEsInversion] = useState(false)
+  const [editCuentaPersonal, setEditCuentaPersonal] = useState<string>('')
+  const [editCategoriaPadre, setEditCategoriaPadre] = useState<string>('')
   const [addNombre, setAddNombre] = useState('')
   const [addTipo, setAddTipo] = useState<'INGRESO' | 'EGRESO'>('EGRESO')
   const [addEsInversion, setAddEsInversion] = useState(false)
+  const [addCuentaPersonal, setAddCuentaPersonal] = useState<string>('')
+  const [addCategoriaPadre, setAddCategoriaPadre] = useState<string>('')
 
   const filtradas = useMemo(
     () => categorias.filter((c) => c.tipo === filtroTipo),
@@ -93,6 +125,52 @@ export default function CategoriasPage() {
   const globales = useMemo(() => filtradas.filter((c) => c.ambito === 'GLOBAL'), [filtradas])
   const familiares = useMemo(() => filtradas.filter((c) => c.ambito === 'FAMILIAR'), [filtradas])
   const personales = useMemo(() => filtradas.filter((c) => c.ambito === 'PERSONAL'), [filtradas])
+  const cuentasPropias = useMemo(
+    () => (cuentasData ?? []).filter(c => c.es_propia),
+    [cuentasData],
+  )
+  const cuentaPersonalPrincipalId = useMemo(
+    () =>
+      cuentasPropias.find(
+        c => c.nombre.trim().toLowerCase() === 'personal',
+      )?.id ?? null,
+    [cuentasPropias],
+  )
+  const cuentasPorId = useMemo(
+    () => new Map(cuentasPropias.map(c => [c.id, c.nombre])),
+    [cuentasPropias],
+  )
+  const personalesCuentaPrincipal = useMemo(
+    () =>
+      cuentaPersonalPrincipalId == null
+        ? []
+        : personales.filter(c => c.cuentaPersonal === cuentaPersonalPrincipalId),
+    [personales, cuentaPersonalPrincipalId],
+  )
+  const personalesSinCuenta = useMemo(
+    () => personales.filter(c => c.cuentaPersonal == null),
+    [personales],
+  )
+  const personalesOtrasCuentas = useMemo(() => {
+    const agrupadas: { cuentaId: number; nombreCuenta: string; categorias: Categoria[] }[] = []
+    const porCuenta = new Map<number, Categoria[]>()
+    for (const c of personales) {
+      if (c.cuentaPersonal == null) continue
+      if (cuentaPersonalPrincipalId != null && c.cuentaPersonal === cuentaPersonalPrincipalId) continue
+      porCuenta.set(c.cuentaPersonal, [...(porCuenta.get(c.cuentaPersonal) ?? []), c])
+    }
+    for (const [cuentaId, categoriasCuenta] of porCuenta.entries()) {
+      agrupadas.push({
+        cuentaId,
+        nombreCuenta: cuentasPorId.get(cuentaId) ?? `Cuenta ${cuentaId}`,
+        categorias: categoriasCuenta,
+      })
+    }
+    agrupadas.sort((a, b) =>
+      a.nombreCuenta.localeCompare(b.nombreCuenta, 'es', { sensitivity: 'base' }),
+    )
+    return agrupadas
+  }, [personales, cuentaPersonalPrincipalId, cuentasPorId])
 
   if (loading) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />
@@ -102,6 +180,8 @@ export default function CategoriasPage() {
     setEditNombre(c.nombre)
     setEditTipo(c.tipo)
     setEditEsInversion(c.esInversion)
+    setEditCuentaPersonal(c.cuentaPersonal ? String(c.cuentaPersonal) : '')
+    setEditCategoriaPadre(c.categoriaPadre ? String(c.categoriaPadre) : '')
     setDeletingId(null)
     setAddingInGroup(null)
   }
@@ -119,6 +199,8 @@ export default function CategoriasPage() {
         nombre: editNombre,
         tipo: editTipo,
         es_inversion: editEsInversion,
+        cuenta_personal: c.ambito === 'PERSONAL' ? (editCuentaPersonal ? Number(editCuentaPersonal) : null) : null,
+        categoria_padre: editCategoriaPadre ? Number(editCategoriaPadre) : null,
       })
       setEditingId(null)
       refetch()
@@ -153,6 +235,8 @@ export default function CategoriasPage() {
     setAddNombre('')
     setAddTipo(filtroTipo)
     setAddEsInversion(false)
+    setAddCuentaPersonal('')
+    setAddCategoriaPadre('')
     setEditingId(null)
     setDeletingId(null)
   }
@@ -166,6 +250,8 @@ export default function CategoriasPage() {
       tipo: addTipo,
       ambito: addingInGroup,
       es_inversion: addEsInversion,
+      cuenta_personal: addingInGroup === 'PERSONAL' && addCuentaPersonal ? Number(addCuentaPersonal) : null,
+      categoria_padre: addCategoriaPadre ? Number(addCategoriaPadre) : null,
     })
     setAddingInGroup(null)
     refetch()
@@ -188,6 +274,12 @@ export default function CategoriasPage() {
     }
 
     if (isEditing) {
+      const padresEditables = categorias.filter(x =>
+        x.ambito === c.ambito &&
+        x.tipo === editTipo &&
+        x.categoriaPadre == null &&
+        x.id !== c.id,
+      )
       return (
         <div key={c.id} className={styles.filaEdicion}>
           <input
@@ -212,6 +304,32 @@ export default function CategoriasPage() {
             />
             inversión
           </label>
+          <select
+            className={styles.selectTipo}
+            value={editCategoriaPadre}
+            onChange={(e) => setEditCategoriaPadre(e.target.value)}
+          >
+            <option value="">Sin padre</option>
+            {padresEditables.map(p => (
+              <option key={p.id} value={p.id}>
+                Padre: {p.nombre}
+              </option>
+            ))}
+          </select>
+          {c.ambito === 'PERSONAL' && (
+            <select
+              className={styles.selectTipo}
+              value={editCuentaPersonal}
+              onChange={(e) => setEditCuentaPersonal(e.target.value)}
+            >
+              <option value="">Sin cuenta</option>
+              {cuentasPropias.map(cp => (
+                <option key={cp.id} value={cp.id}>
+                  Cuenta: {cp.nombre}
+                </option>
+              ))}
+            </select>
+          )}
           <button type="button" className={styles.btnOk} onClick={saveEdit} title="Guardar">✓</button>
           <button type="button" className={styles.btnCancel} onClick={cancelEdit} title="Cancelar">✕</button>
         </div>
@@ -223,6 +341,7 @@ export default function CategoriasPage() {
         <span className={styles.filaNombre}>
           {c.nombre}
           {c.esInversion && <span className={styles.badgeInversion}>💼 inversión</span>}
+          {c.categoriaPadre && <span className={styles.badgeInversion}>↳ subcategoría</span>}
         </span>
         <span className={styles.filaTipo}>{c.tipo === 'EGRESO' ? 'Egreso' : 'Ingreso'}</span>
         <div className={styles.filaActions}>
@@ -235,6 +354,11 @@ export default function CategoriasPage() {
 
   const renderAddForm = (ambito: AmbitoEditable) => {
     if (addingInGroup !== ambito) return null
+    const padresDisponibles = categorias.filter(c =>
+      c.ambito === ambito &&
+      c.tipo === addTipo &&
+      c.categoriaPadre == null,
+    )
     return (
       <div className={styles.filaEdicion}>
         <input
@@ -260,6 +384,32 @@ export default function CategoriasPage() {
           />
           inversión
         </label>
+        <select
+          className={styles.selectTipo}
+          value={addCategoriaPadre}
+          onChange={(e) => setAddCategoriaPadre(e.target.value)}
+        >
+          <option value="">Sin padre</option>
+          {padresDisponibles.map(p => (
+            <option key={p.id} value={p.id}>
+              Padre: {p.nombre}
+            </option>
+          ))}
+        </select>
+        {ambito === 'PERSONAL' && (
+          <select
+            className={styles.selectTipo}
+            value={addCuentaPersonal}
+            onChange={(e) => setAddCuentaPersonal(e.target.value)}
+          >
+            <option value="">Sin cuenta</option>
+            {cuentasPropias.map(cp => (
+              <option key={cp.id} value={cp.id}>
+                Cuenta: {cp.nombre}
+              </option>
+            ))}
+          </select>
+        )}
         <button type="button" className={styles.btnOk} onClick={saveAdd} title="Guardar">✓</button>
         <button type="button" className={styles.btnCancel} onClick={cancelAdd} title="Cancelar">✕</button>
       </div>
@@ -297,8 +447,20 @@ export default function CategoriasPage() {
 
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>PERSONALES (MÍS)</h2>
+        <h3 className={styles.groupHeader}>PERSONALES</h3>
+        <div className={styles.block}>{personalesCuentaPrincipal.map(renderFila)}</div>
+
+        <h3 className={styles.groupHeader} style={{ marginTop: 12 }}>OTRAS CUENTAS</h3>
+        {personalesOtrasCuentas.map(g => (
+          <div key={g.cuentaId} style={{ marginBottom: 12 }}>
+            <h3 className={styles.groupHeader}>{g.nombreCuenta}</h3>
+            <div className={styles.block}>{g.categorias.map(renderFila)}</div>
+          </div>
+        ))}
+
+        <h3 className={styles.groupHeader}>SIN CUENTA</h3>
         <div className={styles.block}>
-          {personales.map(renderFila)}
+          {personalesSinCuenta.map(renderFila)}
           {renderAddForm('PERSONAL')}
           <div className={styles.addRow}>
             <button type="button" className={styles.btnAgregar} onClick={() => startAdd('PERSONAL')}>

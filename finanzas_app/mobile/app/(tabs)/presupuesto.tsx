@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,11 @@ import {
 } from 'react-native'
 import { useFocusEffect } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
-import { finanzasApi, type PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
+import {
+  finanzasApi,
+  type CuentaPersonalApi,
+  type PresupuestoMesFila,
+} from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -47,6 +51,18 @@ export default function PresupuestoScreen() {
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>('FAMILIAR')
+  const { data: cuentasData } = useApi<CuentaPersonalApi[]>(
+    () => finanzasApi.getCuentasPersonales(),
+    [],
+  )
+  const cuentasPropias = useMemo(
+    () =>
+      ((cuentasData ?? []) as CuentaPersonalApi[])
+        .filter(c => c.es_propia)
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
+    [cuentasData],
+  )
+  const [cuentaPersonalId, setCuentaPersonalId] = useState<number | null>(null)
 
   // Estado formulario nuevo presupuesto
   const [asignandoCatId, setAsignandoCatId] = useState<number | null>(null)
@@ -58,10 +74,24 @@ export default function PresupuestoScreen() {
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const { data, loading, error, refetch } = useApi<PresupuestoMesFila[]>(
-    () => finanzasApi.getPresupuestoMes({ mes: mes + 1, anio, ambito }),
-    [mes, anio, ambito],
+    () =>
+      finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito,
+        cuenta: ambito === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
+      }),
+    [mes, anio, ambito, cuentaPersonalId],
   )
   const filas = data ?? []
+
+  useEffect(() => {
+    if (ambito !== 'PERSONAL') return
+    if (!cuentasPropias.length) return
+    if (cuentaPersonalId == null || !cuentasPropias.some(c => c.id === cuentaPersonalId)) {
+      setCuentaPersonalId(cuentasPropias[0].id)
+    }
+  }, [ambito, cuentasPropias, cuentaPersonalId])
 
   const omitirPrimerFoco = useRef(true)
   useFocusEffect(
@@ -111,6 +141,7 @@ export default function PresupuestoScreen() {
         mes: mesStr(anio, mes),
         monto: String(monto),
         ambito,
+        cuenta: ambito === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
       })
       cancelarForm()
       void refetch()
@@ -175,6 +206,27 @@ export default function PresupuestoScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {ambito === 'PERSONAL' && cuentasPropias.length > 0 && (
+            <View className="flex-row flex-wrap gap-2 mb-4">
+              {cuentasPropias.map(c => (
+                <TouchableOpacity
+                  key={c.id}
+                  onPress={() => setCuentaPersonalId(c.id)}
+                  className={`px-3 py-1.5 rounded-lg border ${
+                    cuentaPersonalId === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
+                  }`}
+                >
+                  <Text
+                    className={`text-xs font-medium ${
+                      cuentaPersonalId === c.id ? 'text-white' : 'text-dark'
+                    }`}
+                  >
+                    {c.nombre}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
 
           {/* Navegación mes */}
           <View className="flex-row items-center gap-2 mb-4">

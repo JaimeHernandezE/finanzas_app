@@ -16,10 +16,73 @@ from .models import (
 
 
 class CategoriaSerializer(serializers.ModelSerializer):
+    es_padre = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Categoria
-        fields = ['id', 'nombre', 'tipo', 'es_inversion', 'familia', 'usuario']
+        fields = [
+            'id',
+            'nombre',
+            'tipo',
+            'es_inversion',
+            'familia',
+            'usuario',
+            'cuenta_personal',
+            'categoria_padre',
+            'es_padre',
+        ]
         read_only_fields = ['familia', 'usuario']
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instancia = self.instance
+
+        usuario = attrs.get('usuario', getattr(instancia, 'usuario', None))
+        familia = attrs.get('familia', getattr(instancia, 'familia', None))
+        cuenta_personal = attrs.get(
+            'cuenta_personal',
+            getattr(instancia, 'cuenta_personal', None),
+        )
+        categoria_padre = attrs.get(
+            'categoria_padre',
+            getattr(instancia, 'categoria_padre', None),
+        )
+        tipo = attrs.get('tipo', getattr(instancia, 'tipo', None))
+
+        if categoria_padre is not None:
+            if instancia is not None and categoria_padre.id == instancia.id:
+                raise serializers.ValidationError(
+                    {'categoria_padre': 'Una categoría no puede ser su propio padre.'}
+                )
+            if categoria_padre.categoria_padre_id is not None:
+                raise serializers.ValidationError(
+                    {'categoria_padre': 'No se permiten nietas: el padre no puede tener padre.'}
+                )
+            if tipo and categoria_padre.tipo != tipo:
+                raise serializers.ValidationError(
+                    {'categoria_padre': 'La categoría padre debe tener el mismo tipo.'}
+                )
+
+        if familia is not None and usuario is None and cuenta_personal is not None:
+            raise serializers.ValidationError(
+                {
+                    'cuenta_personal': (
+                        'Las categorías familiares no pueden vincularse a una cuenta personal.'
+                    )
+                }
+            )
+
+        if usuario is not None and cuenta_personal is not None:
+            if cuenta_personal.usuario_id != usuario.id:
+                raise serializers.ValidationError(
+                    {
+                        'cuenta_personal': (
+                            'La cuenta personal debe pertenecer al mismo usuario de la categoría.'
+                        )
+                    }
+                )
+
+        return attrs
 
 
 class MetodoPagoSerializer(serializers.ModelSerializer):
