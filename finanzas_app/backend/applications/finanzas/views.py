@@ -115,13 +115,18 @@ def categorias(request):
         if err_resp:
             return err_resp
 
+        q_globales = Q(familia__isnull=True, usuario__isnull=True)
         q_personales = Q(usuario=usuario)
         q_familia = (
             Q(familia=usuario.familia, usuario__isnull=True)
             if usuario.familia
             else Q(pk__in=[])
         )
-        qs = Categoria.objects.filter(q_familia | q_personales)
+        # Compatibilidad: sin ambito explícito mantenemos globales en el listado general.
+        qs_base = q_familia | q_personales
+        if not ambito:
+            qs_base = qs_base | q_globales
+        qs = Categoria.objects.filter(qs_base)
 
         if ambito == 'FAMILIAR':
             qs = qs.filter(
