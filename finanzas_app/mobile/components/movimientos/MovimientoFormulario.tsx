@@ -538,11 +538,16 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (vinculoIngresoComun && editingId != null) {
         setSaving(true)
         try {
-          await movimientosApi.patchMovimiento(editingId, {
+          const res = await movimientosApi.patchMovimiento(editingId, {
             fecha: fechaIso,
             monto: montoPayloadDesdeForm(monto),
             comentario: form.comentario.trim(),
           })
+          const updated = res.data as Record<string, unknown>
+          queryClient.setQueriesData<unknown[]>(
+            { queryKey: ['movimientos'] },
+            (prev) => prev?.map((m: any) => m.id === editingId ? { ...m, ...updated } : m) ?? [],
+          )
           void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
@@ -665,10 +670,23 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setSaving(true)
       try {
         if (editingId != null) {
-          await movimientosApi.patchMovimiento(editingId, payload)
+          const res = await movimientosApi.patchMovimiento(editingId, payload)
+          const updated = res.data as Record<string, unknown>
+          // Actualizar el item en todas las variantes del cache sin esperar refetch
+          queryClient.setQueriesData<unknown[]>(
+            { queryKey: ['movimientos'] },
+            (prev) => prev?.map((m: any) => m.id === editingId ? { ...m, ...updated } : m) ?? [],
+          )
         } else {
-          await movimientosApi.createMovimiento(payload)
+          const res = await movimientosApi.createMovimiento(payload)
+          const created = res.data as Record<string, unknown>
+          // Insertar el nuevo item al inicio de todas las variantes del cache
+          queryClient.setQueriesData<unknown[]>(
+            { queryKey: ['movimientos'] },
+            (prev) => prev ? [created, ...prev] : [created],
+          )
         }
+        // Invalidar en background para mantener consistencia eventual
         void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
         const cuentaDestino =
           payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
