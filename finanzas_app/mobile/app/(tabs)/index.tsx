@@ -105,6 +105,10 @@ export default function DashboardScreen() {
     () => movimientosApi.getCuotasDeudaPendiente(),
     []
   )
+  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo } = useApi(
+    () => finanzasApi.getEfectivoDisponible(),
+    []
+  )
   const { data: cuentasRes } = useApi<CuentaPersonalApi[]>(
     () => finanzasApi.getCuentasPersonales(),
     []
@@ -124,6 +128,25 @@ export default function DashboardScreen() {
         cuenta: cuentaTab ?? undefined,
       }),
     [mes, anio, cuentaTab],
+  )
+  const { mesPrevio, anioPrevio } = useMemo(() => {
+    if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
+    return { mesPrevio: mes, anioPrevio: anio }
+  }, [mes, anio])
+  const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior } =
+    useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mesPrevio, anioPrevio), [mesPrevio, anioPrevio])
+  const { data: compensacionData, error: errorCompensacion } = useApi(
+    () => finanzasApi.getCompensacionProyectada(mes + 1, anio),
+    [mes, anio]
+  )
+  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo } = useApi(
+    () =>
+      esActual
+        ? finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
+        : Promise.resolve({
+            data: { mes: mes + 1, anio, montos: {} as Record<string, string> },
+          }),
+    [mes, anio, esActual]
   )
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
@@ -152,36 +175,80 @@ export default function DashboardScreen() {
     return Math.round(Number(data?.total) || 0)
   }, [deudaRes])
 
-  const ajusteLiquidacionComun = useMemo(() => {
-    if (!liquidacionRes || !user) return 0
-    const totalIngresos = (liquidacionRes.ingresos ?? []).reduce(
-      (acc, i) => acc + toPesos(i.total), 0
-    )
-    const totalGastosComunes = (liquidacionRes.gastos_comunes ?? []).reduce(
-      (acc, g) => acc + toPesos(g.total), 0
-    )
-    if (totalIngresos <= 0 || totalGastosComunes <= 0) return 0
-    const ingresoUsuario = (liquidacionRes.ingresos ?? [])
-      .filter(i => i.usuario_id === user.id)
-      .reduce((acc, i) => acc + toPesos(i.total), 0)
-    const aporteEsperado = (ingresoUsuario / totalIngresos) * totalGastosComunes
-    const pagadoPorUsuario = (liquidacionRes.gastos_comunes ?? [])
-      .filter(g => g.usuario_id === user.id)
-      .reduce((acc, g) => acc + toPesos(g.total), 0)
-    return Math.round(pagadoPorUsuario - aporteEsperado)
-  }, [liquidacionRes, user])
+  const [sueldosProrrateo, setSueldosProrrateo] = useState<Record<number, number>>({})
 
-  // Efectivo total sobre todos los movimientos personales del usuario
+  useEffect(() => {
+    if (!esActual || !compensacionData?.miembros?.length) {
+      setSueldosProrrateo({})
+      return
+    }
+    if (loadingLiquidacionAnterior || loadingSueldosProrrateo) return
+
+    const prevById = Object.fromEntries(
+      (liquidacionMesAnteriorRes?.ingresos ?? []).map((i) => [
+        i.usuario_id,
+        Math.round(Number(i.total) || 0),
+      ])
+    )
+    const apiMontos = sueldosProrrateoRes?.montos ?? {}
+    const next: Record<number, number> = {}
+    for (const m of compensacionData.miembros) {
+      const k = String(m.usuario_id)
+      const apiVal = apiMontos[k]
+      if (apiVal !== undefined && apiVal !== null && apiVal !== '') {
+        next[m.usuario_id] = Math.round(Number(apiVal) || 0)
+      } else {
+        next[m.usuario_id] = prevById[m.usuario_id] ?? 0
+      }
+    }
+    setSueldosProrrateo(next)
+  }, [
+    esActual,
+    compensacionData,
+    liquidacionMesAnteriorRes,
+    sueldosProrrateoRes,
+    loadingLiquidacionAnterior,
+    loadingSueldosProrrateo,
+  ])
+
+  const saldoCompensacionDetalle = useMemo(() => {
+    const vacio = { compensacion: 0 }
+    if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
+    const n = compensacionData.miembros.length
+    const netoFam = toPesos(compensacionData.neto_familiar_comun)
+    const totalEstimado = compensacionData.miembros.reduce(
+      (sum, m) => sum + (sueldosProrrateo[m.usuario_id] ?? 0),
+      0
+    )
+    const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
+    if (!self) return vacio
+    const netoUsuario = toPesos(self.neto_comun_mes)
+    const miEstimado = sueldosProrrateo[user.id] ?? 0
+    let esperado = 0
+    if (totalEstimado > 0) {
+      esperado = (miEstimado / totalEstimado) * netoFam
+    } else if (n > 0) {
+      esperado = netoFam / n
+    }
+    const netoR = Math.round(netoUsuario)
+    const esperadoR = Math.round(esperado)
+    return { compensacion: esperadoR - netoR }
+  }, [esActual, errorCompensacion, compensacionData, user, sueldosProrrateo])
+
+  const sueldoProyectado = useMemo(() => {
+    if (!user) return 0
+    return Math.round(sueldosProrrateo[user.id] ?? 0)
+  }, [sueldosProrrateo, user])
+
   const efectivo = useMemo(() => {
-    return movimientos
-      .filter(m => m.metodo_pago_tipo !== 'CREDITO')
-      .reduce(
-        (acc, m) => acc + (m.tipo === 'INGRESO' ? montoAbs(m.monto) : -montoAbs(m.monto)),
-        0
-      )
-  }, [movimientos])
-
-  const saldo = efectivo - deudaTc + ajusteLiquidacionComun
+    const t = (efectivoRes as { efectivo?: string } | null)?.efectivo
+    return Math.round(Number(t) || 0)
+  }, [efectivoRes])
+  const compensacionEstimada = saldoCompensacionDetalle.compensacion
+  const saldo = useMemo(() => {
+    if (!esActual) return efectivo - deudaTc
+    return sueldoProyectado + efectivo - deudaTc + compensacionEstimada
+  }, [esActual, sueldoProyectado, efectivo, deudaTc, compensacionEstimada])
 
   // Movimientos filtrados por la cuenta seleccionada (para categorías y lista)
   const movimientosCuenta = useMemo(() => {
@@ -234,8 +301,14 @@ export default function DashboardScreen() {
     else setMes(m => m + 1)
   }
 
-  const hasError = error || errorLiquidacion
-  const isLoading = loading || loadingDeuda || loadingLiquidacion
+  const hasError = error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior
+  const isLoading =
+    loading ||
+    loadingEfectivo ||
+    loadingDeuda ||
+    loadingLiquidacion ||
+    loadingLiquidacionAnterior ||
+    (esActual && loadingSueldosProrrateo)
 
   useEffect(() => {
     if (!showSelectorCuenta) return

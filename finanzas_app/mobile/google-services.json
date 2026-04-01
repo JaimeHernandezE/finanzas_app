@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "110147131390",
+    "project_id": "finanzas-familiares-b8ed3",
+    "storage_bucket": "finanzas-familiares-b8ed3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:110147131390:android:485389e939b910b665d2af",
+        "android_client_info": {
+          "package_name": "com.hernandezValle.finanzas"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "110147131390-g62ed34ec034loqldm655aotikjo5088.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0LRBWvnGTIfhVcDgTcq0DU0y-8tgWVbU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "110147131390-g62ed34ec034loqldm655aotikjo5088.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

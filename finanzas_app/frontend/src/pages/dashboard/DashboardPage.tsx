@@ -322,6 +322,7 @@ function SaldoProyectadoCard({
   label,
   saldo,
   esActual,
+  sueldoProyectado,
   efectivo,
   deudaTc,
   compensacion,
@@ -337,6 +338,7 @@ function SaldoProyectadoCard({
   label: string
   saldo: number
   esActual: boolean
+  sueldoProyectado: number
   efectivo: number
   deudaTc: number
   compensacion: number
@@ -380,7 +382,7 @@ function SaldoProyectadoCard({
         style={{ color: v < 0 ? '#ff4d4d' : '#c8f060' }}
         title={
           esActual
-            ? 'Saldo = efectivo disponible − deuda tarjetas + compensación (C). Pulsa ? para el detalle.'
+            ? 'Saldo = sueldo proyectado + efectivo disponible − deuda tarjetas + compensación (D). Pulsa ? para el detalle.'
             : 'Saldo ≈ efectivo disponible − deuda tarjetas (resumen no es el mes en curso). Pulsa ? para más.'
         }
       >
@@ -408,22 +410,28 @@ function SaldoProyectadoCard({
             <>
               <div className={styles.metricTooltipTitle}>Cómo se calcula el saldo proyectado</div>
               <p className={styles.saldoDetalleIntro}>
-                Efectivo disponible menos deudas tarjetas más la compensación según prorrateo de sueldos estimados
-                (según mes anterior).
+                Sueldo proyectado más efectivo disponible menos deudas tarjetas más la compensación según prorrateo
+                de sueldos estimados (según mes anterior).
               </p>
               <p className={styles.saldoDetalleFormula}>
-                <strong>Saldo = A − B + C</strong>
+                <strong>Saldo = A + B − C + D</strong>
               </p>
               <div className={styles.metricDesgloseSectionTitle}>Aporte</div>
               <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>A — Efectivo disponible</span>
+                <span className={styles.metricTooltipKey}>A — Sueldo proyectado</span>
+                <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
+                  +{formatMonto(Math.abs(sueldoProyectado))}
+                </span>
+              </div>
+              <div className={styles.metricTooltipRow}>
+                <span className={styles.metricTooltipKey}>B — Efectivo disponible</span>
                 <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
                   +{formatMonto(Math.abs(efectivo))}
                 </span>
               </div>
               <div className={styles.metricDesgloseSectionTitle}>Egresos</div>
               <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>B — Deuda tarjetas</span>
+                <span className={styles.metricTooltipKey}>C — Deuda tarjetas</span>
                 <span className={styles.metricTooltipVal} style={{ color: '#f87171' }}>
                   −{formatMonto(Math.abs(deudaTc))}
                 </span>
@@ -786,13 +794,17 @@ export default function DashboardPage() {
   }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
 
   const compensacionEstimada = saldoCompensacionDetalle.compensacion
+  const sueldoProyectado = useMemo(() => {
+    if (!user) return 0
+    return Math.round(montoClpANumero(sueldosDigitos[user.id] ?? ''))
+  }, [sueldosDigitos, user])
 
   const saldo = useMemo(() => {
     if (!esActual) {
       return efectivo - deudaTc
     }
-    return efectivo - deudaTc + compensacionEstimada
-  }, [esActual, efectivo, deudaTc, compensacionEstimada])
+    return sueldoProyectado + efectivo - deudaTc + compensacionEstimada
+  }, [esActual, sueldoProyectado, efectivo, deudaTc, compensacionEstimada])
 
   const movimientosCuentaSeleccionada = useMemo(() => {
     if (cuentaTab === null) return movimientos
@@ -878,6 +890,7 @@ export default function DashboardPage() {
           label="Saldo proyectado"
           saldo={saldo}
           esActual={esActual}
+          sueldoProyectado={sueldoProyectado}
           efectivo={efectivo}
           deudaTc={deudaTc}
           compensacion={compensacionEstimada}

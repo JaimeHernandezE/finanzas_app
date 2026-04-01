@@ -5,6 +5,7 @@ import {
   useCallback,
   forwardRef,
   useImperativeHandle,
+  useRef,
 } from 'react'
 import {
   View,
@@ -17,6 +18,8 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  ScrollView as RNScrollView,
+  Keyboard,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -24,7 +27,7 @@ import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hoo
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { useApi } from '@finanzas/shared/hooks/useApi'
-import { queryClient } from '@/lib/queryClient'
+import { queryClient } from '../../lib/queryClient'
 
 export type MovimientoFormularioRef = {
   abrirNuevoComun: () => void
@@ -255,6 +258,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [busquedaCategoria, setBusquedaCategoria] = useState('')
     /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
+    const formScrollRef = useRef<RNScrollView | null>(null)
+    const [keyboardHeight, setKeyboardHeight] = useState(0)
     const { data: catData } = useCategorias({
       ambito: form.ambito === 'COMUN' ? 'FAMILIAR' : 'PERSONAL',
       tipo,
@@ -343,6 +348,19 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (t) setMetodoTipo(t)
     }, [baseMetodoPagoId, metodos])
 
+    useEffect(() => {
+      const onShow = Keyboard.addListener('keyboardDidShow', (e) => {
+        setKeyboardHeight(e.endCoordinates?.height ?? 0)
+      })
+      const onHide = Keyboard.addListener('keyboardDidHide', () => {
+        setKeyboardHeight(0)
+      })
+      return () => {
+        onShow.remove()
+        onHide.remove()
+      }
+    }, [])
+
     useImperativeHandle(ref, () => ({
       abrirNuevoComun,
       iniciarEdicion,
@@ -407,7 +425,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (!editar) return
       const idNum = parseInt(String(editar), 10)
       if (!Number.isFinite(idNum)) {
-        router.replace('/(tabs)/index')
+        router.replace('/(tabs)')
         return
       }
       void iniciarEdicion(idNum)
@@ -487,6 +505,16 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setField('monto_cuota', '')
       }
       setMetodoTipo(m)
+    }
+
+    function onFocusComentario() {
+      // Asegura visibilidad del campo descripción por encima del teclado.
+      setTimeout(() => {
+        formScrollRef.current?.scrollToEnd({ animated: true })
+      }, 80)
+      setTimeout(() => {
+        formScrollRef.current?.scrollToEnd({ animated: true })
+      }, 220)
     }
 
     // ¿Se debe mostrar el campo Ámbito?
@@ -999,6 +1027,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         <TextInput
           value={form.comentario}
           onChangeText={(v) => setField('comentario', v)}
+          onFocus={onFocusComentario}
           placeholder="Ej: Supermercado (puedes dejarlo vacío)"
           multiline
           numberOfLines={3}
@@ -1077,9 +1106,18 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           {headerBlock}
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
             className="flex-1"
           >
-            <ScrollView className="flex-1 px-6 pt-4" keyboardShouldPersistTaps="handled">
+            <ScrollView
+              ref={formScrollRef}
+              className="flex-1 px-6 pt-4"
+              contentContainerStyle={{
+                paddingBottom: Math.max(keyboardHeight + 10, 80),
+              }}
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+              keyboardShouldPersistTaps="handled"
+            >
               {loadingDetalle ? (
                 <View className="py-16 items-center">
                   <ActivityIndicator color="#0f0f0f" />
@@ -1105,13 +1143,22 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           onRequestClose={cerrarForm}
           statusBarTranslucent
         >
-          <View className="flex-1 bg-black/50 justify-end">
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+            className="flex-1 justify-end"
+          >
+            <View className="bg-black/50">
               <View className="bg-white rounded-t-2xl">
                 {headerBlock}
                 <ScrollView
+                  ref={formScrollRef}
                   className="px-6 pt-4"
                   style={{ maxHeight: 560 }}
+                  contentContainerStyle={{
+                    paddingBottom: Math.max(insets.bottom + keyboardHeight + 120, 180),
+                  }}
+                  keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
                   keyboardShouldPersistTaps="handled"
                 >
                   {loadingDetalle ? (
@@ -1124,8 +1171,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
                 </ScrollView>
                 {buttonsRow}
               </View>
-            </KeyboardAvoidingView>
-          </View>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
       </>
     )
