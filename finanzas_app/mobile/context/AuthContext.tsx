@@ -170,10 +170,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function restaurarSesion() {
     try {
-      const token = await SecureStore.getItemAsync('auth_token')
-      if (!token) return
+      const storedToken = await SecureStore.getItemAsync('auth_token')
+      if (!storedToken) return
+
+      // Esperar a que Firebase cargue su sesión persistida (AsyncStorage).
+      // authStateReady() resuelve en cuanto el estado inicial está disponible.
+      const auth = getFirebaseAuth()
+      await auth.authStateReady()
+
+      // Si Firebase tiene usuario activo, obtener un token fresco
+      // (el token almacenado puede haber expirado tras >1h sin uso).
+      let tokenToUse = storedToken
+      const firebaseUser = auth.currentUser
+      if (firebaseUser) {
+        tokenToUse = await firebaseUser.getIdToken()
+        await SecureStore.setItemAsync('auth_token', tokenToUse)
+      }
+
       const res = await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${tokenToUse}` },
       })
       setUsuario(res.data)
     } catch {
