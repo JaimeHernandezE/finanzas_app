@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
   LayoutChangeEvent,
+  RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { useIsFetching, useQueryClient } from '@tanstack/react-query'
 import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
@@ -101,24 +103,29 @@ export default function DashboardScreen() {
   })
   const movimientos = raw as Movimiento[]
 
-  const { data: deudaRes, loading: loadingDeuda } = useApi(
+  const queryClient = useQueryClient()
+  const isFetchingRQ = useIsFetching()
+  const [refreshing, setRefreshing] = useState(false)
+
+  const { data: deudaRes, loading: loadingDeuda, refetch: refetchDeuda } = useApi(
     () => movimientosApi.getCuotasDeudaPendiente(),
     []
   )
-  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo } = useApi(
+  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo, refetch: refetchEfectivo } = useApi(
     () => finanzasApi.getEfectivoDisponible(),
     []
   )
-  const { data: cuentasRes } = useApi<CuentaPersonalApi[]>(
+  const { data: cuentasRes, refetch: refetchCuentas } = useApi<CuentaPersonalApi[]>(
     () => finanzasApi.getCuentasPersonales(),
     []
   )
-  const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion } =
+  const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion, refetch: refetchLiquidacion } =
     useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mes + 1, anio), [mes, anio])
   const {
     data: presupuestoData,
     loading: loadingPresupuesto,
     error: errorPresupuesto,
+    refetch: refetchPresupuesto,
   } = useApi<PresupuestoMesFila[]>(
     () =>
       finanzasApi.getPresupuestoMes({
@@ -129,17 +136,19 @@ export default function DashboardScreen() {
       }),
     [mes, anio, cuentaTab],
   )
+  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+
   const { mesPrevio, anioPrevio } = useMemo(() => {
     if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
     return { mesPrevio: mes, anioPrevio: anio }
   }, [mes, anio])
-  const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior } =
+  const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior, refetch: refetchLiquidacionAnterior } =
     useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mesPrevio, anioPrevio), [mesPrevio, anioPrevio])
-  const { data: compensacionData, error: errorCompensacion } = useApi(
+  const { data: compensacionData, error: errorCompensacion, refetch: refetchCompensacion } = useApi(
     () => finanzasApi.getCompensacionProyectada(mes + 1, anio),
     [mes, anio]
   )
-  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo } = useApi(
+  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo, refetch: refetchSueldos } = useApi(
     () =>
       esActual
         ? finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
@@ -149,7 +158,54 @@ export default function DashboardScreen() {
     [mes, anio, esActual]
   )
 
-  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  // Refresca todos los datos del dashboard (RQ + useApi)
+  const refetchAll = useCallback(async () => {
+    await Promise.all([
+      refetch(),
+      refetchDeuda(),
+      refetchEfectivo(),
+      refetchCuentas(),
+      refetchLiquidacion(),
+      refetchLiquidacionAnterior(),
+      refetchPresupuesto(),
+      refetchCompensacion(),
+      refetchSueldos(),
+    ])
+  }, [
+    refetch,
+    refetchDeuda,
+    refetchEfectivo,
+    refetchCuentas,
+    refetchLiquidacion,
+    refetchLiquidacionAnterior,
+    refetchPresupuesto,
+    refetchCompensacion,
+    refetchSueldos,
+  ])
+
+  // Cuando React Query invalida movimientos (tras crear/editar/eliminar),
+  // también refresca los datos del dashboard que usan useApi
+  useEffect(() => {
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === 'updated' &&
+        Array.isArray(event.query.queryKey) &&
+        event.query.queryKey[0] === 'movimientos'
+      ) {
+        void refetchEfectivo()
+        void refetchDeuda()
+        void refetchLiquidacion()
+        void refetchPresupuesto()
+        void refetchCompensacion()
+      }
+    })
+  }, [queryClient, refetchEfectivo, refetchDeuda, refetchLiquidacion, refetchPresupuesto, refetchCompensacion])
+
+  async function onRefresh() {
+    setRefreshing(true)
+    await refetchAll()
+    setRefreshing(false)
+  }
 
   const cuentasPersonales = useMemo(() => {
     const list = ((cuentasRes ?? []) as CuentaPersonalApi[]).filter((c) => c.es_propia)
@@ -302,13 +358,18 @@ export default function DashboardScreen() {
   }
 
   const hasError = error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior
+  // Carga inicial (bloquea UI). Durante pull-to-refresh no bloquea — el spinner nativo es suficiente.
   const isLoading =
-    loading ||
-    loadingEfectivo ||
-    loadingDeuda ||
-    loadingLiquidacion ||
-    loadingLiquidacionAnterior ||
-    (esActual && loadingSueldosProrrateo)
+    !refreshing && (
+      loading ||
+      loadingEfectivo ||
+      loadingDeuda ||
+      loadingLiquidacion ||
+      loadingLiquidacionAnterior ||
+      (esActual && loadingSueldosProrrateo)
+    )
+  // Sincronía en segundo plano: muestra indicador discreto sin ocultar contenido
+  const isSyncing = !refreshing && (isFetchingRQ > 0 || loadingEfectivo || loadingDeuda || loadingLiquidacion || loadingPresupuesto)
 
   useEffect(() => {
     if (!showSelectorCuenta) return
@@ -351,6 +412,14 @@ export default function DashboardScreen() {
         ref={scrollRef}
         className="flex-1 bg-surface"
         contentContainerStyle={{ padding: 20, paddingBottom: 28 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#6b7280"
+            colors={['#0f0f0f']}
+          />
+        }
       >
         {/* Encabezado + navegación de mes */}
         <View className="flex-row items-center justify-between mb-4">
@@ -360,6 +429,9 @@ export default function DashboardScreen() {
               <View className="bg-accent rounded-full px-2.5 py-1 ml-2">
                 <Text className="text-[10px] text-dark font-semibold uppercase">Mes actual</Text>
               </View>
+            )}
+            {isSyncing && (
+              <ActivityIndicator size="small" color="#9ca3af" style={{ marginLeft: 8 }} />
             )}
           </View>
 
