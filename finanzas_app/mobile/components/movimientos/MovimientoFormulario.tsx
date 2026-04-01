@@ -28,6 +28,10 @@ import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { queryClient } from '../../lib/queryClient'
+import {
+  createMovimientoOfflineFirst,
+  patchMovimientoOfflineFirst,
+} from '../../lib/movimientosOffline'
 
 export type MovimientoFormularioRef = {
   abrirNuevoComun: () => void
@@ -538,11 +542,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (vinculoIngresoComun && editingId != null) {
         setSaving(true)
         try {
-          await movimientosApi.patchMovimiento(editingId, {
+          const res = await patchMovimientoOfflineFirst(queryClient, editingId, {
             fecha: fechaIso,
             monto: montoPayloadDesdeForm(monto),
             comentario: form.comentario.trim(),
           })
+          if (res.queued) {
+            Alert.alert('Sin conexión', 'Cambio guardado localmente. Se sincronizará cuando vuelva internet.')
+          }
           void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
@@ -665,9 +672,15 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setSaving(true)
       try {
         if (editingId != null) {
-          await movimientosApi.patchMovimiento(editingId, payload)
+          const res = await patchMovimientoOfflineFirst(queryClient, editingId, payload)
+          if (res.queued) {
+            Alert.alert('Sin conexión', 'Edición guardada localmente. Se sincronizará cuando vuelva internet.')
+          }
         } else {
-          await movimientosApi.createMovimiento(payload)
+          const res = await createMovimientoOfflineFirst(queryClient, payload)
+          if (res.queued) {
+            Alert.alert('Sin conexión', 'Movimiento guardado localmente. Se sincronizará cuando vuelva internet.')
+          }
         }
         void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
         const cuentaDestino =

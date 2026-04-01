@@ -11,7 +11,7 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useIsFetching, useQueryClient } from '@tanstack/react-query'
-import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
+import { useMovimientos } from '../../hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, movimientosApi } from '@finanzas/shared/api'

@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native'
 import { useFocusEffect } from 'expo-router'
-import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
+import { useMovimientos } from '../../hooks/useMovimientos'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
@@ -99,7 +99,7 @@ export default function GastosScreen() {
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
 
-  const { data: catData } = useCategorias()
+  const { data: catData } = useCategorias({ ambito: 'FAMILIAR' })
   const categorias = (catData as Categoria[] | null) ?? []
 
   const { movimientos: raw, loading, error, refetch, eliminar } = useMovimientos({

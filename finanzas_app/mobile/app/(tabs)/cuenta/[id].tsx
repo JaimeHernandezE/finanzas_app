@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
-import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
+import { useMovimientos } from '../../../hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
@@ -119,7 +119,10 @@ export default function CuentaPersonalScreen() {
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
 
-  const { data: catData } = useCategorias()
+  const { data: catData } = useCategorias({
+    ambito: 'PERSONAL',
+    cuenta: Number.isFinite(id) ? id : undefined,
+  })
   const categorias = (catData ?? []) as { id: number; nombre: string }[]
 
   const { movimientos: raw, loading, error, refetch, eliminar } = useMovimientos({
