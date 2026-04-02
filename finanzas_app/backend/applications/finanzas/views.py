@@ -516,11 +516,18 @@ def movimientos(request):
     if request.method == 'POST':
         serializer = MovimientoSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(
+            instance = serializer.save(
                 usuario=usuario,
                 familia=usuario.familia,
             )
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            # Re-fetch con select_related para que MovimientoListSerializer
+            # pueda resolver categoria_nombre, metodo_pago_tipo, etc.
+            instance = _qs_movimientos_con_ingreso_comun(
+                Movimiento.objects.select_related(
+                    'categoria', 'metodo_pago', 'tarjeta', 'usuario', 'cuenta'
+                )
+            ).get(pk=instance.pk)
+            return Response(MovimientoListSerializer(instance).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -593,7 +600,7 @@ def movimiento_detalle(request, pk):
                     'categoria', 'metodo_pago', 'tarjeta', 'usuario'
                 ).prefetch_related('cuotas')
             ).get(pk=movimiento.pk, familia=usuario.familia)
-            return Response(MovimientoSerializer(movimiento).data)
+            return Response(MovimientoListSerializer(movimiento).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
