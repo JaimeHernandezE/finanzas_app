@@ -1,0 +1,43 @@
+# Respaldo diario de PostgreSQL a Google Drive (máx. 2 archivos recientes en la carpeta).
+#
+# Configuración manual (una vez):
+# - Google Cloud: habilitar "Google Drive API" en el proyecto de la service account.
+# - Drive: crear carpeta, compartir con el email …@….iam.gserviceaccount.com como Editor.
+# - GitHub → Settings → Secrets → Actions:
+#     DATABASE_URL          = URL externa de Postgres (Render: External Database URL; debe ser alcanzable desde internet).
+#     GOOGLE_DRIVE_CREDENTIALS_JSON = JSON de la service account (puede ser el mismo que Sheets si la carpeta está compartida).
+#     GOOGLE_DRIVE_BACKUP_FOLDER_ID = ID de la carpeta (de la URL de Drive).
+#
+# Nota: si Postgres solo acepta conexiones desde la red interna de Render, este job fallará;
+#       en ese caso usa el respaldo desde la app web o un job en Render.
+
+name: Backup PostgreSQL a Drive
+
+on:
+  schedule:
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: pg_dump y subida a Drive
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dependencias del sistema y Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          pip install --quiet google-api-python-client google-auth
+
+      - name: Ejecutar respaldo
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+          GOOGLE_DRIVE_BACKUP_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_BACKUP_FOLDER_ID }}
+        run: python finanzas_app/scripts/backup_pg_to_drive.py

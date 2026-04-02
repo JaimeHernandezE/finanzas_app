@@ -1,0 +1,126 @@
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.backLink {
+  text-decoration: none;
+  color: $color-text-muted;
+  font-size: 13px;
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  margin: $space-4 0 $space-3;
+}
+
+.advertencia {
+  margin: 0 0 $space-5;
+  padding: $space-4;
+  background: #fff8f0;
+  border: 1px solid #e8d4c4;
+  border-radius: $radius-base;
+  color: #5c3d2e;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.card {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  padding: $space-5;
+  display: grid;
+  gap: $space-4;
+  margin-bottom: $space-5;
+}
+
+.cardTitulo {
+  margin: 0;
+  font-size: 16px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+}
+
+.descripcion {
+  margin: 0;
+  color: $color-text-muted;
+  font-size: 14px;
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-3;
+}
+
+.btnPrimario,
+.btnSecundario {
+  border: 1px solid #e1ddd4;
+  border-radius: $radius-sm;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.btnPrimario {
+  background: #171717;
+  color: #fff;
+  border-color: #171717;
+}
+
+.btnPrimario:disabled,
+.btnSecundario:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btnSecundario {
+  background: #fff;
+  color: $color-text;
+}
+
+.inputFile {
+  font-size: 13px;
+}
+
+.inputConfirm {
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-sm;
+  padding: 10px 12px;
+  font-size: 14px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.resultadoOk,
+.resultadoError {
+  margin-top: $space-3;
+  font-size: 14px;
+}
+
+.resultadoOk {
+  color: #18794e;
+}
+
+.resultadoError {
+  color: #b42318;
+}

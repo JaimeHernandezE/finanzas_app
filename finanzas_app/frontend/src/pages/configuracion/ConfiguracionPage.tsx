@@ -186,6 +186,22 @@ export default function ConfiguracionPage() {
 
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>MANTENIMIENTO</h2>
+        {esAdmin ? (
+          <ul className={`${styles.list} ${styles.listSpaced}`}>
+            <li>
+              <Link to="/configuracion/respaldo-bd" className={styles.itemLink}>
+                <span className={styles.itemIcon} aria-hidden>
+                  ⧉
+                </span>
+                <span className={styles.itemLabel}>Respaldo PostgreSQL</span>
+                <span className={styles.itemResumen}>Dump / Drive</span>
+                <span className={styles.itemChevron} aria-hidden>
+                  ›
+                </span>
+              </Link>
+            </li>
+          </ul>
+        ) : null}
         <div className={styles.accionBox}>
           <div className={styles.accionInfo}>
             <h3 className={styles.accionTitulo}>Recálculo histórico mensual</h3>

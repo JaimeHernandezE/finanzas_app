@@ -34,6 +34,7 @@ import ImportadorCuentaPersonalPage from '@/pages/configuracion/ImportadorCuenta
 import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorariosPage'
 import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
 import ImportadorGastosComunesPage from '@/pages/configuracion/ImportadorGastosComunesPage'
+import RespaldoBdPage from '@/pages/configuracion/RespaldoBdPage'
 
 const Placeholder = ({ title }: { title: string }) => (
   <div style={{ padding: '40px 32px', color: '#888' }}>
@@ -105,6 +106,7 @@ function AppRoutes() {
           <Route path="importar-honorarios" element={<ImportadorHonorariosPage />} />
           <Route path="importar-sueldos" element={<ImportadorSueldosPage />} />
           <Route path="importar-gastos-comunes" element={<ImportadorGastosComunesPage />} />
+          <Route path="respaldo-bd" element={<RespaldoBdPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

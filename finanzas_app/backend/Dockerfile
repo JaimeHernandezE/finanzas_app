@@ -6,8 +6,9 @@ ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias para psycopg2
-RUN apt-get update && apt-get install -y libpq-dev gcc
+# libpq + cliente PostgreSQL (pg_dump / psql para respaldo BD)
+RUN apt-get update && apt-get install -y libpq-dev gcc postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
 
 # Instalar dependencias de Python
 COPY requirements.txt /app/

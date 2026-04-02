@@ -1,14 +1,33 @@
 # Servicio para escribir datos en Google Sheets.
 # Usa una Service Account con permisos de Editor en el sheet.
 
-import os
 import json
+import os
+import re
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
+# IDs de spreadsheet: letras, números, guiones (p. ej. copiados desde la barra de direcciones).
+_SHEET_ID_CORE = re.compile(r'[a-zA-Z0-9_-]+')
+
+
+def normalizar_spreadsheet_id(valor: str | None) -> str:
+    """
+    Devuelve solo el ID del documento. Acepta:
+    - URL completa: https://docs.google.com/spreadsheets/d/<ID>/edit...
+    - ID seguido de basura: <ID>/edit?gid=0 (error común al pegar desde el navegador)
+    """
+    if not valor:
+        return ''
+    s = valor.strip()
+    m = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', s)
+    if m:
+        return m.group(1)
+    m = _SHEET_ID_CORE.match(s)
+    return m.group(0) if m else ''
 
 
 def _rango_a1(nombre_hoja: str, celda_o_rango: str) -> str:

@@ -4,14 +4,12 @@
 from __future__ import annotations
 
 import gzip
-import io
 import json
 import os
-import re
 import subprocess
-import tempfile
+import zlib
 from datetime import datetime, timezone
-from typing import BinaryIO
+from typing import Iterator
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -69,55 +67,34 @@ def run_pg_dump_plain_gz(database_url: str, out_path: str) -> None:
             raise RuntimeError(f'pg_dump falló ({p.returncode}): {err.decode("utf-8", errors="replace")}')
 
 
-def run_pg_dump_plain_gz_to_stream(database_url: str) -> tuple[subprocess.Popen, BinaryIO]:
+def iter_pg_dump_gzip_chunks(database_url: str) -> Iterator[bytes]:
     """
-    Inicia pg_dump y devuelve el proceso y un stream gzip de solo lectura sobre su stdout.
-    El llamador debe consumir el stream y hacer wait() al proceso.
+    Generador para StreamingHttpResponse: bytes gzip (zlib con cabecera gzip)
+    del volcado pg_dump en texto plano.
     """
+    compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
     p = subprocess.Popen(
         ['pg_dump', '--no-owner', '--no-acl', '-Fp', database_url],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     assert p.stdout is not None
-    gz_buf = io.BytesIO()
-    gz = gzip.GzipFile(fileobj=gz_buf, mode='wb', mtime=0)
-    # No podemos envolver stdout en GzipFile directamente de forma streaming trivial sin hilo;
-    # para streaming HTTP usamos generador en la vista que lee pg_dump stdout y pasa por gzip incremental.
-    p.terminate()
-    raise NotImplementedError  # la vista usará generador manual
-
-
-def iter_pg_dump_gz_chunks(database_url: str):
-    """Generador de bytes: salida gzip de pg_dump en chunks."""
-    p = subprocess.Popen(
-        ['pg_dump', '--no-owner', '--no-acl', '-Fp', database_url],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    assert p.stdout is not None
-    buf = io.BytesIO()
-    gz = gzip.GzipFile(fileobj=buf, mode='wb', mtime=0)
     try:
         while True:
             chunk = p.stdout.read(64 * 1024)
             if not chunk:
                 break
-            gz.write(chunk)
-            raw = buf.getvalue()
-            buf.seek(0)
-            buf.truncate(0)
-            if raw:
-                yield raw
-        gz.close()
-        tail = buf.getvalue()
+            out = compressor.compress(chunk)
+            if out:
+                yield out
+        tail = compressor.flush()
         if tail:
             yield tail
     finally:
         err = p.stderr.read() if p.stderr else b''
-        p.wait()
-        if p.returncode != 0:
-            raise RuntimeError(f'pg_dump falló ({p.returncode}): {err.decode("utf-8", errors="replace")}')
+        rc = p.wait()
+        if rc != 0:
+            raise RuntimeError(f'pg_dump falló ({rc}): {err.decode("utf-8", errors="replace")}')
 
 
 def upload_file_to_drive(service, folder_id: str, local_path: str, drive_name: str) -> str:
@@ -125,7 +102,12 @@ def upload_file_to_drive(service, folder_id: str, local_path: str, drive_name: s
     media = MediaFileUpload(local_path, mimetype='application/gzip', resumable=True)
     created = (
         service.files()
-        .create(body=meta, media_body=media, fields='id', supportsAllDrives=True)
+        .create(
+            body=meta,
+            media_body=media,
+            fields='id',
+            supportsAllDrives=True,
+        )
         .execute()
     )
     return created['id']
@@ -137,7 +119,7 @@ def cleanup_keep_two_most_recent(service, folder_id: str) -> list[str]:
     conserva los 2 más recientes por modifiedTime y borra el resto.
     Devuelve ids eliminados.
     """
-    deleted = []
+    deleted: list[str] = []
     files = []
     page_token = None
     while True:
@@ -173,7 +155,6 @@ def cleanup_keep_two_most_recent(service, folder_id: str) -> list[str]:
 def run_backup_to_drive() -> dict:
     """
     pg_dump → archivo temporal → subida a Drive → limpieza (máx. 2 respaldos recientes).
-    Usado por script GH Actions y por endpoint web.
     """
     database_url = os.getenv('DATABASE_URL')
     if not database_url:
@@ -185,6 +166,8 @@ def run_backup_to_drive() -> dict:
 
     name = backup_filename()
     service = build_drive_service()
+
+    import tempfile
 
     with tempfile.NamedTemporaryFile(suffix='.sql.gz', delete=False) as tmp:
         tmp_path = tmp.name
@@ -201,11 +184,6 @@ def run_backup_to_drive() -> dict:
             pass
 
 
-_RE_BACKUP_NAME = re.compile(
-    rf'^{re.escape(BACKUP_NAME_PREFIX)}(\d{{4}}-\d{{2}}-\d{{2}})_\d{{4}}{re.escape(BACKUP_NAME_SUFFIX)}$'
-)
-
-
 def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
     """Restaura BD desde .sql.gz (plain SQL comprimido)."""
     with gzip.open(gz_path, 'rb') as gz:
@@ -215,7 +193,7 @@ def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        out, err = p.communicate()
+        _out, err = p.communicate()
         if p.returncode != 0:
             raise RuntimeError(
                 f'psql falló ({p.returncode}): {err.decode("utf-8", errors="replace")}'

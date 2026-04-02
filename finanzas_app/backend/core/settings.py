@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'applications.inversiones',
     'applications.viajes',
     'applications.export',
+    'applications.backup_bd',
 ]
 
 MIDDLEWARE = [
@@ -111,6 +112,10 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Importación de respaldos .sql.gz (admin; hasta 200 MB en la vista)
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 250 * 1024 * 1024
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
 

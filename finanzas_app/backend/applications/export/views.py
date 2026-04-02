@@ -26,7 +26,13 @@ from .exporters import (
     nombre_hoja_fija,
     titulo_hoja_seguro,
 )
-from .sheets_service import asegurar_hoja, escribir_hoja, get_sheets_service, limpiar_hoja
+from .sheets_service import (
+    asegurar_hoja,
+    escribir_hoja,
+    get_sheets_service,
+    limpiar_hoja,
+    normalizar_spreadsheet_id,
+)
 
 
 def _construir_trabajos_exportacion(familia, multitenant: bool, titulos_usados: set) -> list:
@@ -63,7 +69,7 @@ def _ejecutar_exportacion_google_sheets():
     Escribe todas las familias en el Sheet configurado.
     Lanza excepción si falla la API de Google o la configuración.
     """
-    sheet_id = os.getenv('GOOGLE_SHEET_ID')
+    sheet_id = normalizar_spreadsheet_id(os.getenv('GOOGLE_SHEET_ID'))
     if not sheet_id:
         raise ValueError('GOOGLE_SHEET_ID no configurado.')
 
