@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
 import { exportApi, familiaApi, finanzasApi } from '@/api'
+import { apiErrorMessage } from '@/utils/apiErrorMessage'
 import styles from './ConfiguracionPage.module.scss'
 
 // -----------------------------------------------------------------------------
@@ -111,9 +112,8 @@ export default function ConfiguracionPage() {
           `Recálculo histórico completado (${data.desde ?? 'inicio'} → ${data.hasta ?? 'hoy'}).${extra}`
         )
       }
-    } catch (e: any) {
-      const backendError = e?.response?.data?.error
-      setErrRecalculo(backendError ?? 'No se pudo ejecutar el recálculo histórico.')
+    } catch (e: unknown) {
+      setErrRecalculo(apiErrorMessage(e) || 'No se pudo ejecutar el recálculo histórico.')
     } finally {
       setRecalculando(false)
     }
@@ -134,9 +134,8 @@ export default function ConfiguracionPage() {
       } else {
         setMsgSheets('Sincronización completada.')
       }
-    } catch (e: any) {
-      const backendError = e?.response?.data?.error
-      setErrSheets(backendError ?? 'No se pudo sincronizar con Google Sheets.')
+    } catch (e: unknown) {
+      setErrSheets(apiErrorMessage(e) || 'No se pudo sincronizar con Google Sheets.')
     } finally {
       setSincronizando(false)
     }

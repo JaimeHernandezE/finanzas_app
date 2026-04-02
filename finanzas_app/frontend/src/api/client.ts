@@ -17,6 +17,11 @@ client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const reqUrl = String(error.config?.url ?? '')
+      // No cerrar sesión ni redirigir: el usuario debe ver el mensaje (p. ej. credenciales inválidas).
+      if (reqUrl.includes('/api/export/sincronizar')) {
+        return Promise.reject(error)
+      }
       localStorage.removeItem('auth_token')
       const onLogin = /\/login\/?$/.test(window.location.pathname)
       if (!onLogin) window.location.href = '/login'

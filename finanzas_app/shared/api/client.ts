@@ -58,6 +58,10 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
+      const reqUrl = String(error.config?.url ?? '')
+      if (reqUrl.includes('/api/export/sincronizar')) {
+        return Promise.reject(error)
+      }
       await removeToken()
       if (
         typeof window !== 'undefined' &&

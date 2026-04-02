@@ -6,6 +6,8 @@ import os
 import dj_database_url
 from pathlib import Path
 
+from corsheaders.defaults import default_headers
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production'))
@@ -123,6 +125,9 @@ CORS_ALLOWED_ORIGINS = [
 
 # En desarrollo, permite todos los orígenes si DEBUG está activo
 CORS_ALLOW_ALL_ORIGINS = DEBUG
+
+# Cabeceras permitidas en preflight (incl. Authorization para POST con JWT entre orígenes)
+CORS_ALLOW_HEADERS = list(default_headers)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

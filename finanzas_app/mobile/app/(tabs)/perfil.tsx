@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { exportApi } from '@finanzas/shared/api'
+import { apiErrorMessage, exportApi } from '@finanzas/shared/api'
 import { useAuth } from '../../context/AuthContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -112,8 +112,7 @@ export default function PerfilScreen() {
         setMsgSheets('Sincronización completada.')
       }
     } catch (err: unknown) {
-      const ax = err as { response?: { data?: { error?: string } } }
-      setErrSheets(ax.response?.data?.error ?? 'No se pudo sincronizar con Google Sheets.')
+      setErrSheets(apiErrorMessage(err) || 'No se pudo sincronizar con Google Sheets.')
     } finally {
       setSincronizandoSheets(false)
     }
