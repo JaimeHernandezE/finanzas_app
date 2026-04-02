@@ -11,7 +11,8 @@ export default defineConfig({
     host: '0.0.0.0',    // Escucha en todas las interfaces dentro del contenedor
     port: 5173,
     watch: {
-      usePolling: true,  // Necesario para detectar cambios en volúmenes Docker
+      usePolling: true, // Necesario para detectar cambios en volúmenes Docker (sobre todo en Windows)
+      interval: 1000,
     },
     // Necesario para que el popup de Firebase (signInWithPopup) pueda usar window.closed
     headers: {

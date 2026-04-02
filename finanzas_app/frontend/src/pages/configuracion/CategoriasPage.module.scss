@@ -98,6 +98,10 @@
   &:first-child {
     border-top: none;
   }
+
+  &.filaHija {
+    padding-left: 2.25rem;
+  }
 }
 
 .filaNombre {
@@ -149,6 +153,10 @@
   padding: $space-3 $space-4;
   border-top: 1px solid #e8e8e4;
   flex-wrap: wrap;
+
+  &.filaHija {
+    padding-left: 2.25rem;
+  }
 }
 
 .inputNombre {

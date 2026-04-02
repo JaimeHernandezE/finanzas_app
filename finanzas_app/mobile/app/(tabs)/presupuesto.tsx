@@ -190,7 +190,7 @@ export default function PresupuestoScreen() {
   function toggleGrupo(padreId: number) {
     setGrupoAbierto((prev) => ({
       ...prev,
-      [padreId]: !(prev[padreId] ?? true),
+      [padreId]: !(prev[padreId] ?? false),
     }))
   }
 
@@ -277,25 +277,29 @@ export default function PresupuestoScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          {ambito === 'PERSONAL' && cuentasPropias.length > 0 && (
+          {ambito === 'PERSONAL' && (
             <View className="flex-row flex-wrap gap-2 mb-4">
-              {cuentasPropias.map(c => (
-                <TouchableOpacity
-                  key={c.id}
-                  onPress={() => setCuentaPersonalId(c.id)}
-                  className={`px-3 py-1.5 rounded-lg border ${
-                    cuentaPersonalId === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium ${
-                      cuentaPersonalId === c.id ? 'text-white' : 'text-dark'
+              {cuentasPropias.length === 0 ? (
+                <Text className="text-muted text-xs">Sin cuentas personales</Text>
+              ) : (
+                cuentasPropias.map(c => (
+                  <TouchableOpacity
+                    key={c.id}
+                    onPress={() => setCuentaPersonalId(c.id)}
+                    className={`px-3 py-1.5 rounded-lg border ${
+                      cuentaPersonalId === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
                     }`}
                   >
-                    {c.nombre}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <Text
+                      className={`text-xs font-medium ${
+                        cuentaPersonalId === c.id ? 'text-white' : 'text-dark'
+                      }`}
+                    >
+                      {c.nombre}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+              )}
             </View>
           )}
 
@@ -462,7 +466,7 @@ export default function PresupuestoScreen() {
                       const { parent, hijos } = bloque
                       const presupP = montoNum(parent.monto_presupuestado)
                       const pctP = porcentaje(parent.gastado, presupP)
-                      const abierto = grupoAbierto[parent.categoria_id] ?? true
+                      const abierto = grupoAbierto[parent.categoria_id] ?? false
                       return (
                         <View key={`g-${parent.categoria_id}`} className={blockBorder}>
                           <TouchableOpacity
@@ -470,8 +474,7 @@ export default function PresupuestoScreen() {
                             activeOpacity={0.75}
                             className="flex-row items-start px-4 py-3"
                           >
-                            <Text className="text-muted text-xs w-5 mt-0.5">{abierto ? '▼' : '▶'}</Text>
-                            <View className="flex-1">
+                            <View className="flex-1 pr-2">
                               <Text className="text-dark font-medium text-sm mb-1.5">
                                 {parent.categoria_nombre} (total subcategorías)
                               </Text>
@@ -486,16 +489,17 @@ export default function PresupuestoScreen() {
                                 />
                               </View>
                             </View>
+                            <Text className="text-muted text-xs mt-0.5">{abierto ? '▼' : '▶'}</Text>
                           </TouchableOpacity>
                           {abierto && hijos.length > 0 && (
-                            <View className="border-t border-border bg-surface/50">
+                            <View className="border-t border-border">
                               {hijos.map((fila, hi) => {
                                 const presup = montoNum(fila.monto_presupuestado)
                                 const pct = porcentaje(fila.gastado, presup)
                                 const editando = editandoId === fila.presupuesto_id
                                 const sep = hi < hijos.length - 1 ? 'border-b border-border' : ''
                                 return (
-                                  <View key={fila.categoria_id} className={`pl-5 pr-4 py-3 border-l-2 border-border ml-4 ${sep}`}>
+                                  <View key={fila.categoria_id} className={`px-4 py-3 ${sep}`}>
                                     {editando ? (
                                       <View>
                                         <Text className="text-xs font-semibold text-muted mb-2">{fila.categoria_nombre}</Text>
@@ -567,7 +571,7 @@ export default function PresupuestoScreen() {
                             </View>
                           )}
                           {abierto && hijos.length === 0 && (
-                            <Text className="text-muted text-xs px-4 pb-3 pl-10">Sin subcategorías con datos este mes.</Text>
+                            <Text className="text-muted text-xs px-4 pb-3">Sin subcategorías con datos este mes.</Text>
                           )}
                         </View>
                       )

@@ -476,18 +476,22 @@ export default function PresupuestoPage() {
             Personal
           </button>
         </div>
-        {ambito === 'PERSONAL' && cuentasPropias.length > 0 && (
+        {ambito === 'PERSONAL' && (
           <div className={styles.cuentasTabs}>
-            {cuentasPropias.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                className={`${styles.cuentaTab} ${cuentaPersonalId === c.id ? styles.cuentaTabActive : ''}`}
-                onClick={() => setCuentaPersonalId(c.id)}
-              >
-                {c.nombre}
-              </button>
-            ))}
+            {cuentasPropias.length === 0 ? (
+              <span className={styles.cuentaTabHint}>Sin cuentas personales</span>
+            ) : (
+              cuentasPropias.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`${styles.cuentaTab} ${cuentaPersonalId === c.id ? styles.cuentaTabActive : ''}`}
+                  onClick={() => setCuentaPersonalId(c.id)}
+                >
+                  {c.nombre}
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -602,12 +606,8 @@ export default function PresupuestoPage() {
             <details
               key={parent.categoriaId}
               className={styles.grupoPresupuesto}
-              open
             >
               <summary className={styles.grupoSummary}>
-                <span className={styles.grupoChevron} aria-hidden>
-                  ▸
-                </span>
                 <div className={styles.grupoSummaryInner}>
                   <CategoriaPresupuestoItem
                     id={`cat-pres-${parent.categoriaId}`}
@@ -621,13 +621,16 @@ export default function PresupuestoPage() {
                     editValue=""
                   />
                 </div>
+                <span className={styles.grupoChevron} aria-hidden>
+                  ▸
+                </span>
               </summary>
               {hijos.length > 0 ? (
                 <div className={styles.grupoHijos}>
                   {hijos.map(cat => {
                     const isEditing = editingKey === String(cat.categoriaId)
                     return (
-                      <div key={cat.categoriaId} className={styles.grupoHijo}>
+                      <div key={cat.categoriaId} className={styles.grupoHijoFila}>
                         <CategoriaPresupuestoItem
                           id={`cat-pres-${cat.categoriaId}`}
                           nombre={cat.nombre}

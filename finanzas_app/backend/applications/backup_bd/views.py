@@ -6,9 +6,12 @@ import tempfile
 from django.conf import settings
 from django.http import StreamingHttpResponse
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+
+from applications.usuarios.models import Usuario
+from applications.usuarios.views import obtener_usuario_desde_token
 
 from .drive_pg import (
     backup_filename,
@@ -18,8 +21,26 @@ from .drive_pg import (
 )
 
 
-def _es_admin(request) -> bool:
-    return getattr(request.user, 'rol', None) == 'ADMIN'
+def _usuario_y_error_firebase(request):
+    """
+    Misma autenticación que /api/usuarios/me/: Authorization: Bearer <Firebase ID token>.
+    No usar SimpleJWT: el frontend (Vite) solo guarda el token de Firebase en localStorage.
+    """
+    decoded, error = obtener_usuario_desde_token(request)
+    if error:
+        return None, Response({'detail': error}, status=status.HTTP_401_UNAUTHORIZED)
+    email = (decoded.get('email') or '').strip()
+    try:
+        return Usuario.objects.select_related('familia').get(email__iexact=email), None
+    except Usuario.DoesNotExist:
+        return None, Response(
+            {'detail': 'Usuario no registrado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+
+def _es_admin(usuario: Usuario) -> bool:
+    return usuario.rol == 'ADMIN'
 
 
 def _database_url() -> str:
@@ -39,12 +60,16 @@ def _database_url() -> str:
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def descargar_dump(request):
     """
     Descarga finanzas_pg_YYYY-MM-DD_HHMM.sql.gz (pg_dump texto + gzip).
     """
-    if not _es_admin(request):
+    usuario, err = _usuario_y_error_firebase(request)
+    if err is not None:
+        return err
+    if not _es_admin(usuario):
         return Response(
             {'detail': 'Solo administradores pueden exportar la base de datos.'},
             status=status.HTTP_403_FORBIDDEN,
@@ -64,12 +89,16 @@ def descargar_dump(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def subir_dump_a_drive(request):
     """
     Genera el mismo dump que el cron y lo sube a Drive; mantiene solo 2 respaldos recientes.
     """
-    if not _es_admin(request):
+    usuario, err = _usuario_y_error_firebase(request)
+    if err is not None:
+        return err
+    if not _es_admin(usuario):
         return Response(
             {'detail': 'Solo administradores pueden subir respaldos a Drive.'},
             status=status.HTTP_403_FORBIDDEN,
@@ -88,13 +117,17 @@ MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def importar_dump(request):
     """
     Restaura desde un .sql.gz generado por esta app (pg_dump -Fp | gzip).
     Requiere confirmacion=RESTAURAR_BD en el formulario.
     """
-    if not _es_admin(request):
+    usuario, err = _usuario_y_error_firebase(request)
+    if err is not None:
+        return err
+    if not _es_admin(usuario):
         return Response(
             {'detail': 'Solo administradores pueden importar la base de datos.'},
             status=status.HTTP_403_FORBIDDEN,

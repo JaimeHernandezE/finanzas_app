@@ -1,0 +1,9 @@
+@charset "UTF-8";
+.wrap {
+  width: 100%;
+}
+
+.inputMonto {
+  /* Alineación tipo moneda */
+  font-variant-numeric: tabular-nums;
+}/*# sourceMappingURL=InputMontoClp.module.css.map */

@@ -50,6 +50,32 @@ function mapApiToCategoria(c: {
 
 type AmbitoEditable = 'FAMILIAR' | 'PERSONAL'
 
+/** Orden: padres alfabético; bajo cada padre, hijas alfabético. Huérfanas (padre fuera del grupo) como raíz. */
+function buildJerarquiaCategorias(lista: Categoria[]): { c: Categoria; esHija: boolean }[] {
+  const ids = new Set(lista.map(c => c.id))
+  const hijosPorPadre = new Map<string, Categoria[]>()
+  for (const c of lista) {
+    if (c.categoriaPadre != null && ids.has(String(c.categoriaPadre))) {
+      const pid = String(c.categoriaPadre)
+      if (!hijosPorPadre.has(pid)) hijosPorPadre.set(pid, [])
+      hijosPorPadre.get(pid)!.push(c)
+    }
+  }
+  hijosPorPadre.forEach(arr =>
+    arr.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })),
+  )
+  const raices = lista
+    .filter(c => c.categoriaPadre == null || !ids.has(String(c.categoriaPadre)))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+  const out: { c: Categoria; esHija: boolean }[] = []
+  const walk = (c: Categoria, esHija: boolean) => {
+    out.push({ c, esHija })
+    for (const h of hijosPorPadre.get(c.id) ?? []) walk(h, true)
+  }
+  for (const r of raices) walk(r, false)
+  return out
+}
+
 // -----------------------------------------------------------------------------
 // Subcomponentes internos
 // -----------------------------------------------------------------------------
@@ -257,13 +283,15 @@ export default function CategoriasPage() {
     refetch()
   }
 
-  const renderFila = (c: Categoria) => {
+  const renderFila = (c: Categoria, esHija = false) => {
     const isEditing = editingId === c.id
     const isDeleting = deletingId === c.id
+    const clsFila = `${styles.fila}${esHija ? ` ${styles.filaHija}` : ''}`
+    const clsEdicion = `${styles.filaEdicion}${esHija ? ` ${styles.filaHija}` : ''}`
 
     if (isDeleting) {
       return (
-        <div key={c.id} className={styles.fila}>
+        <div key={c.id} className={clsFila}>
           <span className={styles.confirmText}>¿Eliminar «{c.nombre}»?</span>
           <div className={styles.confirmActions}>
             <button type="button" className={styles.btnConfirmSi} onClick={() => confirmDelete(c.id)}>Sí</button>
@@ -281,7 +309,7 @@ export default function CategoriasPage() {
         x.id !== c.id,
       )
       return (
-        <div key={c.id} className={styles.filaEdicion}>
+        <div key={c.id} className={clsEdicion}>
           <input
             type="text"
             className={styles.inputNombre}
@@ -337,11 +365,10 @@ export default function CategoriasPage() {
     }
 
     return (
-      <div key={c.id} className={styles.fila}>
+      <div key={c.id} className={clsFila}>
         <span className={styles.filaNombre}>
           {c.nombre}
           {c.esInversion && <span className={styles.badgeInversion}>💼 inversión</span>}
-          {c.categoriaPadre && <span className={styles.badgeInversion}>↳ subcategoría</span>}
         </span>
         <span className={styles.filaTipo}>{c.tipo === 'EGRESO' ? 'Egreso' : 'Ingreso'}</span>
         <div className={styles.filaActions}>
@@ -428,14 +455,14 @@ export default function CategoriasPage() {
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>GLOBALES DEL SISTEMA</h2>
         <div className={styles.block}>
-          {globales.map(renderFila)}
+          {buildJerarquiaCategorias(globales).map(({ c, esHija }) => renderFila(c, esHija))}
         </div>
       </section>
 
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>DE LA FAMILIA</h2>
         <div className={styles.block}>
-          {familiares.map(renderFila)}
+          {buildJerarquiaCategorias(familiares).map(({ c, esHija }) => renderFila(c, esHija))}
           {renderAddForm('FAMILIAR')}
           <div className={styles.addRow}>
             <button type="button" className={styles.btnAgregar} onClick={() => startAdd('FAMILIAR')}>
@@ -448,19 +475,25 @@ export default function CategoriasPage() {
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>PERSONALES (MÍS)</h2>
         <h3 className={styles.groupHeader}>PERSONALES</h3>
-        <div className={styles.block}>{personalesCuentaPrincipal.map(renderFila)}</div>
+        <div className={styles.block}>
+          {buildJerarquiaCategorias(personalesCuentaPrincipal).map(({ c, esHija }) =>
+            renderFila(c, esHija),
+          )}
+        </div>
 
         <h3 className={styles.groupHeader} style={{ marginTop: 12 }}>OTRAS CUENTAS</h3>
         {personalesOtrasCuentas.map(g => (
           <div key={g.cuentaId} style={{ marginBottom: 12 }}>
             <h3 className={styles.groupHeader}>{g.nombreCuenta}</h3>
-            <div className={styles.block}>{g.categorias.map(renderFila)}</div>
+            <div className={styles.block}>
+              {buildJerarquiaCategorias(g.categorias).map(({ c, esHija }) => renderFila(c, esHija))}
+            </div>
           </div>
         ))}
 
         <h3 className={styles.groupHeader}>SIN CUENTA</h3>
         <div className={styles.block}>
-          {personalesSinCuenta.map(renderFila)}
+          {buildJerarquiaCategorias(personalesSinCuenta).map(({ c, esHija }) => renderFila(c, esHija))}
           {renderAddForm('PERSONAL')}
           <div className={styles.addRow}>
             <button type="button" className={styles.btnAgregar} onClick={() => startAdd('PERSONAL')}>
