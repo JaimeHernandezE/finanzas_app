@@ -112,14 +112,33 @@ export default function PresupuestoScreen() {
     else setMes((m) => m + 1)
   }
 
-  const conPresupuesto = useMemo(() => filas.filter((f) => f.presupuesto_id != null), [filas])
-  const sinPresupuesto = useMemo(() => filas.filter((f) => f.presupuesto_id == null && f.gastado > 0), [filas])
+  const conPresupuesto = useMemo(
+    () =>
+      filas.filter((f) => {
+        if (f.es_agregado_padre) {
+          return montoNum(f.monto_presupuestado) > 0 || f.gastado > 0
+        }
+        return f.presupuesto_id != null
+      }),
+    [filas],
+  )
+  const sinPresupuesto = useMemo(
+    () =>
+      filas.filter((f) => f.presupuesto_id == null && f.gastado > 0 && !f.es_agregado_padre),
+    [filas],
+  )
 
   const totalPresupuestado = useMemo(
-    () => conPresupuesto.reduce((s, f) => s + montoNum(f.monto_presupuestado), 0),
-    [conPresupuesto],
+    () =>
+      filas
+        .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
+        .reduce((s, f) => s + montoNum(f.monto_presupuestado), 0),
+    [filas],
   )
-  const totalGastado = useMemo(() => filas.reduce((s, f) => s + f.gastado, 0), [filas])
+  const totalGastado = useMemo(
+    () => filas.filter((f) => !f.es_agregado_padre).reduce((s, f) => s + f.gastado, 0),
+    [filas],
+  )
   const disponible = totalPresupuestado - totalGastado
   const pctGlobal = porcentaje(totalGastado, totalPresupuestado)
 
@@ -313,12 +332,16 @@ export default function PresupuestoScreen() {
                       const pct = porcentaje(fila.gastado, presup)
                       const isLast = idx === conPresupuesto.length - 1
                       const editando = editandoId === fila.presupuesto_id
+                      const esAgregado = Boolean(fila.es_agregado_padre)
+                      const tituloCat = esAgregado
+                        ? `${fila.categoria_nombre} (total subcategorías)`
+                        : fila.categoria_nombre
 
                       return (
                         <View key={fila.categoria_id} className={`px-4 py-3 ${!isLast ? 'border-b border-border' : ''}`}>
                           {editando ? (
                             <View>
-                              <Text className="text-xs font-semibold text-muted mb-2">{fila.categoria_nombre}</Text>
+                              <Text className="text-xs font-semibold text-muted mb-2">{tituloCat}</Text>
                               <TextInput
                                 value={formMonto}
                                 onChangeText={setFormMonto}
@@ -345,24 +368,26 @@ export default function PresupuestoScreen() {
                           ) : (
                             <>
                               <View className="flex-row items-center justify-between mb-1.5">
-                                <Text className="text-dark font-medium text-sm flex-1 mr-2">{fila.categoria_nombre}</Text>
-                                <View className="flex-row items-center gap-2">
-                                  <TouchableOpacity
-                                    onPress={() => {
-                                      setEditandoId(fila.presupuesto_id)
-                                      setFormMonto(String(presup))
-                                      setFormError(null)
-                                      setAsignandoCatId(null)
-                                    }}
-                                    hitSlop={8}
-                                    className="px-2 py-0.5 rounded border border-border"
-                                  >
-                                    <Text className="text-dark text-[10px] font-semibold">Editar</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity onPress={() => confirmarEliminar(fila)} hitSlop={8}>
-                                    <Text className="text-danger text-xs">🗑</Text>
-                                  </TouchableOpacity>
-                                </View>
+                                <Text className="text-dark font-medium text-sm flex-1 mr-2">{tituloCat}</Text>
+                                {!esAgregado && (
+                                  <View className="flex-row items-center gap-2">
+                                    <TouchableOpacity
+                                      onPress={() => {
+                                        setEditandoId(fila.presupuesto_id)
+                                        setFormMonto(String(presup))
+                                        setFormError(null)
+                                        setAsignandoCatId(null)
+                                      }}
+                                      hitSlop={8}
+                                      className="px-2 py-0.5 rounded border border-border"
+                                    >
+                                      <Text className="text-dark text-[10px] font-semibold">Editar</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => confirmarEliminar(fila)} hitSlop={8}>
+                                      <Text className="text-danger text-xs">🗑</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
                               </View>
                               <View className="flex-row justify-between mb-1">
                                 <Text className="text-muted text-xs">{formatMonto(fila.gastado)} gastado</Text>

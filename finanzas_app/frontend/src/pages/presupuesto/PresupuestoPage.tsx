@@ -16,6 +16,7 @@ interface CatPres {
   nombre: string
   presupuestado: number | null
   gastado: number
+  esAgregadoPadre: boolean
 }
 
 function filaToCat(f: PresupuestoMesFila): CatPres {
@@ -29,6 +30,7 @@ function filaToCat(f: PresupuestoMesFila): CatPres {
     nombre: f.categoria_nombre,
     presupuestado: pres,
     gastado: Math.round(Number(f.gastado) || 0),
+    esAgregadoPadre: Boolean(f.es_agregado_padre),
   }
 }
 
@@ -266,19 +268,26 @@ export default function PresupuestoPage() {
   }
 
   const conPresupuesto = useMemo(
-    () => categorias.filter(c => c.presupuestoId != null),
+    () =>
+      categorias.filter(c => {
+        if (c.esAgregadoPadre) {
+          return (c.presupuestado ?? 0) > 0 || c.gastado > 0
+        }
+        return c.presupuestoId != null
+      }),
     [categorias],
   )
   const sinPresupuesto = useMemo(
-    () => categorias.filter(c => c.presupuestoId == null),
+    () => categorias.filter(c => c.presupuestoId == null && !c.esAgregadoPadre),
     [categorias],
   )
 
-  const totalPresupuestado = conPresupuesto.reduce(
-    (s, c) => s + (c.presupuestado ?? 0),
-    0,
-  )
-  const totalGastado = conPresupuesto.reduce((s, c) => s + c.gastado, 0)
+  const totalPresupuestado = categorias
+    .filter(c => !c.esAgregadoPadre && c.presupuestoId != null)
+    .reduce((s, c) => s + (c.presupuestado ?? 0), 0)
+  const totalGastado = categorias
+    .filter(c => !c.esAgregadoPadre)
+    .reduce((s, c) => s + c.gastado, 0)
   const disponible = totalPresupuestado - totalGastado
   const porcentajeGeneral =
     totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0
@@ -350,7 +359,7 @@ export default function PresupuestoPage() {
   }
 
   const handleStartEdit = (cat: CatPres) => {
-    if (cat.presupuestoId == null) return
+    if (cat.presupuestoId == null || cat.esAgregadoPadre) return
     setEditingKey(String(cat.categoriaId))
     setEditMontoValue(String(cat.presupuestado ?? 0))
   }
@@ -532,11 +541,11 @@ export default function PresupuestoPage() {
             <CategoriaPresupuestoItem
               key={cat.categoriaId}
               id={`cat-pres-${cat.categoriaId}`}
-              nombre={cat.nombre}
+              nombre={cat.esAgregadoPadre ? `${cat.nombre} (total subcategorías)` : cat.nombre}
               gastado={cat.gastado}
               presupuestado={cat.presupuestado ?? 0}
               highlighted={categoriaDestacadaId === cat.categoriaId}
-              editable
+              editable={!cat.esAgregadoPadre}
               isEditing={isEditing}
               editValue={editMontoValue}
               onStartEdit={() => handleStartEdit(cat)}

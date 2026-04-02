@@ -813,23 +813,38 @@ export default function DashboardPage() {
 
   const categoriasComparadas = useMemo(() => {
     return (presupuestoData ?? [])
-      .filter(f => f.presupuesto_id != null)
+      .filter(f => {
+        if (f.es_agregado_padre) {
+          const p = Math.round(Number(f.monto_presupuestado) || 0)
+          const g = Math.round(Number(f.gastado) || 0)
+          return p > 0 || g > 0
+        }
+        return f.presupuesto_id != null
+      })
       .map(f => {
         const presupuestado = Math.round(Number(f.monto_presupuestado) || 0)
         const gastado = Math.round(Number(f.gastado) || 0)
         const pct = presupuestado > 0 ? (gastado / presupuestado) * 100 : 0
+        const esAgg = Boolean(f.es_agregado_padre)
         return {
           categoriaId: f.categoria_id,
-          nombre: f.categoria_nombre || 'Otros',
+          nombre: esAgg
+            ? `${f.categoria_nombre || 'Otros'} (total subcategorías)`
+            : f.categoria_nombre || 'Otros',
           gastado,
           presupuestado,
           pct,
+          esAgregadoPadre: esAgg,
         }
       })
       .sort((a, b) => b.pct - a.pct)
   }, [presupuestoData])
-  const totalCatGastado = categoriasComparadas.reduce((s, c) => s + c.gastado, 0)
-  const totalCatPresupuestado = categoriasComparadas.reduce((s, c) => s + c.presupuestado, 0)
+  const totalCatGastado = categoriasComparadas
+    .filter(c => !c.esAgregadoPadre)
+    .reduce((s, c) => s + c.gastado, 0)
+  const totalCatPresupuestado = categoriasComparadas
+    .filter(c => !c.esAgregadoPadre)
+    .reduce((s, c) => s + c.presupuestado, 0)
 
   const linkListadoCuentaActiva = useMemo(() => {
     if (cuentaTab !== null) return `/gastos/cuenta/${cuentaTab}`

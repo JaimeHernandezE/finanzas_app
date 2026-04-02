@@ -932,21 +932,100 @@ def presupuesto_mes(request):
         for c in Categoria.objects.filter(pk__in=all_ids)
     }
 
+    def _gastado_int(g):
+        try:
+            return int(g)
+        except (TypeError, ValueError):
+            return int(float(g))
+
+    def _monto_pres_a_decimal(monto_str):
+        if monto_str is None:
+            return Decimal('0')
+        try:
+            return Decimal(str(monto_str))
+        except Exception:
+            return Decimal('0')
+
     filas = []
     for cid in sorted(all_ids, key=lambda x: nombres.get(x, '')):
         p = pres_map.get(cid)
         g = gastos_por_cat.get(cid) or 0
-        try:
-            gastado = int(g)
-        except (TypeError, ValueError):
-            gastado = int(float(g))
         filas.append({
             'presupuesto_id': p.id if p else None,
             'categoria_id': cid,
             'categoria_nombre': nombres.get(cid, '—'),
             'monto_presupuestado': str(p.monto) if p else None,
-            'gastado': gastado,
+            'gastado': _gastado_int(g),
+            'es_agregado_padre': False,
         })
+
+    fila_por_cid = {f['categoria_id']: f for f in filas}
+    cat_meta_inicial = {
+        c['id']: c['categoria_padre_id']
+        for c in Categoria.objects.filter(pk__in=all_ids).values('id', 'categoria_padre_id')
+    }
+    hijos_por_padre = {}
+    for cid in all_ids:
+        padre_id = cat_meta_inicial.get(cid)
+        if padre_id:
+            hijos_por_padre.setdefault(padre_id, []).append(cid)
+
+    padres_ids = set(hijos_por_padre.keys())
+    if padres_ids:
+        faltan_nombres = padres_ids - set(nombres.keys())
+        if faltan_nombres:
+            for c in Categoria.objects.filter(pk__in=faltan_nombres).values('id', 'nombre'):
+                nombres[c['id']] = c['nombre']
+
+    ids_meta = set(all_ids) | padres_ids
+    cat_meta = {
+        c['id']: c['categoria_padre_id']
+        for c in Categoria.objects.filter(pk__in=ids_meta).values('id', 'categoria_padre_id')
+    }
+
+    for padre_id in sorted(padres_ids, key=lambda x: nombres.get(x, '')):
+        hijos = hijos_por_padre.get(padre_id) or []
+        if not hijos:
+            continue
+        sum_pres = Decimal('0')
+        sum_gast_hijos = 0
+        for hid in hijos:
+            fh = fila_por_cid.get(hid)
+            if not fh:
+                continue
+            sum_pres += _monto_pres_a_decimal(fh.get('monto_presupuestado'))
+            sum_gast_hijos += int(fh.get('gastado') or 0)
+        p_padre = pres_map.get(padre_id)
+        if p_padre:
+            sum_pres += p_padre.monto
+        sum_gast = sum_gast_hijos + _gastado_int(gastos_por_cat.get(padre_id) or 0)
+
+        monto_str = str(sum_pres) if sum_pres > 0 else None
+        fila_padre = {
+            'presupuesto_id': None,
+            'categoria_id': padre_id,
+            'categoria_nombre': nombres.get(padre_id, '—'),
+            'monto_presupuestado': monto_str,
+            'gastado': sum_gast,
+            'es_agregado_padre': True,
+        }
+        if padre_id in fila_por_cid:
+            existente = fila_por_cid[padre_id]
+            existente.update(fila_padre)
+        else:
+            filas.append(fila_padre)
+            fila_por_cid[padre_id] = fila_padre
+
+    def _orden_fila(row):
+        cid = row['categoria_id']
+        padre_cat = cat_meta.get(cid)
+        nombre = (row.get('categoria_nombre') or '').lower()
+        if padre_cat:
+            clave_grupo = (nombres.get(padre_cat) or '').lower()
+            return (clave_grupo, 1, nombre)
+        return (nombre, 0, nombre)
+
+    filas.sort(key=_orden_fila)
     return Response(filas)
 
 

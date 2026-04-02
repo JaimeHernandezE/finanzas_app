@@ -16,6 +16,8 @@ export interface PresupuestoMesFila {
   categoria_nombre: string
   monto_presupuestado: string | null
   gastado: number
+  /** True: fila de categoría padre con montos = suma de hijas (+ presup./gasto directo del padre si aplica) */
+  es_agregado_padre?: boolean
 }
 
 export interface EfectivoDisponibleDesglose {

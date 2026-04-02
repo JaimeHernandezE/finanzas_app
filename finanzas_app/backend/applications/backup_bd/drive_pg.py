@@ -11,8 +11,10 @@ import zlib
 from datetime import datetime, timezone
 from typing import Iterator
 
+from google.auth.exceptions import GoogleAuthError
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 BACKUP_NAME_PREFIX = 'finanzas_pg_'
@@ -29,10 +31,58 @@ def _credentials_json() -> str:
     return s
 
 
+def _validar_json_cuenta_servicio(info: dict) -> None:
+    """Evita usar OAuth de escritorio / JSON equivocado; mensajes claros en español."""
+    tipo = info.get('type')
+    if tipo != 'service_account':
+        raise ValueError(
+            'Las credenciales de Drive deben ser el JSON de una cuenta de servicio de Google Cloud '
+            '(campo "type": "service_account"). No uses el JSON de cliente OAuth de escritorio/web ni '
+            'credenciales de otro tipo. Crea una cuenta de servicio en IAM → Cuentas de servicio → Claves → JSON.'
+        )
+    if not (info.get('private_key') and info.get('client_email')):
+        raise ValueError(
+            'El JSON no contiene private_key o client_email. Si pegaste GOOGLE_DRIVE_CREDENTIALS_JSON '
+            'en una sola línea, revisa que la clave privada conserve los saltos de línea (\\n dentro del string).'
+        )
+
+
+def _mensaje_error_credenciales_google(exc: Exception) -> str:
+    """Traduce errores frecuentes de token al configurar la variable de entorno."""
+    msg = str(exc).strip()
+    bajo = msg.lower()
+    if (
+        'token' in bajo
+        and ('no es válido' in bajo or 'invalid' in bajo or 'not valid' in bajo)
+    ) or 'invalid_grant' in bajo:
+        return (
+            'Google rechazó el token de la cuenta de servicio (“token no válido”). '
+            'Revisa: (1) que el JSON sea el descargado desde Google Cloud (IAM → cuenta de servicio → clave JSON); '
+            '(2) que la clave privada no esté cortada ni mal escapada en la variable de entorno; '
+            '(3) que la clave no esté deshabilitada o rotada en Google Cloud; '
+            '(4) que en el mismo proyecto esté habilitada la API “Google Drive API”. '
+            f'Detalle: {msg}'
+        )
+    return msg
+
+
 def build_drive_service():
-    info = json.loads(_credentials_json())
-    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    return build('drive', 'v3', credentials=creds, cache_discovery=False)
+    raw = _credentials_json().strip()
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            'GOOGLE_DRIVE_CREDENTIALS_JSON (o GOOGLE_SHEETS_CREDENTIALS_JSON) no es JSON válido. '
+            'Comprueba comillas y que el contenido sea una sola línea compacta (p. ej. python -m json.tool --compact).'
+        ) from e
+    if not isinstance(info, dict):
+        raise ValueError('Las credenciales deben ser un objeto JSON (diccionario).')
+    _validar_json_cuenta_servicio(info)
+    try:
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        return build('drive', 'v3', credentials=creds, cache_discovery=False)
+    except GoogleAuthError as e:
+        raise ValueError(_mensaje_error_credenciales_google(e)) from e
 
 
 def backup_filename() -> str:
@@ -177,6 +227,17 @@ def run_backup_to_drive() -> dict:
         upload_file_to_drive(service, folder_id, tmp_path, name)
         deleted = cleanup_keep_two_most_recent(service, folder_id)
         return {'ok': True, 'archivo': name, 'eliminados_en_drive': len(deleted)}
+    except GoogleAuthError as e:
+        raise ValueError(_mensaje_error_credenciales_google(e)) from e
+    except HttpError as e:
+        status = getattr(e.resp, 'status', None) if e.resp else None
+        if status in (401, 403):
+            raise ValueError(
+                f'Google Drive respondió {status}. Habilita la API “Google Drive” en el proyecto de la cuenta '
+                'de servicio, revisa GOOGLE_DRIVE_BACKUP_FOLDER_ID y comparte la carpeta con el client_email '
+                f'del JSON (permiso de editor). Detalle: {e!s}'
+            ) from e
+        raise ValueError(f'Error al usar Google Drive (HTTP {status}): {e!s}') from e
     finally:
         try:
             os.unlink(tmp_path)

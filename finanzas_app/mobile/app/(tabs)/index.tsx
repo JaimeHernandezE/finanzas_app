@@ -300,28 +300,45 @@ export default function DashboardScreen() {
 
   const categoriasComparadas = useMemo(() => {
     return (qPresupuesto.data ?? [])
-      .filter((f) => f.presupuesto_id != null)
+      .filter((f) => {
+        if (f.es_agregado_padre) {
+          const p = Math.round(Number(f.monto_presupuestado) || 0)
+          const g = Math.round(Number(f.gastado) || 0)
+          return p > 0 || g > 0
+        }
+        return f.presupuesto_id != null
+      })
       .map((f) => {
         const presupuestado = Math.round(Number(f.monto_presupuestado) || 0)
         const gastado = Math.round(Number(f.gastado) || 0)
         const pct = porcentaje(gastado, presupuestado)
+        const esAgg = Boolean(f.es_agregado_padre)
         return {
           categoriaId: f.categoria_id,
-          categoria: f.categoria_nombre || 'Otros',
+          categoria: esAgg
+            ? `${f.categoria_nombre || 'Otros'} (total subcategorías)`
+            : f.categoria_nombre || 'Otros',
           gastado,
           presupuestado,
           pct,
+          esAgregadoPadre: esAgg,
         }
       })
       .sort((a, b) => b.pct - a.pct)
   }, [qPresupuesto.data])
 
   const totalCatGastado = useMemo(
-    () => categoriasComparadas.reduce((s, c) => s + c.gastado, 0),
+    () =>
+      categoriasComparadas
+        .filter((c) => !c.esAgregadoPadre)
+        .reduce((s, c) => s + c.gastado, 0),
     [categoriasComparadas],
   )
   const totalCatPresupuestado = useMemo(
-    () => categoriasComparadas.reduce((s, c) => s + c.presupuestado, 0),
+    () =>
+      categoriasComparadas
+        .filter((c) => !c.esAgregadoPadre)
+        .reduce((s, c) => s + c.presupuestado, 0),
     [categoriasComparadas],
   )
 
