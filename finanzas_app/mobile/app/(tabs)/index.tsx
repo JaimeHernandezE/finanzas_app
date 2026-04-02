@@ -10,9 +10,8 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMovimientos } from '@finanzas/shared/hooks/useMovimientos'
-import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, movimientosApi } from '@finanzas/shared/api'
 import type { PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
@@ -107,84 +106,81 @@ export default function DashboardScreen() {
   const isFetchingRQ = useIsFetching()
   const [refreshing, setRefreshing] = useState(false)
 
-  const { data: deudaRes, loading: loadingDeuda, refetch: refetchDeuda } = useApi(
-    () => movimientosApi.getCuotasDeudaPendiente(),
-    []
-  )
-  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo, refetch: refetchEfectivo } = useApi(
-    () => finanzasApi.getEfectivoDisponible(),
-    []
-  )
-  const { data: cuentasRes, refetch: refetchCuentas } = useApi<CuentaPersonalApi[]>(
-    () => finanzasApi.getCuentasPersonales(),
-    []
-  )
-  const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion, refetch: refetchLiquidacion } =
-    useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mes + 1, anio), [mes, anio])
-  const {
-    data: presupuestoData,
-    loading: loadingPresupuesto,
-    error: errorPresupuesto,
-    refetch: refetchPresupuesto,
-  } = useApi<PresupuestoMesFila[]>(
-    () =>
-      finanzasApi.getPresupuestoMes({
-        mes: mes + 1,
-        anio,
-        ambito: 'PERSONAL',
-        cuenta: cuentaTab ?? undefined,
-      }),
-    [mes, anio, cuentaTab],
-  )
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const { mesPrevio, anioPrevio } = useMemo(() => {
     if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
     return { mesPrevio: mes, anioPrevio: anio }
   }, [mes, anio])
-  const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior, refetch: refetchLiquidacionAnterior } =
-    useApi<LiquidacionApi>(() => finanzasApi.getLiquidacion(mesPrevio, anioPrevio), [mesPrevio, anioPrevio])
-  const { data: compensacionData, error: errorCompensacion, refetch: refetchCompensacion } = useApi(
-    () => finanzasApi.getCompensacionProyectada(mes + 1, anio),
-    [mes, anio]
-  )
-  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo, refetch: refetchSueldos } = useApi(
-    () =>
-      esActual
-        ? finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
-        : Promise.resolve({
-            data: { mes: mes + 1, anio, montos: {} as Record<string, string> },
-          }),
-    [mes, anio, esActual]
-  )
 
-  // Refresca todos los datos del dashboard (RQ + useApi)
+  // ── Queries del dashboard (todas offline-first via React Query) ────────────
+
+  const qDeuda = useQuery({
+    queryKey: ['deudaPendiente'],
+    queryFn: () => movimientosApi.getCuotasDeudaPendiente().then((r: any) => r.data),
+  })
+
+  const qEfectivo = useQuery({
+    queryKey: ['efectivoDisponible'],
+    queryFn: () => finanzasApi.getEfectivoDisponible().then((r: any) => r.data as { efectivo: string }),
+  })
+
+  const qCuentas = useQuery<CuentaPersonalApi[]>({
+    queryKey: ['cuentasPersonales'],
+    queryFn: () => finanzasApi.getCuentasPersonales().then((r: any) => r.data as CuentaPersonalApi[]),
+  })
+
+  const qLiquidacion = useQuery<LiquidacionApi>({
+    queryKey: ['liquidacion', mes + 1, anio],
+    queryFn: () => finanzasApi.getLiquidacion(mes + 1, anio).then((r: any) => r.data as LiquidacionApi),
+  })
+
+  const qPresupuesto = useQuery<PresupuestoMesFila[]>({
+    queryKey: ['presupuestoMes', mes + 1, anio, cuentaTab],
+    queryFn: () =>
+      finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito: 'PERSONAL',
+        cuenta: cuentaTab ?? undefined,
+      }).then((r: any) => r.data as PresupuestoMesFila[]),
+  })
+
+  const qLiquidacionAnterior = useQuery<LiquidacionApi>({
+    queryKey: ['liquidacion', mesPrevio, anioPrevio],
+    queryFn: () => finanzasApi.getLiquidacion(mesPrevio, anioPrevio).then((r: any) => r.data as LiquidacionApi),
+  })
+
+  const qCompensacion = useQuery({
+    queryKey: ['compensacion', mes + 1, anio],
+    queryFn: () => finanzasApi.getCompensacionProyectada(mes + 1, anio).then((r: any) => r.data),
+    enabled: esActual,
+  })
+
+  const qSueldos = useQuery({
+    queryKey: ['sueldosProrrateo', mes + 1, anio],
+    queryFn: () =>
+      finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
+        .then((r: any) => r.data as { mes: number; anio: number; montos: Record<string, string> }),
+    enabled: esActual,
+  })
+
+  // Pull-to-refresh: fuerza refetch de todas las queries del dashboard
   const refetchAll = useCallback(async () => {
     await Promise.all([
-      refetch(),
-      refetchDeuda(),
-      refetchEfectivo(),
-      refetchCuentas(),
-      refetchLiquidacion(),
-      refetchLiquidacionAnterior(),
-      refetchPresupuesto(),
-      refetchCompensacion(),
-      refetchSueldos(),
+      queryClient.refetchQueries({ queryKey: ['movimientos'] }),
+      queryClient.refetchQueries({ queryKey: ['deudaPendiente'] }),
+      queryClient.refetchQueries({ queryKey: ['efectivoDisponible'] }),
+      queryClient.refetchQueries({ queryKey: ['cuentasPersonales'] }),
+      queryClient.refetchQueries({ queryKey: ['liquidacion'] }),
+      queryClient.refetchQueries({ queryKey: ['presupuestoMes'] }),
+      queryClient.refetchQueries({ queryKey: ['compensacion'] }),
+      queryClient.refetchQueries({ queryKey: ['sueldosProrrateo'] }),
     ])
-  }, [
-    refetch,
-    refetchDeuda,
-    refetchEfectivo,
-    refetchCuentas,
-    refetchLiquidacion,
-    refetchLiquidacionAnterior,
-    refetchPresupuesto,
-    refetchCompensacion,
-    refetchSueldos,
-  ])
+  }, [queryClient])
 
-  // Cuando React Query invalida movimientos (tras crear/editar/eliminar),
-  // también refresca los datos del dashboard que usan useApi
+  // Cuando se invalidan movimientos (tras crear/editar/eliminar),
+  // invalida también las queries derivadas del dashboard
   useEffect(() => {
     return queryClient.getQueryCache().subscribe((event) => {
       if (
@@ -192,14 +188,14 @@ export default function DashboardScreen() {
         Array.isArray(event.query.queryKey) &&
         event.query.queryKey[0] === 'movimientos'
       ) {
-        void refetchEfectivo()
-        void refetchDeuda()
-        void refetchLiquidacion()
-        void refetchPresupuesto()
-        void refetchCompensacion()
+        void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
+        void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
+        void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
+        void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+        void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
       }
     })
-  }, [queryClient, refetchEfectivo, refetchDeuda, refetchLiquidacion, refetchPresupuesto, refetchCompensacion])
+  }, [queryClient])
 
   async function onRefresh() {
     setRefreshing(true)
@@ -208,7 +204,7 @@ export default function DashboardScreen() {
   }
 
   const cuentasPersonales = useMemo(() => {
-    const list = ((cuentasRes ?? []) as CuentaPersonalApi[]).filter((c) => c.es_propia)
+    const list = (qCuentas.data ?? []).filter((c) => c.es_propia)
     return list.sort((a, b) => {
       const aPersonal = a.nombre.trim().toLowerCase() === 'personal'
       const bPersonal = b.nombre.trim().toLowerCase() === 'personal'
@@ -216,7 +212,7 @@ export default function DashboardScreen() {
       if (!aPersonal && bPersonal) return 1
       return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })
     })
-  }, [cuentasRes])
+  }, [qCuentas.data])
 
   // Auto-seleccionar primera cuenta
   useEffect(() => {
@@ -226,29 +222,30 @@ export default function DashboardScreen() {
     }
   }, [cuentasPersonales, cuentaTab])
 
-  const deudaTc = useMemo(() => {
-    const data = deudaRes as { total?: string } | null
-    return Math.round(Number(data?.total) || 0)
-  }, [deudaRes])
+  const deudaTc = useMemo(
+    () => Math.round(Number(qDeuda.data?.total) || 0),
+    [qDeuda.data],
+  )
 
   const [sueldosProrrateo, setSueldosProrrateo] = useState<Record<number, number>>({})
 
   useEffect(() => {
-    if (!esActual || !compensacionData?.miembros?.length) {
+    const compensacion = qCompensacion.data as any
+    if (!esActual || !compensacion?.miembros?.length) {
       setSueldosProrrateo({})
       return
     }
-    if (loadingLiquidacionAnterior || loadingSueldosProrrateo) return
+    if (qLiquidacionAnterior.isPending || qSueldos.isPending) return
 
     const prevById = Object.fromEntries(
-      (liquidacionMesAnteriorRes?.ingresos ?? []).map((i) => [
+      (qLiquidacionAnterior.data?.ingresos ?? []).map((i) => [
         i.usuario_id,
         Math.round(Number(i.total) || 0),
       ])
     )
-    const apiMontos = sueldosProrrateoRes?.montos ?? {}
+    const apiMontos = (qSueldos.data?.montos ?? {}) as Record<string, string>
     const next: Record<number, number> = {}
-    for (const m of compensacionData.miembros) {
+    for (const m of compensacion.miembros) {
       const k = String(m.usuario_id)
       const apiVal = apiMontos[k]
       if (apiVal !== undefined && apiVal !== null && apiVal !== '') {
@@ -260,23 +257,24 @@ export default function DashboardScreen() {
     setSueldosProrrateo(next)
   }, [
     esActual,
-    compensacionData,
-    liquidacionMesAnteriorRes,
-    sueldosProrrateoRes,
-    loadingLiquidacionAnterior,
-    loadingSueldosProrrateo,
+    qCompensacion.data,
+    qLiquidacionAnterior.data,
+    qLiquidacionAnterior.isPending,
+    qSueldos.data,
+    qSueldos.isPending,
   ])
 
   const saldoCompensacionDetalle = useMemo(() => {
     const vacio = { compensacion: 0 }
-    if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
-    const n = compensacionData.miembros.length
-    const netoFam = toPesos(compensacionData.neto_familiar_comun)
-    const totalEstimado = compensacionData.miembros.reduce(
-      (sum, m) => sum + (sueldosProrrateo[m.usuario_id] ?? 0),
-      0
+    const compensacion = qCompensacion.data as any
+    if (!esActual || qCompensacion.error || !compensacion?.miembros?.length || !user) return vacio
+    const n = compensacion.miembros.length
+    const netoFam = toPesos(compensacion.neto_familiar_comun)
+    const totalEstimado = compensacion.miembros.reduce(
+      (sum: number, m: any) => sum + (sueldosProrrateo[m.usuario_id] ?? 0),
+      0,
     )
-    const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
+    const self = compensacion.miembros.find((m: any) => m.usuario_id === user.id)
     if (!self) return vacio
     const netoUsuario = toPesos(self.neto_comun_mes)
     const miEstimado = sueldosProrrateo[user.id] ?? 0
@@ -286,20 +284,18 @@ export default function DashboardScreen() {
     } else if (n > 0) {
       esperado = netoFam / n
     }
-    const netoR = Math.round(netoUsuario)
-    const esperadoR = Math.round(esperado)
-    return { compensacion: esperadoR - netoR }
-  }, [esActual, errorCompensacion, compensacionData, user, sueldosProrrateo])
+    return { compensacion: Math.round(esperado) - Math.round(netoUsuario) }
+  }, [esActual, qCompensacion.data, qCompensacion.error, user, sueldosProrrateo])
 
   const sueldoProyectado = useMemo(() => {
     if (!user) return 0
     return Math.round(sueldosProrrateo[user.id] ?? 0)
   }, [sueldosProrrateo, user])
 
-  const efectivo = useMemo(() => {
-    const t = (efectivoRes as { efectivo?: string } | null)?.efectivo
-    return Math.round(Number(t) || 0)
-  }, [efectivoRes])
+  const efectivo = useMemo(
+    () => Math.round(Number(qEfectivo.data?.efectivo) || 0),
+    [qEfectivo.data],
+  )
   const compensacionEstimada = saldoCompensacionDetalle.compensacion
   const saldo = useMemo(() => {
     if (!esActual) return efectivo - deudaTc
@@ -320,7 +316,7 @@ export default function DashboardScreen() {
   }, [movimientosCuenta])
 
   const categoriasComparadas = useMemo(() => {
-    return ((presupuestoData ?? []) as PresupuestoMesFila[])
+    return (qPresupuesto.data ?? [])
       .filter((f) => f.presupuesto_id != null)
       .map((f) => {
         const presupuestado = Math.round(Number(f.monto_presupuestado) || 0)
@@ -335,7 +331,7 @@ export default function DashboardScreen() {
         }
       })
       .sort((a, b) => b.pct - a.pct)
-  }, [presupuestoData])
+  }, [qPresupuesto.data])
 
   const totalCatGastado = useMemo(
     () => categoriasComparadas.reduce((s, c) => s + c.gastado, 0),
@@ -357,19 +353,23 @@ export default function DashboardScreen() {
     else setMes(m => m + 1)
   }
 
-  const hasError = error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior
-  // Carga inicial (bloquea UI). Durante pull-to-refresh no bloquea — el spinner nativo es suficiente.
-  const isLoading =
-    !refreshing && (
-      loading ||
-      loadingEfectivo ||
-      loadingDeuda ||
-      loadingLiquidacion ||
-      loadingLiquidacionAnterior ||
-      (esActual && loadingSueldosProrrateo)
-    )
-  // Sincronía en segundo plano: muestra indicador discreto sin ocultar contenido
-  const isSyncing = !refreshing && (isFetchingRQ > 0 || loadingEfectivo || loadingDeuda || loadingLiquidacion || loadingPresupuesto)
+  const hasError = error ||
+    (qEfectivo.error ? String(qEfectivo.error) : null) ||
+    (qLiquidacion.error ? String(qLiquidacion.error) : null) ||
+    (qLiquidacionAnterior.error ? String(qLiquidacionAnterior.error) : null)
+
+  // isPending solo es true cuando no hay NINGÚN dato en cache (primera carga real).
+  // Con staleTime:Infinity + persister, en aperturas normales todos tienen data → no bloquea.
+  const isLoading = !refreshing && (
+    loading ||
+    qEfectivo.isPending ||
+    qDeuda.isPending ||
+    qLiquidacion.isPending ||
+    qLiquidacionAnterior.isPending ||
+    (esActual && qSueldos.isPending)
+  )
+  // Indicador discreto de sincronía en segundo plano
+  const isSyncing = !refreshing && isFetchingRQ > 0
 
   useEffect(() => {
     if (!showSelectorCuenta) return
@@ -572,9 +572,9 @@ export default function DashboardScreen() {
                 </Text>
               </View>
 
-              {loadingPresupuesto ? (
+              {qPresupuesto.isPending ? (
                 <Text className="text-muted text-sm text-center py-2">Cargando comparación…</Text>
-              ) : errorPresupuesto ? (
+              ) : qPresupuesto.error ? (
                 <Text className="text-muted text-sm text-center py-2">No se pudo cargar presupuesto del período.</Text>
               ) : categoriasComparadas.length === 0 ? (
                 <Text className="text-muted text-sm text-center py-2">Sin presupuestos configurados para este período/cuenta.</Text>

@@ -549,6 +549,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             (prev) => prev?.map((m: any) => m.id === editingId ? { ...m, ...updated } : m) ?? [],
           )
           void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+          void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
+          void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
+          void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
+          void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+          void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${idCuentaTrasGuardar || cuentaFija}` as never)
@@ -686,8 +691,13 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             (prev) => prev ? [created, ...prev] : [created],
           )
         }
-        // Invalidar en background para mantener consistencia eventual
+        // Invalidar movimientos y datos derivados del dashboard en background
         void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+        void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
+        void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
+        void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
+        void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+        void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
         const cuentaDestino =
           payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
         if (esStandalone && cuentaFija != null) {
