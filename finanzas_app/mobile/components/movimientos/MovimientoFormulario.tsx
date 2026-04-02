@@ -551,6 +551,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             Alert.alert('Sin conexión', 'Cambio guardado localmente. Se sincronizará cuando vuelva internet.')
           }
           void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+          void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
+          void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
+          void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
+          void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+          void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${idCuentaTrasGuardar || cuentaFija}` as never)
@@ -683,6 +688,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           }
         }
         void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+        void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
+        void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
+        void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
+        void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+        void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
         const cuentaDestino =
           payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
         if (esStandalone && cuentaFija != null) {

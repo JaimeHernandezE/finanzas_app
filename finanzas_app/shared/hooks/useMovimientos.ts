@@ -2,7 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { movimientosApi, type MovimientoFiltros } from '../api/movimientos'
 
 /**
- * staleTime corto (2 min) porque los movimientos se crean con frecuencia.
+ * Offline-first: staleTime heredado del queryClient global (Infinity).
+ * Los datos se sirven desde cache y solo se refrescan tras mutaciones o pull-to-refresh.
  * Al eliminar: actualiza el cache optimistamente e invalida en background
  * para que otras vistas con distintos filtros también se refresquen.
  */
@@ -12,8 +13,7 @@ export function useMovimientos(filtros: MovimientoFiltros = {}) {
 
   const q = useQuery({
     queryKey,
-    queryFn: () => movimientosApi.getMovimientos(filtros).then((r) => r.data),
-    staleTime: 1000 * 60 * 2,
+    queryFn: () => movimientosApi.getMovimientos(filtros).then((r: any) => r.data),
   })
 
   const eliminar = async (id: number) => {
