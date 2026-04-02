@@ -18,6 +18,8 @@ export interface PresupuestoMesFila {
   gastado: number
   /** True: fila de categoría padre con montos = suma de hijas (+ presup./gasto directo del padre si aplica) */
   es_agregado_padre?: boolean
+  /** FK opcional; si hay padre agregado, las hijas apuntan a su categoria_id */
+  categoria_padre_id?: number | null
 }
 
 export interface EfectivoDisponibleDesglose {

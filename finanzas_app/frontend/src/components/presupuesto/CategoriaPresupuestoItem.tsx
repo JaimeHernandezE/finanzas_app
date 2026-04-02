@@ -16,6 +16,8 @@ interface Props {
   gastado: number
   presupuestado: number
   highlighted?: boolean
+  /** Clases extra en el contenedor (p. ej. quitar borde dentro de un &lt;summary&gt;) */
+  className?: string
   onClick?: () => void
   editable?: boolean
   isEditing?: boolean
@@ -32,6 +34,7 @@ export default function CategoriaPresupuestoItem({
   gastado,
   presupuestado,
   highlighted = false,
+  className: classNameProp,
   onClick,
   editable = false,
   isEditing = false,
@@ -51,7 +54,7 @@ export default function CategoriaPresupuestoItem({
   return (
     <div
       id={id}
-      className={`${styles.catItem} ${highlighted ? styles.catItemHighlighted : ''} ${clickable ? styles.catItemClickable : ''}`}
+      className={`${styles.catItem} ${classNameProp ?? ''} ${highlighted ? styles.catItemHighlighted : ''} ${clickable ? styles.catItemClickable : ''}`}
       onClick={clickable ? onClick : undefined}
       role={clickable ? 'button' : undefined}
       tabIndex={clickable ? 0 : undefined}

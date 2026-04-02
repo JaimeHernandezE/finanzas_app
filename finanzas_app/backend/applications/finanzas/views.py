@@ -931,6 +931,10 @@ def presupuesto_mes(request):
         c.id: c.nombre
         for c in Categoria.objects.filter(pk__in=all_ids)
     }
+    cat_meta_inicial = {
+        c['id']: c['categoria_padre_id']
+        for c in Categoria.objects.filter(pk__in=all_ids).values('id', 'categoria_padre_id')
+    }
 
     def _gastado_int(g):
         try:
@@ -957,13 +961,10 @@ def presupuesto_mes(request):
             'monto_presupuestado': str(p.monto) if p else None,
             'gastado': _gastado_int(g),
             'es_agregado_padre': False,
+            'categoria_padre_id': cat_meta_inicial.get(cid),
         })
 
     fila_por_cid = {f['categoria_id']: f for f in filas}
-    cat_meta_inicial = {
-        c['id']: c['categoria_padre_id']
-        for c in Categoria.objects.filter(pk__in=all_ids).values('id', 'categoria_padre_id')
-    }
     hijos_por_padre = {}
     for cid in all_ids:
         padre_id = cat_meta_inicial.get(cid)
@@ -1008,6 +1009,7 @@ def presupuesto_mes(request):
             'monto_presupuestado': monto_str,
             'gastado': sum_gast,
             'es_agregado_padre': True,
+            'categoria_padre_id': cat_meta_inicial.get(padre_id),
         }
         if padre_id in fila_por_cid:
             existente = fila_por_cid[padre_id]
@@ -1026,6 +1028,8 @@ def presupuesto_mes(request):
         return (nombre, 0, nombre)
 
     filas.sort(key=_orden_fila)
+    for row in filas:
+        row['categoria_padre_id'] = cat_meta.get(row['categoria_id'])
     return Response(filas)
 
 

@@ -6,6 +6,7 @@ import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
 import CategoriaPresupuestoItem from '@/components/presupuesto/CategoriaPresupuestoItem'
+import itemPresStyles from '@/components/presupuesto/CategoriaPresupuestoItem.module.scss'
 import { montoClpANumero } from '@/utils/montoClp'
 import { useConfig } from '@/context/ConfigContext'
 import styles from './PresupuestoPage.module.scss'
@@ -17,6 +18,7 @@ interface CatPres {
   presupuestado: number | null
   gastado: number
   esAgregadoPadre: boolean
+  categoriaPadreId: number | null
 }
 
 function filaToCat(f: PresupuestoMesFila): CatPres {
@@ -31,7 +33,13 @@ function filaToCat(f: PresupuestoMesFila): CatPres {
     presupuestado: pres,
     gastado: Math.round(Number(f.gastado) || 0),
     esAgregadoPadre: Boolean(f.es_agregado_padre),
+    categoriaPadreId: f.categoria_padre_id ?? null,
   }
+}
+
+function pctUso(cat: CatPres): number {
+  const pa = cat.presupuestado ?? 1
+  return pa > 0 ? (cat.gastado / pa) * 100 : 0
 }
 
 const MESES = [
@@ -292,17 +300,46 @@ export default function PresupuestoPage() {
   const porcentajeGeneral =
     totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0
 
-  const conPresupuestoOrdenadas = useMemo(
-    () =>
-      [...conPresupuesto].sort((a, b) => {
-        const pa = a.presupuestado ?? 1
-        const pb = b.presupuestado ?? 1
-        const pctA = pa > 0 ? (a.gastado / pa) * 100 : 0
-        const pctB = pb > 0 ? (b.gastado / pb) * 100 : 0
-        return pctB - pctA
-      }),
-    [conPresupuesto],
-  )
+  const bloquesConPresupuesto = useMemo(() => {
+    const padreIds = new Set(
+      conPresupuesto.filter(c => c.esAgregadoPadre).map(c => c.categoriaId),
+    )
+    const hijosPorPadre = new Map<number, CatPres[]>()
+    for (const c of conPresupuesto) {
+      const pid = c.categoriaPadreId
+      if (pid != null && padreIds.has(pid)) {
+        const arr = hijosPorPadre.get(pid) ?? []
+        arr.push(c)
+        hijosPorPadre.set(pid, arr)
+      }
+    }
+    hijosPorPadre.forEach(arr =>
+      arr.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
+    )
+    const padres = conPresupuesto.filter(c => c.esAgregadoPadre)
+    const sueltas = conPresupuesto.filter(
+      c =>
+        !c.esAgregadoPadre &&
+        !(c.categoriaPadreId != null && padreIds.has(c.categoriaPadreId)),
+    )
+    type Bloque =
+      | { tipo: 'grupo'; parent: CatPres; hijos: CatPres[] }
+      | { tipo: 'suelta'; cat: CatPres }
+    const bloques: Bloque[] = [
+      ...padres.map(p => ({
+        tipo: 'grupo' as const,
+        parent: p,
+        hijos: hijosPorPadre.get(p.categoriaId) ?? [],
+      })),
+      ...sueltas.map(cat => ({ tipo: 'suelta' as const, cat })),
+    ]
+    bloques.sort((a, b) => {
+      const ca = a.tipo === 'grupo' ? a.parent : a.cat
+      const cb = b.tipo === 'grupo' ? b.parent : b.cat
+      return pctUso(cb) - pctUso(ca)
+    })
+    return bloques
+  }, [conPresupuesto])
   const sinPresupuestoOrdenadas = useMemo(
     () => [...sinPresupuesto].sort((a, b) => a.nombre.localeCompare(b.nombre)),
     [sinPresupuesto],
@@ -313,7 +350,7 @@ export default function PresupuestoPage() {
     const el = document.getElementById(`cat-pres-${categoriaDestacadaId}`)
     if (!el) return
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [categoriaDestacadaId, conPresupuestoOrdenadas.length, sinPresupuestoOrdenadas.length])
+  }, [categoriaDestacadaId, bloquesConPresupuesto.length, sinPresupuestoOrdenadas.length])
 
   const idsEnLista = useMemo(() => new Set(categorias.map(c => c.categoriaId)), [categorias])
   const categoriasDisponiblesParaAgregar = useMemo(
@@ -528,34 +565,97 @@ export default function PresupuestoPage() {
           </div>
         )}
 
-        {conPresupuestoOrdenadas.length === 0 && sinPresupuestoOrdenadas.length === 0 && (
+        {bloquesConPresupuesto.length === 0 && sinPresupuestoOrdenadas.length === 0 && (
           <p className={styles.emptyHint}>
             No hay gastos ni presupuestos este mes en este ámbito. Agrega un presupuesto con «+
             Categoría» o registra movimientos.
           </p>
         )}
 
-        {conPresupuestoOrdenadas.map(cat => {
-          const isEditing = editingKey === String(cat.categoriaId)
+        {bloquesConPresupuesto.map(bloque => {
+          if (bloque.tipo === 'suelta') {
+            const cat = bloque.cat
+            const isEditing = editingKey === String(cat.categoriaId)
+            return (
+              <CategoriaPresupuestoItem
+                key={cat.categoriaId}
+                id={`cat-pres-${cat.categoriaId}`}
+                nombre={cat.nombre}
+                gastado={cat.gastado}
+                presupuestado={cat.presupuestado ?? 0}
+                highlighted={categoriaDestacadaId === cat.categoriaId}
+                editable
+                isEditing={isEditing}
+                editValue={editMontoValue}
+                onStartEdit={() => handleStartEdit(cat)}
+                onEditChange={setEditMontoValue}
+                onEditConfirm={() => handleEditConfirm(cat)}
+                onEditCancel={() => {
+                  setEditingKey(null)
+                  setEditMontoValue('')
+                }}
+              />
+            )
+          }
+          const { parent, hijos } = bloque
           return (
-            <CategoriaPresupuestoItem
-              key={cat.categoriaId}
-              id={`cat-pres-${cat.categoriaId}`}
-              nombre={cat.esAgregadoPadre ? `${cat.nombre} (total subcategorías)` : cat.nombre}
-              gastado={cat.gastado}
-              presupuestado={cat.presupuestado ?? 0}
-              highlighted={categoriaDestacadaId === cat.categoriaId}
-              editable={!cat.esAgregadoPadre}
-              isEditing={isEditing}
-              editValue={editMontoValue}
-              onStartEdit={() => handleStartEdit(cat)}
-              onEditChange={setEditMontoValue}
-              onEditConfirm={() => handleEditConfirm(cat)}
-              onEditCancel={() => {
-                setEditingKey(null)
-                setEditMontoValue('')
-              }}
-            />
+            <details
+              key={parent.categoriaId}
+              className={styles.grupoPresupuesto}
+              open
+            >
+              <summary className={styles.grupoSummary}>
+                <span className={styles.grupoChevron} aria-hidden>
+                  ▸
+                </span>
+                <div className={styles.grupoSummaryInner}>
+                  <CategoriaPresupuestoItem
+                    id={`cat-pres-${parent.categoriaId}`}
+                    nombre={`${parent.nombre} (total subcategorías)`}
+                    gastado={parent.gastado}
+                    presupuestado={parent.presupuestado ?? 0}
+                    highlighted={categoriaDestacadaId === parent.categoriaId}
+                    className={itemPresStyles.catItemSinBordeInferior}
+                    editable={false}
+                    isEditing={false}
+                    editValue=""
+                  />
+                </div>
+              </summary>
+              {hijos.length > 0 ? (
+                <div className={styles.grupoHijos}>
+                  {hijos.map(cat => {
+                    const isEditing = editingKey === String(cat.categoriaId)
+                    return (
+                      <div key={cat.categoriaId} className={styles.grupoHijo}>
+                        <CategoriaPresupuestoItem
+                          id={`cat-pres-${cat.categoriaId}`}
+                          nombre={cat.nombre}
+                          gastado={cat.gastado}
+                          presupuestado={cat.presupuestado ?? 0}
+                          highlighted={categoriaDestacadaId === cat.categoriaId}
+                          className={itemPresStyles.catItemSinBordeInferior}
+                          editable
+                          isEditing={isEditing}
+                          editValue={editMontoValue}
+                          onStartEdit={() => handleStartEdit(cat)}
+                          onEditChange={setEditMontoValue}
+                          onEditConfirm={() => handleEditConfirm(cat)}
+                          onEditCancel={() => {
+                            setEditingKey(null)
+                            setEditMontoValue('')
+                          }}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className={styles.grupoSinHijas}>
+                  No hay subcategorías con presupuesto o gasto este mes.
+                </p>
+              )}
+            </details>
           )
         })}
         {sinPresupuestoOrdenadas.map(cat => (

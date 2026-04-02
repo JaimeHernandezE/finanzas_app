@@ -112,16 +112,6 @@ export default function PresupuestoScreen() {
     else setMes((m) => m + 1)
   }
 
-  const conPresupuesto = useMemo(
-    () =>
-      filas.filter((f) => {
-        if (f.es_agregado_padre) {
-          return montoNum(f.monto_presupuestado) > 0 || f.gastado > 0
-        }
-        return f.presupuesto_id != null
-      }),
-    [filas],
-  )
   const sinPresupuesto = useMemo(
     () =>
       filas.filter((f) => f.presupuesto_id == null && f.gastado > 0 && !f.es_agregado_padre),
@@ -141,6 +131,68 @@ export default function PresupuestoScreen() {
   )
   const disponible = totalPresupuestado - totalGastado
   const pctGlobal = porcentaje(totalGastado, totalPresupuestado)
+
+  const bloquesConPresupuesto = useMemo(() => {
+    const conP = filas.filter((f) => {
+      if (f.es_agregado_padre) {
+        return montoNum(f.monto_presupuestado) > 0 || f.gastado > 0
+      }
+      return f.presupuesto_id != null
+    })
+    const padreIds = new Set(
+      conP.filter((f) => f.es_agregado_padre).map((f) => f.categoria_id),
+    )
+    const hijosPorPadre = new Map<number, PresupuestoMesFila[]>()
+    for (const f of conP) {
+      const pid = f.categoria_padre_id
+      if (pid != null && padreIds.has(pid)) {
+        const arr = hijosPorPadre.get(pid) ?? []
+        arr.push(f)
+        hijosPorPadre.set(pid, arr)
+      }
+    }
+    hijosPorPadre.forEach((arr) =>
+      arr.sort((a, b) =>
+        (a.categoria_nombre || '').localeCompare(b.categoria_nombre || '', 'es'),
+      ),
+    )
+    const padres = conP.filter((f) => f.es_agregado_padre)
+    const sueltas = conP.filter(
+      (f) =>
+        !f.es_agregado_padre &&
+        !(f.categoria_padre_id != null && padreIds.has(f.categoria_padre_id)),
+    )
+    type Bloque =
+      | { tipo: 'grupo'; parent: PresupuestoMesFila; hijos: PresupuestoMesFila[] }
+      | { tipo: 'suelta'; fila: PresupuestoMesFila }
+    const bloques: Bloque[] = [
+      ...padres.map((p) => ({
+        tipo: 'grupo' as const,
+        parent: p,
+        hijos: hijosPorPadre.get(p.categoria_id) ?? [],
+      })),
+      ...sueltas.map((fila) => ({ tipo: 'suelta' as const, fila })),
+    ]
+    const pctUso = (f: PresupuestoMesFila) => {
+      const pr = montoNum(f.monto_presupuestado)
+      return pr > 0 ? (f.gastado / pr) * 100 : 0
+    }
+    bloques.sort((a, b) => {
+      const fa = a.tipo === 'grupo' ? a.parent : a.fila
+      const fb = b.tipo === 'grupo' ? b.parent : b.fila
+      return pctUso(fb) - pctUso(fa)
+    })
+    return bloques
+  }, [filas])
+
+  const [grupoAbierto, setGrupoAbierto] = useState<Record<number, boolean>>({})
+
+  function toggleGrupo(padreId: number) {
+    setGrupoAbierto((prev) => ({
+      ...prev,
+      [padreId]: !(prev[padreId] ?? true),
+    }))
+  }
 
   function cancelarForm() {
     setAsignandoCatId(null)
@@ -322,54 +374,52 @@ export default function PresupuestoScreen() {
                 </View>
               )}
 
-              {/* Categorías con presupuesto */}
-              {conPresupuesto.length > 0 && (
+              {/* Categorías con presupuesto (padres con subcategorías desplegables) */}
+              {bloquesConPresupuesto.length > 0 && (
                 <>
                   <Text className="text-xs font-bold text-muted uppercase tracking-wide mb-2">Con presupuesto</Text>
                   <View className="bg-white border border-border rounded-xl overflow-hidden mb-5">
-                    {conPresupuesto.map((fila, idx) => {
-                      const presup = montoNum(fila.monto_presupuestado)
-                      const pct = porcentaje(fila.gastado, presup)
-                      const isLast = idx === conPresupuesto.length - 1
-                      const editando = editandoId === fila.presupuesto_id
-                      const esAgregado = Boolean(fila.es_agregado_padre)
-                      const tituloCat = esAgregado
-                        ? `${fila.categoria_nombre} (total subcategorías)`
-                        : fila.categoria_nombre
+                    {bloquesConPresupuesto.map((bloque, bi) => {
+                      const isLastBlock = bi === bloquesConPresupuesto.length - 1
+                      const blockBorder = !isLastBlock ? 'border-b border-border' : ''
 
-                      return (
-                        <View key={fila.categoria_id} className={`px-4 py-3 ${!isLast ? 'border-b border-border' : ''}`}>
-                          {editando ? (
-                            <View>
-                              <Text className="text-xs font-semibold text-muted mb-2">{tituloCat}</Text>
-                              <TextInput
-                                value={formMonto}
-                                onChangeText={setFormMonto}
-                                placeholder="Nuevo monto"
-                                placeholderTextColor="#888884"
-                                keyboardType="numeric"
-                                className="border border-border rounded-lg px-3 py-2 text-dark bg-surface text-sm mb-2"
-                                autoFocus
-                              />
-                              {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
-                              <View className="flex-row gap-2">
-                                <TouchableOpacity onPress={cancelarForm} className="flex-1 border border-border rounded-lg py-2 items-center">
-                                  <Text className="text-dark text-xs font-semibold">Cancelar</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                  onPress={() => guardarEdicion(fila)}
-                                  disabled={guardando}
-                                  className="flex-1 bg-dark rounded-lg py-2 items-center"
-                                >
-                                  <Text className="text-white text-xs font-semibold">{guardando ? '…' : 'Guardar'}</Text>
-                                </TouchableOpacity>
+                      if (bloque.tipo === 'suelta') {
+                        const fila = bloque.fila
+                        const presup = montoNum(fila.monto_presupuestado)
+                        const pct = porcentaje(fila.gastado, presup)
+                        const editando = editandoId === fila.presupuesto_id
+                        return (
+                          <View key={`s-${fila.categoria_id}`} className={`px-4 py-3 ${blockBorder}`}>
+                            {editando ? (
+                              <View>
+                                <Text className="text-xs font-semibold text-muted mb-2">{fila.categoria_nombre}</Text>
+                                <TextInput
+                                  value={formMonto}
+                                  onChangeText={setFormMonto}
+                                  placeholder="Nuevo monto"
+                                  placeholderTextColor="#888884"
+                                  keyboardType="numeric"
+                                  className="border border-border rounded-lg px-3 py-2 text-dark bg-surface text-sm mb-2"
+                                  autoFocus
+                                />
+                                {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
+                                <View className="flex-row gap-2">
+                                  <TouchableOpacity onPress={cancelarForm} className="flex-1 border border-border rounded-lg py-2 items-center">
+                                    <Text className="text-dark text-xs font-semibold">Cancelar</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity
+                                    onPress={() => guardarEdicion(fila)}
+                                    disabled={guardando}
+                                    className="flex-1 bg-dark rounded-lg py-2 items-center"
+                                  >
+                                    <Text className="text-white text-xs font-semibold">{guardando ? '…' : 'Guardar'}</Text>
+                                  </TouchableOpacity>
+                                </View>
                               </View>
-                            </View>
-                          ) : (
-                            <>
-                              <View className="flex-row items-center justify-between mb-1.5">
-                                <Text className="text-dark font-medium text-sm flex-1 mr-2">{tituloCat}</Text>
-                                {!esAgregado && (
+                            ) : (
+                              <>
+                                <View className="flex-row items-center justify-between mb-1.5">
+                                  <Text className="text-dark font-medium text-sm flex-1 mr-2">{fila.categoria_nombre}</Text>
                                   <View className="flex-row items-center gap-2">
                                     <TouchableOpacity
                                       onPress={() => {
@@ -387,24 +437,137 @@ export default function PresupuestoScreen() {
                                       <Text className="text-danger text-xs">🗑</Text>
                                     </TouchableOpacity>
                                   </View>
+                                </View>
+                                <View className="flex-row justify-between mb-1">
+                                  <Text className="text-muted text-xs">{formatMonto(fila.gastado)} gastado</Text>
+                                  <Text className="text-muted text-xs">{formatMonto(presup)} presup.</Text>
+                                </View>
+                                <View className="h-1.5 bg-border rounded-full overflow-hidden">
+                                  <View
+                                    className="h-1.5 rounded-full"
+                                    style={{ width: `${pct}%`, backgroundColor: colorBarra(pct) }}
+                                  />
+                                </View>
+                                {pct >= 100 && (
+                                  <Text className="text-danger text-[10px] mt-1">
+                                    Excedido en {formatMonto(fila.gastado - presup)}
+                                  </Text>
                                 )}
-                              </View>
+                              </>
+                            )}
+                          </View>
+                        )
+                      }
+
+                      const { parent, hijos } = bloque
+                      const presupP = montoNum(parent.monto_presupuestado)
+                      const pctP = porcentaje(parent.gastado, presupP)
+                      const abierto = grupoAbierto[parent.categoria_id] ?? true
+                      return (
+                        <View key={`g-${parent.categoria_id}`} className={blockBorder}>
+                          <TouchableOpacity
+                            onPress={() => toggleGrupo(parent.categoria_id)}
+                            activeOpacity={0.75}
+                            className="flex-row items-start px-4 py-3"
+                          >
+                            <Text className="text-muted text-xs w-5 mt-0.5">{abierto ? '▼' : '▶'}</Text>
+                            <View className="flex-1">
+                              <Text className="text-dark font-medium text-sm mb-1.5">
+                                {parent.categoria_nombre} (total subcategorías)
+                              </Text>
                               <View className="flex-row justify-between mb-1">
-                                <Text className="text-muted text-xs">{formatMonto(fila.gastado)} gastado</Text>
-                                <Text className="text-muted text-xs">{formatMonto(presup)} presup.</Text>
+                                <Text className="text-muted text-xs">{formatMonto(parent.gastado)} gastado</Text>
+                                <Text className="text-muted text-xs">{formatMonto(presupP)} presup.</Text>
                               </View>
                               <View className="h-1.5 bg-border rounded-full overflow-hidden">
                                 <View
                                   className="h-1.5 rounded-full"
-                                  style={{ width: `${pct}%`, backgroundColor: colorBarra(pct) }}
+                                  style={{ width: `${pctP}%`, backgroundColor: colorBarra(pctP) }}
                                 />
                               </View>
-                              {pct >= 100 && (
-                                <Text className="text-danger text-[10px] mt-1">
-                                  Excedido en {formatMonto(fila.gastado - presup)}
-                                </Text>
-                              )}
-                            </>
+                            </View>
+                          </TouchableOpacity>
+                          {abierto && hijos.length > 0 && (
+                            <View className="border-t border-border bg-surface/50">
+                              {hijos.map((fila, hi) => {
+                                const presup = montoNum(fila.monto_presupuestado)
+                                const pct = porcentaje(fila.gastado, presup)
+                                const editando = editandoId === fila.presupuesto_id
+                                const sep = hi < hijos.length - 1 ? 'border-b border-border' : ''
+                                return (
+                                  <View key={fila.categoria_id} className={`pl-5 pr-4 py-3 border-l-2 border-border ml-4 ${sep}`}>
+                                    {editando ? (
+                                      <View>
+                                        <Text className="text-xs font-semibold text-muted mb-2">{fila.categoria_nombre}</Text>
+                                        <TextInput
+                                          value={formMonto}
+                                          onChangeText={setFormMonto}
+                                          placeholder="Nuevo monto"
+                                          placeholderTextColor="#888884"
+                                          keyboardType="numeric"
+                                          className="border border-border rounded-lg px-3 py-2 text-dark bg-surface text-sm mb-2"
+                                          autoFocus
+                                        />
+                                        {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
+                                        <View className="flex-row gap-2">
+                                          <TouchableOpacity onPress={cancelarForm} className="flex-1 border border-border rounded-lg py-2 items-center">
+                                            <Text className="text-dark text-xs font-semibold">Cancelar</Text>
+                                          </TouchableOpacity>
+                                          <TouchableOpacity
+                                            onPress={() => guardarEdicion(fila)}
+                                            disabled={guardando}
+                                            className="flex-1 bg-dark rounded-lg py-2 items-center"
+                                          >
+                                            <Text className="text-white text-xs font-semibold">{guardando ? '…' : 'Guardar'}</Text>
+                                          </TouchableOpacity>
+                                        </View>
+                                      </View>
+                                    ) : (
+                                      <>
+                                        <View className="flex-row items-center justify-between mb-1.5">
+                                          <Text className="text-dark font-medium text-sm flex-1 mr-2">{fila.categoria_nombre}</Text>
+                                          <View className="flex-row items-center gap-2">
+                                            <TouchableOpacity
+                                              onPress={() => {
+                                                setEditandoId(fila.presupuesto_id)
+                                                setFormMonto(String(presup))
+                                                setFormError(null)
+                                                setAsignandoCatId(null)
+                                              }}
+                                              hitSlop={8}
+                                              className="px-2 py-0.5 rounded border border-border"
+                                            >
+                                              <Text className="text-dark text-[10px] font-semibold">Editar</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity onPress={() => confirmarEliminar(fila)} hitSlop={8}>
+                                              <Text className="text-danger text-xs">🗑</Text>
+                                            </TouchableOpacity>
+                                          </View>
+                                        </View>
+                                        <View className="flex-row justify-between mb-1">
+                                          <Text className="text-muted text-xs">{formatMonto(fila.gastado)} gastado</Text>
+                                          <Text className="text-muted text-xs">{formatMonto(presup)} presup.</Text>
+                                        </View>
+                                        <View className="h-1.5 bg-border rounded-full overflow-hidden">
+                                          <View
+                                            className="h-1.5 rounded-full"
+                                            style={{ width: `${pct}%`, backgroundColor: colorBarra(pct) }}
+                                          />
+                                        </View>
+                                        {pct >= 100 && (
+                                          <Text className="text-danger text-[10px] mt-1">
+                                            Excedido en {formatMonto(fila.gastado - presup)}
+                                          </Text>
+                                        )}
+                                      </>
+                                    )}
+                                  </View>
+                                )
+                              })}
+                            </View>
+                          )}
+                          {abierto && hijos.length === 0 && (
+                            <Text className="text-muted text-xs px-4 pb-3 pl-10">Sin subcategorías con datos este mes.</Text>
                           )}
                         </View>
                       )

@@ -500,3 +500,72 @@
   margin-bottom: $space-4;
   line-height: 1.5;
 }
+
+// ── Grupo padre + subcategorías (desplegable) ─────────────────────────────────
+
+.grupoPresupuesto {
+  border-bottom: 1px solid #e8e8e4;
+  margin-bottom: 0;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.grupoSummary {
+  display: flex;
+  align-items: flex-start;
+  gap: $space-2;
+  cursor: pointer;
+  list-style: none;
+  padding: $space-2 0;
+
+  &::-webkit-details-marker {
+    display: none;
+  }
+}
+
+.grupoChevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 4px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: $color-text-muted;
+  transition: transform $transition-fast;
+  user-select: none;
+}
+
+.grupoPresupuesto[open] > .grupoSummary .grupoChevron {
+  transform: rotate(90deg);
+}
+
+.grupoSummaryInner {
+  flex: 1;
+  min-width: 0;
+}
+
+.grupoHijos {
+  padding: 0 0 $space-3 $space-6;
+  border-left: 2px solid #e8e8e4;
+  margin-bottom: $space-2;
+  margin-left: 10px;
+}
+
+.grupoHijo {
+  padding: $space-2 0;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid #f0f0ec;
+  }
+}
+
+.grupoSinHijas {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  padding: 0 0 $space-3 $space-6;
+  margin: 0;
+}

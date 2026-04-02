@@ -9,6 +9,13 @@
   }
 }
 
+/** Dentro de un desplegable (fila padre): sin borde extra */
+.catItemSinBordeInferior {
+  border-bottom: none;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 .catItemClickable {
   cursor: pointer;
 

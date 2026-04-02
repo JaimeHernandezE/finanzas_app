@@ -17,6 +17,7 @@ export interface PresupuestoMesFila {
   monto_presupuestado: string | null
   gastado: number
   es_agregado_padre?: boolean
+  categoria_padre_id?: number | null
 }
 
 export interface ImportacionCuentaPersonalResult {
