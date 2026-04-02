@@ -70,7 +70,18 @@ export default function RespaldoBdPage() {
         `Subido: ${data.archivo}. En Drive quedan como máximo los 2 respaldos más recientes (${data.eliminados_en_drive} archivo(s) antiguo(s) eliminado(s)).`
       )
     } catch (e: unknown) {
-      setMsgErr(apiErrorMessage(e))
+      if (axios.isAxiosError(e)) {
+        const d = e.response?.data as { error?: string; detail?: unknown }
+        const detailStr =
+          typeof d?.detail === 'string'
+            ? d.detail
+            : Array.isArray(d?.detail)
+              ? d.detail.map((x) => String(x)).join(' ')
+              : undefined
+        setMsgErr(d?.error ?? detailStr ?? apiErrorMessage(e))
+      } else {
+        setMsgErr(apiErrorMessage(e))
+      }
     } finally {
       setSubiendo(false)
     }
