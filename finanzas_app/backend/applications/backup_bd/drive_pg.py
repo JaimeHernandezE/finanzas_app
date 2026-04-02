@@ -19,7 +19,10 @@ from googleapiclient.http import MediaFileUpload
 
 BACKUP_NAME_PREFIX = 'finanzas_pg_'
 BACKUP_NAME_SUFFIX = '.sql.gz'
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+# drive.file suele provocar 403 "Service Accounts do not have storage quota" al crear archivos
+# en carpetas de otro usuario o en Unidades compartidas; drive permite aplicar la cuota del
+# propietario de la carpeta / de la Shared Drive (ver comentarios en _mensaje_drive_http_error).
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
 def _credentials_json() -> str:
@@ -147,6 +150,62 @@ def iter_pg_dump_gzip_chunks(database_url: str) -> Iterator[bytes]:
             raise RuntimeError(f'pg_dump falló ({rc}): {err.decode("utf-8", errors="replace")}')
 
 
+def _razon_http_error_drive(exc: HttpError) -> str:
+    try:
+        raw = exc.content.decode('utf-8') if exc.content else ''
+        data = json.loads(raw) if raw else {}
+        errs = (data.get('error') or {}).get('errors') or []
+        if errs and isinstance(errs[0], dict):
+            return str(errs[0].get('reason') or '')
+    except (json.JSONDecodeError, TypeError, UnicodeDecodeError):
+        pass
+    return ''
+
+
+def _mensaje_drive_http_error(exc: HttpError) -> str:
+    """Mensaje en español según el motivo de 403/401 de Drive."""
+    status = getattr(exc.resp, 'status', None) if exc.resp else None
+    razon = _razon_http_error_drive(exc)
+    if status == 403 and razon == 'storageQuotaExceeded':
+        return (
+            'Google Drive rechazó la subida: las cuentas de servicio no tienen cuota de almacenamiento propia. '
+            'Soluciones: (1) **Google Workspace — Unidad compartida (Shared Drive):** crea una carpeta dentro '
+            'de una unidad compartida, añade el `client_email` del JSON como miembro con rol de colaborador '
+            'o gestor de contenido, y usa el ID de esa carpeta en GOOGLE_DRIVE_BACKUP_FOLDER_ID. '
+            '(2) **Carpeta en “Mi unidad” compartida con la cuenta de servicio:** comparte la carpeta con el '
+            '`client_email` como **Editor** (no solo lector), confirma que GOOGLE_DRIVE_BACKUP_FOLDER_ID es '
+            'el ID de la barra de URL de esa carpeta (no un acceso directo ni otra ruta). '
+            '(3) Tras cambiar el alcance OAuth a `drive`, vuelve a desplegar; si persiste el error, Google '
+            'está aplicando la política solo a Unidades compartidas — usa entonces Workspace con Shared Drive. '
+            f'Detalle API: {exc!s}'
+        )
+    if status in (401, 403):
+        return (
+            f'Google Drive respondió {status}. Habilita la API “Google Drive” en el proyecto de la cuenta '
+            'de servicio, revisa GOOGLE_DRIVE_BACKUP_FOLDER_ID y comparte la carpeta con el client_email '
+            f'del JSON (permiso de editor). Detalle: {exc!s}'
+        )
+    return f'Error al usar Google Drive (HTTP {status}): {exc!s}'
+
+
+def verificar_carpeta_backup(service, folder_id: str) -> None:
+    """Comprueba que la carpeta existe y la cuenta de servicio puede verla (Shared Drive o compartida)."""
+    meta = (
+        service.files()
+        .get(
+            fileId=folder_id,
+            fields='id,name,mimeType,driveId',
+            supportsAllDrives=True,
+        )
+        .execute()
+    )
+    if meta.get('mimeType') != 'application/vnd.google-apps.folder':
+        raise ValueError(
+            'GOOGLE_DRIVE_BACKUP_FOLDER_ID no apunta a una carpeta de Drive '
+            f'(mimeType={meta.get("mimeType")!r}).'
+        )
+
+
 def upload_file_to_drive(service, folder_id: str, local_path: str, drive_name: str) -> str:
     meta = {'name': drive_name, 'parents': [folder_id]}
     media = MediaFileUpload(local_path, mimetype='application/gzip', resumable=True)
@@ -223,6 +282,7 @@ def run_backup_to_drive() -> dict:
         tmp_path = tmp.name
 
     try:
+        verificar_carpeta_backup(service, folder_id)
         run_pg_dump_plain_gz(database_url, tmp_path)
         upload_file_to_drive(service, folder_id, tmp_path, name)
         deleted = cleanup_keep_two_most_recent(service, folder_id)
@@ -232,11 +292,7 @@ def run_backup_to_drive() -> dict:
     except HttpError as e:
         status = getattr(e.resp, 'status', None) if e.resp else None
         if status in (401, 403):
-            raise ValueError(
-                f'Google Drive respondió {status}. Habilita la API “Google Drive” en el proyecto de la cuenta '
-                'de servicio, revisa GOOGLE_DRIVE_BACKUP_FOLDER_ID y comparte la carpeta con el client_email '
-                f'del JSON (permiso de editor). Detalle: {e!s}'
-            ) from e
+            raise ValueError(_mensaje_drive_http_error(e)) from e
         raise ValueError(f'Error al usar Google Drive (HTTP {status}): {e!s}') from e
     finally:
         try:
