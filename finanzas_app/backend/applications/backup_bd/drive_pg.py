@@ -11,7 +11,10 @@ from __future__ import annotations
 import gzip
 import json
 import os
+import re
+import shutil
 import subprocess
+import tempfile
 import zlib
 from datetime import datetime, timezone
 from typing import Iterator
@@ -26,6 +29,9 @@ from googleapiclient.http import MediaFileUpload
 BACKUP_NAME_PREFIX = 'finanzas_pg_'
 BACKUP_NAME_SUFFIX = '.sql.gz'
 SCOPES = ['https://www.googleapis.com/auth/drive']
+
+# pg_dump de PostgreSQL 17+ emite SET transaction_timeout; servidores <17 fallan al restaurar.
+_RE_SET_TRANSACTION_TIMEOUT = re.compile(br'^\s*SET\s+transaction_timeout\b', re.IGNORECASE)
 
 
 def _mensaje_error_oauth_drive(exc: Exception) -> str:
@@ -255,8 +261,6 @@ def run_backup_to_drive() -> dict:
     name = backup_filename()
     service = build_drive_service()
 
-    import tempfile
-
     with tempfile.NamedTemporaryFile(suffix='.sql.gz', delete=False) as tmp:
         tmp_path = tmp.name
 
@@ -280,17 +284,66 @@ def run_backup_to_drive() -> dict:
             pass
 
 
-def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
-    """Restaura BD desde .sql.gz (plain SQL comprimido)."""
-    with gzip.open(gz_path, 'rb') as gz:
-        p = subprocess.Popen(
-            ['psql', database_url, '-v', 'ON_ERROR_STOP=1'],
-            stdin=gz,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+def _decompress_sql_gz_to_path(gz_path: str, sql_path: str) -> None:
+    """Descomprime .sql.gz a disco; omite SET transaction_timeout (PG17) para restaurar en PG <17."""
+    with gzip.open(gz_path, 'rb') as gz, open(sql_path, 'wb') as out:
+        for line in gz:
+            if _RE_SET_TRANSACTION_TIMEOUT.match(line):
+                continue
+            out.write(line)
+
+
+def _run_psql(database_url: str, psql_args: list[str]) -> None:
+    """Ejecuta psql con ON_ERROR_STOP; lanza RuntimeError con stderr si falla."""
+    completed = subprocess.run(
+        ['psql', database_url, '-v', 'ON_ERROR_STOP=1', *psql_args],
+        capture_output=True,
+        text=False,
+    )
+    if completed.returncode != 0:
+        err_b = completed.stderr or b''
+        out_b = completed.stdout or b''
+        err = err_b.decode('utf-8', errors='replace')
+        if not err.strip() and out_b:
+            err = out_b.decode('utf-8', errors='replace')
+        raise RuntimeError(
+            f'psql falló ({completed.returncode}): {err}'
         )
-        _out, err = p.communicate()
-        if p.returncode != 0:
-            raise RuntimeError(
-                f'psql falló ({p.returncode}): {err.decode("utf-8", errors="replace")}'
-            )
+
+
+def _reset_public_schema(database_url: str) -> None:
+    """
+    Elimina y recrea el esquema ``public`` para que un volcado completo no choque con
+    tablas existentes (p. ej. auth_group). Requiere permisos suficientes sobre la BD.
+    """
+    _run_psql(
+        database_url,
+        [
+            '-c',
+            'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;',
+        ],
+    )
+
+
+def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
+    """
+    Restaura BD desde .sql.gz (plain SQL comprimido).
+
+    Antes de aplicar el volcado, recrea el esquema ``public`` (sustitución completa).
+    Descomprime a un .sql temporal y ejecuta ``psql -f`` (sin stdin por tubería).
+    """
+    sql_path: str | None = None
+    try:
+        _reset_public_schema(database_url)
+
+        fd, sql_path = tempfile.mkstemp(suffix='.sql')
+        os.close(fd)
+        _decompress_sql_gz_to_path(gz_path, sql_path)
+
+        _run_psql(database_url, ['-f', sql_path])
+    finally:
+        if sql_path:
+            try:
+                os.unlink(sql_path)
+            except OSError:
+                pass
