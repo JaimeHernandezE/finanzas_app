@@ -5,6 +5,7 @@ import io
 import logging
 import re
 import traceback
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -47,6 +48,11 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _nuevo_import_debug_id():
+    """Identificador corto para correlacionar respuestas API con logs (p. ej. en Render)."""
+    return uuid.uuid4().hex[:12]
 
 
 def _qs_movimientos_con_ingreso_comun(qs):
@@ -1715,164 +1721,245 @@ def importar_cuenta_personal_planilla(request):
     if error:
         return error
 
-    archivo = request.FILES.get('archivo')
-    if not archivo:
-        return Response(
-            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+    debug_id = _nuevo_import_debug_id()
 
     try:
-        contenido = archivo.read().decode('utf-8-sig')
-    except UnicodeDecodeError:
-        return Response(
-            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            logger.warning(
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s sin archivo",
+                debug_id,
+                getattr(usuario, 'id', None),
+            )
+            return Response(
+                {
+                    'error': 'Debes adjuntar un archivo en el campo "archivo".',
+                    'import_debug_id': debug_id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+        nombre_archivo = getattr(archivo, 'name', '') or ''
+        tam_previo = getattr(archivo, 'size', None)
+
+        try:
+            contenido = archivo.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            logger.warning(
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s decode utf-8 falló nombre=%r tam=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                getattr(usuario, 'familia_id', None),
+                nombre_archivo,
+                tam_previo,
+            )
+            return Response(
+                {
+                    'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.',
+                    'import_debug_id': debug_id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        logger.info(
+            "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            getattr(usuario, 'familia_id', None),
+            dry_run,
+            nombre_archivo,
+            len(contenido),
         )
 
-    stream = io.StringIO(contenido)
-    try:
-        sample = stream.read(4096)
-        stream.seek(0)
-        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.DictReader(stream, dialect=dialect)
+        stream = io.StringIO(contenido)
+        try:
+            sample = stream.read(4096)
+            stream.seek(0)
+            dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(stream, dialect=dialect)
 
-    if not reader.fieldnames:
-        return Response(
-            {'error': 'La planilla no tiene encabezados.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        if not reader.fieldnames:
+            logger.warning(
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s sin encabezados csv",
+                debug_id,
+                getattr(usuario, 'id', None),
+            )
+            return Response(
+                {'error': 'La planilla no tiene encabezados.', 'import_debug_id': debug_id},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
+        if 'fecha' not in normalizados or 'monto' not in normalizados:
+            logger.warning(
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s faltan columnas fecha/monto fieldnames=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                list(reader.fieldnames),
+            )
+            return Response(
+                {
+                    'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.',
+                    'import_debug_id': debug_id,
+                    'headers_recibidos': list(reader.fieldnames),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+        if not metodo_efectivo:
+            metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+        cuenta_personal, _ = CuentaPersonal.objects.get_or_create(
+            usuario=usuario,
+            nombre='Personal',
+            defaults={'descripcion': 'Cuenta por defecto para finanzas personales y efectivo.'},
         )
 
-    normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
-    if 'fecha' not in normalizados or 'monto' not in normalizados:
-        return Response(
-            {'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        categoria_otros, _ = Categoria.objects.get_or_create(
+            familia=usuario.familia,
+            usuario=usuario,
+            nombre='Otros',
+            tipo='INGRESO',
+            defaults={'es_inversion': False},
         )
 
-    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
-    if not metodo_efectivo:
-        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+        creados = 0
+        categorias_creadas = 0
+        errores = []
+        meses_importados = set()
+        movimientos_para_crear = []
 
-    cuenta_personal, _ = CuentaPersonal.objects.get_or_create(
-        usuario=usuario,
-        nombre='Personal',
-        defaults={'descripcion': 'Cuenta por defecto para finanzas personales y efectivo.'},
-    )
-
-    categoria_otros, _ = Categoria.objects.get_or_create(
-        familia=usuario.familia,
-        usuario=usuario,
-        nombre='Otros',
-        tipo='INGRESO',
-        defaults={'es_inversion': False},
-    )
-
-    creados = 0
-    categorias_creadas = 0
-    errores = []
-    meses_importados = set()
-    movimientos_para_crear = []
-
-    vinculados_ingreso_comun = IngresoComun.objects.filter(
-        familia_id=usuario.familia_id,
-        usuario_id=usuario.pk,
-        movimiento_id__isnull=False,
-    ).values_list('movimiento_id', flat=True)
-
-    with transaction.atomic():
-        qs_borrar = Movimiento.objects.filter(
+        vinculados_ingreso_comun = IngresoComun.objects.filter(
             familia_id=usuario.familia_id,
             usuario_id=usuario.pk,
-            cuenta_id=cuenta_personal.pk,
-            ambito='PERSONAL',
-            metodo_pago__tipo='EFECTIVO',
-        ).exclude(pk__in=vinculados_ingreso_comun)
-        movimientos_anteriores_eliminados = qs_borrar.count()
-        qs_borrar.delete()
+            movimiento_id__isnull=False,
+        ).values_list('movimiento_id', flat=True)
 
-        for fila_idx, fila in enumerate(reader, start=2):
-            fila = _reparar_fila_colapsada(fila)
-            # Ignorar filas completamente vacías en la planilla.
-            if _fila_vacia(fila):
-                continue
-            try:
-                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
-                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
-                monto_raw = _obtener_columna(fila, 'monto')
-                monto = _parsear_monto_importacion(monto_raw)
-                descripcion = _obtener_columna(fila, 'descripcion') or ''
-                categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
+        with transaction.atomic():
+            qs_borrar = Movimiento.objects.filter(
+                familia_id=usuario.familia_id,
+                usuario_id=usuario.pk,
+                cuenta_id=cuenta_personal.pk,
+                ambito='PERSONAL',
+                metodo_pago__tipo='EFECTIVO',
+            ).exclude(pk__in=vinculados_ingreso_comun)
+            movimientos_anteriores_eliminados = qs_borrar.count()
+            qs_borrar.delete()
 
-                if monto < 0:
-                    tipo = 'INGRESO'
-                    categoria = categoria_otros
-                    monto_final = abs(monto)
-                else:
-                    tipo = 'EGRESO'
-                    categoria, creada = Categoria.objects.get_or_create(
+            for fila_idx, fila in enumerate(reader, start=2):
+                fila = _reparar_fila_colapsada(fila)
+                # Ignorar filas completamente vacías en la planilla.
+                if _fila_vacia(fila):
+                    continue
+                try:
+                    fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                    meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+                    monto_raw = _obtener_columna(fila, 'monto')
+                    monto = _parsear_monto_importacion(monto_raw)
+                    descripcion = _obtener_columna(fila, 'descripcion') or ''
+                    categoria_txt = _obtener_columna(fila, 'categoria') or 'Sin categoría'
+
+                    if monto < 0:
+                        tipo = 'INGRESO'
+                        categoria = categoria_otros
+                        monto_final = abs(monto)
+                    else:
+                        tipo = 'EGRESO'
+                        categoria, creada = Categoria.objects.get_or_create(
+                            familia=usuario.familia,
+                            usuario=usuario,
+                            nombre=categoria_txt,
+                            tipo='EGRESO',
+                            defaults={'es_inversion': False},
+                        )
+                        if creada:
+                            categorias_creadas += 1
+                        monto_final = monto
+
+                    Movimiento.objects.create(
                         familia=usuario.familia,
                         usuario=usuario,
-                        nombre=categoria_txt,
-                        tipo='EGRESO',
-                        defaults={'es_inversion': False},
+                        cuenta=cuenta_personal,
+                        tipo=tipo,
+                        ambito='PERSONAL',
+                        categoria=categoria,
+                        fecha=fecha,
+                        monto=monto_final,
+                        comentario=descripcion,
+                        metodo_pago=metodo_efectivo,
                     )
-                    if creada:
-                        categorias_creadas += 1
-                    monto_final = monto
+                    creados += 1
+                except ValueError as exc:
+                    errores.append(f'Fila {fila_idx}: {exc}')
 
-                Movimiento.objects.create(
-                    familia=usuario.familia,
-                    usuario=usuario,
-                    cuenta=cuenta_personal,
-                    tipo=tipo,
-                    ambito='PERSONAL',
-                    categoria=categoria,
-                    fecha=fecha,
-                    monto=monto_final,
-                    comentario=descripcion,
-                    metodo_pago=metodo_efectivo,
-                )
-                creados += 1
-            except ValueError as exc:
-                errores.append(f'Fila {fila_idx}: {exc}')
+            if dry_run:
+                transaction.set_rollback(True)
 
-        if dry_run:
-            transaction.set_rollback(True)
+        if errores:
+            logger.warning(
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                getattr(usuario, 'familia_id', None),
+                len(errores),
+                errores[:15],
+            )
+            return Response(
+                {
+                    'error': 'La importación contiene filas inválidas.',
+                    'errores': errores,
+                    'movimientos_validos': creados,
+                    'categorias_personales_creadas': categorias_creadas,
+                    'dry_run': dry_run,
+                    'import_debug_id': debug_id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-    if errores:
+        if not dry_run and creados and meses_importados and usuario.familia_id:
+            services_recalculo.recalcular_familia_desde(
+                usuario.familia_id, min(meses_importados)
+            )
+            RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+
+        logger.info(
+            "importar_cuenta_personal_planilla id=%s usuario_id=%s ok movimientos_creados=%s dry_run=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            creados,
+            dry_run,
+        )
         return Response(
             {
-                'error': 'La importación contiene filas inválidas.',
-                'errores': errores,
-                'movimientos_validos': creados,
-                'categorias_personales_creadas': categorias_creadas,
+                'ok': True,
                 'dry_run': dry_run,
+                'movimientos_creados': creados,
+                'movimientos_anteriores_eliminados': movimientos_anteriores_eliminados,
+                'categorias_personales_creadas': categorias_creadas,
+                'cuenta_objetivo': cuenta_personal.nombre,
+                'import_debug_id': debug_id,
             },
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_200_OK,
         )
-
-    if not dry_run and creados and meses_importados and usuario.familia_id:
-        services_recalculo.recalcular_familia_desde(
-            usuario.familia_id, min(meses_importados)
+    except Exception as exc:
+        logger.exception(
+            "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            getattr(usuario, 'familia_id', None),
         )
-        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
-
-    return Response(
-        {
-            'ok': True,
-            'dry_run': dry_run,
-            'movimientos_creados': creados,
-            'movimientos_anteriores_eliminados': movimientos_anteriores_eliminados,
-            'categorias_personales_creadas': categorias_creadas,
-            'cuenta_objetivo': cuenta_personal.nombre,
-        },
-        status=status.HTTP_200_OK,
-    )
+        payload = {
+            'error': 'Error interno al importar cuenta personal.',
+            'detalle': str(exc),
+            'import_debug_id': debug_id,
+        }
+        if settings.DEBUG:
+            payload['traceback'] = traceback.format_exc()
+        return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -1902,167 +1989,243 @@ def importar_honorarios_planilla(request):
     if error:
         return error
 
-    archivo = request.FILES.get('archivo')
-    if not archivo:
-        return Response(
-            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+    debug_id = _nuevo_import_debug_id()
 
     try:
-        contenido = archivo.read().decode('utf-8-sig')
-    except UnicodeDecodeError:
-        return Response(
-            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        archivo = request.FILES.get('archivo')
+        if not archivo:
+            logger.warning(
+                "importar_honorarios_planilla id=%s usuario_id=%s sin archivo",
+                debug_id,
+                getattr(usuario, 'id', None),
+            )
+            return Response(
+                {'error': 'Debes adjuntar un archivo en el campo "archivo".', 'import_debug_id': debug_id},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        dry_run = str(request.data.get('dry_run', '')).lower() in ('1', 'true', 'yes', 'on')
+        nombre_archivo = getattr(archivo, 'name', '') or ''
+
+        try:
+            contenido = archivo.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            logger.warning(
+                "importar_honorarios_planilla id=%s usuario_id=%s decode utf-8 falló nombre=%r",
+                debug_id,
+                getattr(usuario, 'id', None),
+                nombre_archivo,
+            )
+            return Response(
+                {
+                    'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.',
+                    'import_debug_id': debug_id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        logger.info(
+            "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            getattr(usuario, 'familia_id', None),
+            dry_run,
+            nombre_archivo,
+            len(contenido),
         )
 
-    stream = io.StringIO(contenido)
-    try:
-        sample = stream.read(4096)
-        stream.seek(0)
-        dialect = csv.Sniffer().sniff(sample, delimiters=',;')
-    except csv.Error:
-        dialect = csv.excel
-    reader = csv.DictReader(stream, dialect=dialect)
+        stream = io.StringIO(contenido)
+        try:
+            sample = stream.read(4096)
+            stream.seek(0)
+            dialect = csv.Sniffer().sniff(sample, delimiters=',;')
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(stream, dialect=dialect)
 
-    if not reader.fieldnames:
-        return Response(
-            {'error': 'La planilla no tiene encabezados.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        if not reader.fieldnames:
+            logger.warning(
+                "importar_honorarios_planilla id=%s usuario_id=%s sin encabezados csv",
+                debug_id,
+                getattr(usuario, 'id', None),
+            )
+            return Response(
+                {'error': 'La planilla no tiene encabezados.', 'import_debug_id': debug_id},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
+        obligatorios = {'fecha', 'gasto', 'ingreso', 'valor'}
+        faltantes = [h for h in obligatorios if h not in normalizados]
+        if faltantes:
+            logger.warning(
+                "importar_honorarios_planilla id=%s usuario_id=%s faltan columnas %s fieldnames=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                faltantes,
+                list(reader.fieldnames),
+            )
+            return Response(
+                {
+                    'error': f'Faltan encabezados obligatorios: {", ".join(sorted(faltantes))}.',
+                    'import_debug_id': debug_id,
+                    'headers_recibidos': list(reader.fieldnames),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
+        if not metodo_efectivo:
+            metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+
+        cuenta_honorarios, _ = CuentaPersonal.objects.get_or_create(
+            usuario=usuario,
+            nombre='Honorarios',
+            defaults={'descripcion': 'Cuenta para movimientos importados desde planilla de honorarios.'},
         )
 
-    normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
-    obligatorios = {'fecha', 'gasto', 'ingreso', 'valor'}
-    faltantes = [h for h in obligatorios if h not in normalizados]
-    if faltantes:
-        return Response(
-            {'error': f'Faltan encabezados obligatorios: {", ".join(sorted(faltantes))}.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        categoria_ingreso_default, _ = Categoria.objects.get_or_create(
+            familia=usuario.familia,
+            usuario=usuario,
+            nombre='Otros',
+            tipo='INGRESO',
+            defaults={'es_inversion': False},
         )
 
-    metodo_efectivo = MetodoPago.objects.filter(tipo='EFECTIVO').order_by('pk').first()
-    if not metodo_efectivo:
-        metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
+        creados = 0
+        categorias_creadas = 0
+        errores = []
+        meses_importados = set()
 
-    cuenta_honorarios, _ = CuentaPersonal.objects.get_or_create(
-        usuario=usuario,
-        nombre='Honorarios',
-        defaults={'descripcion': 'Cuenta para movimientos importados desde planilla de honorarios.'},
-    )
+        with transaction.atomic():
+            for fila_idx, fila in enumerate(reader, start=2):
+                fila = _reparar_fila_colapsada_honorarios(fila)
+                if _fila_vacia(fila):
+                    continue
+                try:
+                    fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
+                    meses_importados.add(services_recalculo.primer_dia_mes(fecha))
 
-    categoria_ingreso_default, _ = Categoria.objects.get_or_create(
-        familia=usuario.familia,
-        usuario=usuario,
-        nombre='Otros',
-        tipo='INGRESO',
-        defaults={'es_inversion': False},
-    )
+                    valor_txt = _obtener_columna(fila, 'valor')
+                    monto = _parsear_monto_importacion(valor_txt)
+                    monto_final = abs(monto)
 
-    creados = 0
-    categorias_creadas = 0
-    errores = []
-    meses_importados = set()
+                    gasto_txt = _obtener_columna(fila, 'gasto')
+                    ingreso_txt = _obtener_columna(fila, 'ingreso')
+                    descripcion = _obtener_columna(fila, 'descripcion') or ''
 
-    with transaction.atomic():
-        for fila_idx, fila in enumerate(reader, start=2):
-            fila = _reparar_fila_colapsada_honorarios(fila)
-            if _fila_vacia(fila):
-                continue
-            try:
-                fecha = _parsear_fecha_importacion(_obtener_columna(fila, 'fecha'))
-                meses_importados.add(services_recalculo.primer_dia_mes(fecha))
+                    if bool(gasto_txt) == bool(ingreso_txt):
+                        raise ValueError(
+                            'debe indicar exactamente una de las columnas: Gasto o Ingreso.'
+                        )
 
-                valor_txt = _obtener_columna(fila, 'valor')
-                monto = _parsear_monto_importacion(valor_txt)
-                monto_final = abs(monto)
-
-                gasto_txt = _obtener_columna(fila, 'gasto')
-                ingreso_txt = _obtener_columna(fila, 'ingreso')
-                descripcion = _obtener_columna(fila, 'descripcion') or ''
-
-                if bool(gasto_txt) == bool(ingreso_txt):
-                    raise ValueError(
-                        'debe indicar exactamente una de las columnas: Gasto o Ingreso.'
-                    )
-
-                if gasto_txt:
-                    tipo = 'EGRESO'
-                    categoria_txt = gasto_txt or 'Sin categoría'
-                    categoria, creada = Categoria.objects.get_or_create(
-                        familia=usuario.familia,
-                        usuario=usuario,
-                        nombre=categoria_txt,
-                        tipo='EGRESO',
-                        defaults={'es_inversion': False},
-                    )
-                    if creada:
-                        categorias_creadas += 1
-                else:
-                    tipo = 'INGRESO'
-                    categoria_txt = ingreso_txt.strip()
-                    if categoria_txt:
+                    if gasto_txt:
+                        tipo = 'EGRESO'
+                        categoria_txt = gasto_txt or 'Sin categoría'
                         categoria, creada = Categoria.objects.get_or_create(
                             familia=usuario.familia,
                             usuario=usuario,
                             nombre=categoria_txt,
-                            tipo='INGRESO',
+                            tipo='EGRESO',
                             defaults={'es_inversion': False},
                         )
                         if creada:
                             categorias_creadas += 1
                     else:
-                        categoria = categoria_ingreso_default
+                        tipo = 'INGRESO'
+                        categoria_txt = ingreso_txt.strip()
+                        if categoria_txt:
+                            categoria, creada = Categoria.objects.get_or_create(
+                                familia=usuario.familia,
+                                usuario=usuario,
+                                nombre=categoria_txt,
+                                tipo='INGRESO',
+                                defaults={'es_inversion': False},
+                            )
+                            if creada:
+                                categorias_creadas += 1
+                        else:
+                            categoria = categoria_ingreso_default
 
-                Movimiento.objects.create(
-                    familia=usuario.familia,
-                    usuario=usuario,
-                    cuenta=cuenta_honorarios,
-                    tipo=tipo,
-                    ambito='PERSONAL',
-                    categoria=categoria,
-                    fecha=fecha,
-                    monto=monto_final,
-                    comentario=descripcion,
-                    metodo_pago=metodo_efectivo,
-                )
-                creados += 1
-            except ValueError as exc:
-                errores.append(f'Fila {fila_idx}: {exc}')
+                    Movimiento.objects.create(
+                        familia=usuario.familia,
+                        usuario=usuario,
+                        cuenta=cuenta_honorarios,
+                        tipo=tipo,
+                        ambito='PERSONAL',
+                        categoria=categoria,
+                        fecha=fecha,
+                        monto=monto_final,
+                        comentario=descripcion,
+                        metodo_pago=metodo_efectivo,
+                    )
+                    creados += 1
+                except ValueError as exc:
+                    errores.append(f'Fila {fila_idx}: {exc}')
 
-        if dry_run:
-            transaction.set_rollback(True)
+            if dry_run:
+                transaction.set_rollback(True)
 
-    if errores:
+        if errores:
+            logger.warning(
+                "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                getattr(usuario, 'familia_id', None),
+                len(errores),
+                errores[:15],
+            )
+            return Response(
+                {
+                    'error': 'La importación contiene filas inválidas.',
+                    'errores': errores,
+                    'movimientos_validos': creados,
+                    'categorias_personales_creadas': categorias_creadas,
+                    'dry_run': dry_run,
+                    'import_debug_id': debug_id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not dry_run and creados and meses_importados and usuario.familia_id:
+            services_recalculo.recalcular_familia_desde(
+                usuario.familia_id, min(meses_importados)
+            )
+            RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
+
+        logger.info(
+            "importar_honorarios_planilla id=%s usuario_id=%s ok movimientos_creados=%s dry_run=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            creados,
+            dry_run,
+        )
         return Response(
             {
-                'error': 'La importación contiene filas inválidas.',
-                'errores': errores,
-                'movimientos_validos': creados,
-                'categorias_personales_creadas': categorias_creadas,
+                'ok': True,
                 'dry_run': dry_run,
+                'movimientos_creados': creados,
+                'categorias_personales_creadas': categorias_creadas,
+                'cuenta_objetivo': cuenta_honorarios.nombre,
+                'import_debug_id': debug_id,
             },
-            status=status.HTTP_400_BAD_REQUEST,
+            status=status.HTTP_200_OK,
         )
-
-    if not dry_run and creados and meses_importados and usuario.familia_id:
-        services_recalculo.recalcular_familia_desde(
-            usuario.familia_id, min(meses_importados)
+    except Exception as exc:
+        logger.exception(
+            "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            getattr(usuario, 'familia_id', None),
         )
-        RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
-
-    return Response(
-        {
-            'ok': True,
-            'dry_run': dry_run,
-            'movimientos_creados': creados,
-            'categorias_personales_creadas': categorias_creadas,
-            'cuenta_objetivo': cuenta_honorarios.nombre,
-        },
-        status=status.HTTP_200_OK,
-    )
+        payload = {
+            'error': 'Error interno al importar honorarios.',
+            'detalle': str(exc),
+            'import_debug_id': debug_id,
+        }
+        if settings.DEBUG:
+            payload['traceback'] = traceback.format_exc()
+        return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
@@ -2223,16 +2386,29 @@ def importar_gastos_comunes_planilla(request):
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
+
+    debug_id = _nuevo_import_debug_id()
+
     if not usuario.familia_id:
+        logger.warning(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s sin familia",
+            debug_id,
+            getattr(usuario, 'id', None),
+        )
         return Response(
-            {'error': 'Usuario sin familia asociada.'},
+            {'error': 'Usuario sin familia asociada.', 'import_debug_id': debug_id},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     archivo = request.FILES.get('archivo')
     if not archivo:
+        logger.warning(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s sin archivo",
+            debug_id,
+            getattr(usuario, 'id', None),
+        )
         return Response(
-            {'error': 'Debes adjuntar un archivo en el campo "archivo".'},
+            {'error': 'Debes adjuntar un archivo en el campo "archivo".', 'import_debug_id': debug_id},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -2241,10 +2417,29 @@ def importar_gastos_comunes_planilla(request):
     try:
         contenido = archivo.read().decode('utf-8-sig')
     except UnicodeDecodeError:
+        logger.warning(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s decode utf-8 falló",
+            debug_id,
+            getattr(usuario, 'id', None),
+        )
         return Response(
-            {'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.'},
+            {
+                'error': 'No se pudo leer el archivo. Exporta la planilla como CSV UTF-8.',
+                'import_debug_id': debug_id,
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+    nombre_archivo = getattr(archivo, 'name', '') or ''
+    logger.info(
+        "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+        debug_id,
+        getattr(usuario, 'id', None),
+        getattr(usuario, 'familia_id', None),
+        dry_run,
+        nombre_archivo,
+        len(contenido),
+    )
 
     stream = io.StringIO(contenido)
     try:
@@ -2256,15 +2451,30 @@ def importar_gastos_comunes_planilla(request):
     reader = csv.DictReader(stream, dialect=dialect)
 
     if not reader.fieldnames:
+        logger.warning(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s sin encabezados csv",
+            debug_id,
+            getattr(usuario, 'id', None),
+        )
         return Response(
-            {'error': 'La planilla no tiene encabezados.'},
+            {'error': 'La planilla no tiene encabezados.', 'import_debug_id': debug_id},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
     normalizados = {_normalizar_header(h) for h in reader.fieldnames if h}
     if 'fecha' not in normalizados or 'monto' not in normalizados:
+        logger.warning(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s faltan columnas fecha/monto fieldnames=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            list(reader.fieldnames),
+        )
         return Response(
-            {'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.'},
+            {
+                'error': 'Faltan encabezados obligatorios: Fecha y/o Monto.',
+                'import_debug_id': debug_id,
+                'headers_recibidos': list(reader.fieldnames),
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -2341,7 +2551,8 @@ def importar_gastos_comunes_planilla(request):
                     Movimiento.objects.bulk_create(movimientos_para_crear)
                 except Exception:
                     logger.exception(
-                        "Error en bulk_create de importacion gastos comunes. usuario_id=%s familia_id=%s filas=%s",
+                        "Error en bulk_create importacion gastos comunes id=%s usuario_id=%s familia_id=%s filas=%s",
+                        debug_id,
                         getattr(usuario, 'id', None),
                         getattr(usuario, 'familia_id', None),
                         len(movimientos_para_crear),
@@ -2352,6 +2563,14 @@ def importar_gastos_comunes_planilla(request):
                 transaction.set_rollback(True)
 
         if errores:
+            logger.warning(
+                "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                debug_id,
+                getattr(usuario, 'id', None),
+                getattr(usuario, 'familia_id', None),
+                len(errores),
+                errores[:15],
+            )
             return Response(
                 {
                     'error': 'La importación contiene filas inválidas.',
@@ -2359,6 +2578,7 @@ def importar_gastos_comunes_planilla(request):
                     'movimientos_validos': creados,
                     'categorias_familiares_creadas': categorias_creadas,
                     'dry_run': dry_run,
+                    'import_debug_id': debug_id,
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -2372,13 +2592,21 @@ def importar_gastos_comunes_planilla(request):
                 )
             except Exception:
                 logger.exception(
-                    "Error marcando recálculo pendiente post importación. usuario_id=%s familia_id=%s desde_mes=%s",
+                    "Error marcando recálculo pendiente post importación id=%s usuario_id=%s familia_id=%s desde_mes=%s",
+                    debug_id,
                     getattr(usuario, 'id', None),
                     getattr(usuario, 'familia_id', None),
                     min(meses_importados),
                 )
                 raise
 
+        logger.info(
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s ok movimientos_creados=%s dry_run=%s",
+            debug_id,
+            getattr(usuario, 'id', None),
+            creados,
+            dry_run,
+        )
         return Response(
             {
                 'ok': True,
@@ -2387,16 +2615,22 @@ def importar_gastos_comunes_planilla(request):
                 'categorias_familiares_creadas': categorias_creadas,
                 'ambito_objetivo': 'COMUN',
                 'recalculo': 'pendiente',
+                'import_debug_id': debug_id,
             },
             status=status.HTTP_200_OK,
         )
     except Exception as exc:
         logger.exception(
-            "importar_gastos_comunes_planilla falló. usuario_id=%s familia_id=%s",
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s",
+            debug_id,
             getattr(usuario, 'id', None),
             getattr(usuario, 'familia_id', None),
         )
-        payload = {'error': 'Error interno al importar gastos comunes.', 'detalle': str(exc)}
+        payload = {
+            'error': 'Error interno al importar gastos comunes.',
+            'detalle': str(exc),
+            'import_debug_id': debug_id,
+        }
         if settings.DEBUG:
             payload['traceback'] = traceback.format_exc()
         return Response(payload, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

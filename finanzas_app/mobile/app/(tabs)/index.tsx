@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
@@ -467,7 +467,7 @@ export default function DashboardScreen() {
             <Text className="text-danger text-sm text-center">
               {hasError || 'Error al cargar el dashboard.'}
             </Text>
-            <TouchableOpacity onPress={refetch} className="mt-2 items-center">
+            <TouchableOpacity onPress={() => void refetch()} className="mt-2 items-center">
               <Text className="text-dark font-semibold text-sm underline">Reintentar</Text>
             </TouchableOpacity>
           </View>
