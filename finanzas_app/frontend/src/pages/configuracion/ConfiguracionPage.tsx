@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
-import { familiaApi, finanzasApi } from '@/api'
+import { exportApi, familiaApi, finanzasApi } from '@/api'
 import styles from './ConfiguracionPage.module.scss'
 
 // -----------------------------------------------------------------------------
@@ -86,6 +86,10 @@ export default function ConfiguracionPage() {
   const [recalculando, setRecalculando] = useState(false)
   const [msgRecalculo, setMsgRecalculo] = useState<string | null>(null)
   const [errRecalculo, setErrRecalculo] = useState<string | null>(null)
+  const [sincronizando, setSincronizando] = useState(false)
+  const [msgSheets, setMsgSheets] = useState<string | null>(null)
+  const [errSheets, setErrSheets] = useState<string | null>(null)
+  const esAdmin = user?.rol === 'ADMIN'
 
   const ejecutarRecalculoHistorico = async () => {
     if (recalculando) return
@@ -112,6 +116,29 @@ export default function ConfiguracionPage() {
       setErrRecalculo(backendError ?? 'No se pudo ejecutar el recálculo histórico.')
     } finally {
       setRecalculando(false)
+    }
+  }
+
+  const ejecutarSincronizarSheets = async () => {
+    if (sincronizando) return
+    setSincronizando(true)
+    setMsgSheets(null)
+    setErrSheets(null)
+    try {
+      const { data } = await exportApi.sincronizarGoogleSheets()
+      if (data.ok && data.resumen?.length) {
+        const total = data.resumen.reduce((a, r) => a + r.filas, 0)
+        setMsgSheets(
+          `Google Sheets actualizado: ${data.resumen.length} hoja(s), ${total} filas de datos en total.`
+        )
+      } else {
+        setMsgSheets('Sincronización completada.')
+      }
+    } catch (e: any) {
+      const backendError = e?.response?.data?.error
+      setErrSheets(backendError ?? 'No se pudo sincronizar con Google Sheets.')
+    } finally {
+      setSincronizando(false)
     }
   }
 
@@ -179,6 +206,30 @@ export default function ConfiguracionPage() {
         </div>
         {msgRecalculo ? <p className={styles.msgOk}>{msgRecalculo}</p> : null}
         {errRecalculo ? <p className={styles.msgErr}>{errRecalculo}</p> : null}
+
+        {esAdmin ? (
+          <>
+            <div className={`${styles.accionBox} ${styles.accionBoxSpaced}`}>
+              <div className={styles.accionInfo}>
+                <h3 className={styles.accionTitulo}>Respaldo en Google Sheets</h3>
+                <p className={styles.accionTexto}>
+                  Vuelca los datos de la base al spreadsheet configurado en el servidor (mismas hojas que el
+                  respaldo diario automático).
+                </p>
+              </div>
+              <button
+                type="button"
+                className={styles.accionBtn}
+                onClick={ejecutarSincronizarSheets}
+                disabled={sincronizando}
+              >
+                {sincronizando ? 'Sincronizando...' : 'Sincronizar ahora'}
+              </button>
+            </div>
+            {msgSheets ? <p className={styles.msgOk}>{msgSheets}</p> : null}
+            {errSheets ? <p className={styles.msgErr}>{errSheets}</p> : null}
+          </>
+        ) : null}
       </section>
     </div>
   )

@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import { exportApi } from '@finanzas/shared/api'
 import { useAuth } from '../../context/AuthContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -29,6 +30,9 @@ export default function PerfilScreen() {
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordOk, setPasswordOk] = useState<string | null>(null)
+  const [sincronizandoSheets, setSincronizandoSheets] = useState(false)
+  const [msgSheets, setMsgSheets] = useState<string | null>(null)
+  const [errSheets, setErrSheets] = useState<string | null>(null)
 
   if (!user) {
     return (
@@ -89,6 +93,29 @@ export default function PerfilScreen() {
       setPasswordError(msg)
     } finally {
       setCambiandoPassword(false)
+    }
+  }
+
+  const handleSincronizarSheets = async () => {
+    if (sincronizandoSheets) return
+    setSincronizandoSheets(true)
+    setMsgSheets(null)
+    setErrSheets(null)
+    try {
+      const { data } = await exportApi.sincronizarGoogleSheets()
+      if (data.ok && data.resumen?.length) {
+        const total = data.resumen.reduce((a, r) => a + r.filas, 0)
+        setMsgSheets(
+          `Google Sheets: ${data.resumen.length} hoja(s), ${total} filas de datos.`
+        )
+      } else {
+        setMsgSheets('Sincronización completada.')
+      }
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: { error?: string } } }
+      setErrSheets(ax.response?.data?.error ?? 'No se pudo sincronizar con Google Sheets.')
+    } finally {
+      setSincronizandoSheets(false)
     }
   }
 
@@ -168,6 +195,29 @@ export default function PerfilScreen() {
           {passwordError && <Text className="text-danger text-xs mt-2">{passwordError}</Text>}
           {passwordOk && <Text className="text-success text-xs mt-2">{passwordOk}</Text>}
         </View>
+
+        {user.rol === 'ADMIN' ? (
+          <View className="bg-white border border-border rounded-xl p-4 mb-4">
+            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Respaldo</Text>
+            <Text className="text-dark text-sm mb-3">
+              Sincroniza los datos con el Google Sheet configurado en el servidor (igual que el respaldo
+              automático).
+            </Text>
+            <TouchableOpacity
+              disabled={sincronizandoSheets}
+              onPress={() => void handleSincronizarSheets()}
+              className={`rounded-xl py-3 items-center ${sincronizandoSheets ? 'bg-border' : 'bg-dark'}`}
+            >
+              {sincronizandoSheets ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text className="text-white font-semibold">Sincronizar con Google Sheets</Text>
+              )}
+            </TouchableOpacity>
+            {msgSheets ? <Text className="text-success text-xs mt-2">{msgSheets}</Text> : null}
+            {errSheets ? <Text className="text-danger text-xs mt-2">{errSheets}</Text> : null}
+          </View>
+        ) : null}
 
         <View className="bg-white border border-border rounded-xl p-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Sesión</Text>

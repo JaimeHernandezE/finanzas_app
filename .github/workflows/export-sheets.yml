@@ -1,0 +1,26 @@
+name: Export diario a Google Sheets
+
+on:
+  schedule:
+    # 11:00 UTC ≈ 08:00 Chile (UTC-3). En invierno (UTC-4) será 07:00 Chile.
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+
+jobs:
+  export:
+    name: Exportar BD a Sheets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar endpoint de exportación
+        run: |
+          response=$(curl --silent --show-error --fail \
+            --max-time 120 \
+            -X POST \
+            -H "X-Export-Token: ${{ secrets.EXPORT_SECRET_TOKEN }}" \
+            "${{ secrets.RENDER_EXPORT_URL }}/api/export/sheets/")
+
+          echo "Respuesta: $response"
+
+          echo "$response" | grep -q '"ok": true' && \
+            echo "Exportación exitosa" || \
+            (echo "Exportación fallida" && exit 1)

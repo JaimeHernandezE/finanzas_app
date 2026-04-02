@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     'applications.finanzas',
     'applications.inversiones',
     'applications.viajes',
+    'applications.export',
 ]
 
 MIDDLEWARE = [
