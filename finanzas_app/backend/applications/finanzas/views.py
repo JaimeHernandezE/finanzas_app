@@ -936,6 +936,13 @@ def presupuesto_mes(request):
         for c in Categoria.objects.filter(pk__in=all_ids).values('id', 'categoria_padre_id')
     }
 
+    # Padres con subcategorías: no tienen fila propia ni presupuesto/gasto agregable al padre.
+    padres_con_hijos_ids = set(
+        Categoria.objects.filter(pk__in=all_ids, subcategorias__isnull=False)
+        .values_list('id', flat=True)
+        .distinct()
+    )
+
     def _gastado_int(g):
         try:
             return int(g)
@@ -952,6 +959,8 @@ def presupuesto_mes(request):
 
     filas = []
     for cid in sorted(all_ids, key=lambda x: nombres.get(x, '')):
+        if cid in padres_con_hijos_ids:
+            continue
         p = pres_map.get(cid)
         g = gastos_por_cat.get(cid) or 0
         filas.append({
@@ -996,10 +1005,6 @@ def presupuesto_mes(request):
                 continue
             sum_pres += _monto_pres_a_decimal(fh.get('monto_presupuestado'))
             sum_gast_hijos += int(fh.get('gastado') or 0)
-        p_padre = pres_map.get(padre_id)
-        if p_padre:
-            sum_pres += p_padre.monto
-        sum_gast = sum_gast_hijos + _gastado_int(gastos_por_cat.get(padre_id) or 0)
 
         monto_str = str(sum_pres) if sum_pres > 0 else None
         fila_padre = {
@@ -1007,7 +1012,7 @@ def presupuesto_mes(request):
             'categoria_id': padre_id,
             'categoria_nombre': nombres.get(padre_id, '—'),
             'monto_presupuestado': monto_str,
-            'gastado': sum_gast,
+            'gastado': sum_gast_hijos,
             'es_agregado_padre': True,
             'categoria_padre_id': cat_meta_inicial.get(padre_id),
         }
@@ -1019,13 +1024,17 @@ def presupuesto_mes(request):
             fila_por_cid[padre_id] = fila_padre
 
     def _orden_fila(row):
+        """
+        Primero todas las categorías raíz (sin padre en jerarquía), alfabético;
+        después las hijas, por nombre del padre y luego de la categoría.
+        """
         cid = row['categoria_id']
-        padre_cat = cat_meta.get(cid)
+        padre_id = cat_meta.get(cid)
         nombre = (row.get('categoria_nombre') or '').lower()
-        if padre_cat:
-            clave_grupo = (nombres.get(padre_cat) or '').lower()
-            return (clave_grupo, 1, nombre)
-        return (nombre, 0, nombre)
+        if padre_id is None:
+            return (0, nombre)
+        clave_padre = (nombres.get(padre_id) or '').lower()
+        return (1, clave_padre, nombre)
 
     filas.sort(key=_orden_fila)
     for row in filas:
@@ -1071,6 +1080,13 @@ def presupuestos_create(request):
     if not cat:
         return Response(
             {'error': 'Categoría no válida o no accesible para el ámbito/cuenta.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if cat.es_padre:
+        return Response(
+            {
+                'error': 'Las categorías padre solo agrupan subcategorías; asigna presupuesto en las hijas.',
+            },
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1138,6 +1154,14 @@ def presupuesto_detalle_finanzas(request, pk):
         return Response(
             {'error': 'Sin permisos para modificar este presupuesto.'},
             status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == 'PATCH' and p.categoria.es_padre:
+        return Response(
+            {
+                'error': 'Las categorías padre solo agrupan subcategorías; edita el presupuesto en las hijas.',
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     if request.method == 'DELETE':

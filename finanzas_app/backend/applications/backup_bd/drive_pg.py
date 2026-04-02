@@ -1,5 +1,10 @@
 # Lógica compartida: pg_dump / Drive / limpieza de respaldos antiguos.
 # Sin importar modelos Django (usable desde script GH Actions con sys.path).
+#
+# Backup a Drive usa solo OAuth de usuario (cuota de “Mi unidad” de esa cuenta Gmail).
+# Variables: GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN, GOOGLE_DRIVE_OAUTH_CLIENT_ID,
+# GOOGLE_DRIVE_OAUTH_CLIENT_SECRET (mismo proyecto con API Drive y alcance drive).
+# GOOGLE_DRIVE_BACKUP_FOLDER_ID = ID de carpeta en la cuenta autorizada.
 
 from __future__ import annotations
 
@@ -12,80 +17,60 @@ from datetime import datetime, timezone
 from typing import Iterator
 
 from google.auth.exceptions import GoogleAuthError
-from google.oauth2 import service_account
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials as OAuthCredentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 BACKUP_NAME_PREFIX = 'finanzas_pg_'
 BACKUP_NAME_SUFFIX = '.sql.gz'
-# drive.file suele provocar 403 "Service Accounts do not have storage quota" al crear archivos
-# en carpetas de otro usuario o en Unidades compartidas; drive permite aplicar la cuota del
-# propietario de la carpeta / de la Shared Drive (ver comentarios en _mensaje_drive_http_error).
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 
-def _credentials_json() -> str:
-    s = os.getenv('GOOGLE_DRIVE_CREDENTIALS_JSON') or os.getenv('GOOGLE_SHEETS_CREDENTIALS_JSON')
-    if not s:
-        raise ValueError(
-            'Define GOOGLE_DRIVE_CREDENTIALS_JSON o GOOGLE_SHEETS_CREDENTIALS_JSON con la service account.'
-        )
-    return s
-
-
-def _validar_json_cuenta_servicio(info: dict) -> None:
-    """Evita usar OAuth de escritorio / JSON equivocado; mensajes claros en español."""
-    tipo = info.get('type')
-    if tipo != 'service_account':
-        raise ValueError(
-            'Las credenciales de Drive deben ser el JSON de una cuenta de servicio de Google Cloud '
-            '(campo "type": "service_account"). No uses el JSON de cliente OAuth de escritorio/web ni '
-            'credenciales de otro tipo. Crea una cuenta de servicio en IAM → Cuentas de servicio → Claves → JSON.'
-        )
-    if not (info.get('private_key') and info.get('client_email')):
-        raise ValueError(
-            'El JSON no contiene private_key o client_email. Si pegaste GOOGLE_DRIVE_CREDENTIALS_JSON '
-            'en una sola línea, revisa que la clave privada conserve los saltos de línea (\\n dentro del string).'
-        )
-
-
-def _mensaje_error_credenciales_google(exc: Exception) -> str:
-    """Traduce errores frecuentes de token al configurar la variable de entorno."""
+def _mensaje_error_oauth_drive(exc: Exception) -> str:
     msg = str(exc).strip()
     bajo = msg.lower()
-    if (
-        'token' in bajo
-        and ('no es válido' in bajo or 'invalid' in bajo or 'not valid' in bajo)
-    ) or 'invalid_grant' in bajo:
+    if 'invalid_grant' in bajo or (
+        'token' in bajo and ('invalid' in bajo or 'revoked' in bajo or 'expired' in bajo)
+    ):
         return (
-            'Google rechazó el token de la cuenta de servicio (“token no válido”). '
-            'Revisa: (1) que el JSON sea el descargado desde Google Cloud (IAM → cuenta de servicio → clave JSON); '
-            '(2) que la clave privada no esté cortada ni mal escapada en la variable de entorno; '
-            '(3) que la clave no esté deshabilitada o rotada en Google Cloud; '
-            '(4) que en el mismo proyecto esté habilitada la API “Google Drive API”. '
+            'Google rechazó el refresh token de Drive (revocado o inválido). '
+            'Genera uno nuevo con alcance https://www.googleapis.com/auth/drive y el mismo '
+            'GOOGLE_DRIVE_OAUTH_CLIENT_ID / GOOGLE_DRIVE_OAUTH_CLIENT_SECRET. '
             f'Detalle: {msg}'
         )
     return msg
 
 
 def build_drive_service():
-    raw = _credentials_json().strip()
-    try:
-        info = json.loads(raw)
-    except json.JSONDecodeError as e:
+    """Cliente Drive API con OAuth de usuario (refresh token)."""
+    refresh = (os.getenv('GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN') or '').strip()
+    client_id = (os.getenv('GOOGLE_DRIVE_OAUTH_CLIENT_ID') or '').strip()
+    client_secret = (os.getenv('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET') or '').strip()
+    if not refresh or not client_id or not client_secret:
         raise ValueError(
-            'GOOGLE_DRIVE_CREDENTIALS_JSON (o GOOGLE_SHEETS_CREDENTIALS_JSON) no es JSON válido. '
-            'Comprueba comillas y que el contenido sea una sola línea compacta (p. ej. python -m json.tool --compact).'
-        ) from e
-    if not isinstance(info, dict):
-        raise ValueError('Las credenciales deben ser un objeto JSON (diccionario).')
-    _validar_json_cuenta_servicio(info)
+            'Define las tres variables de OAuth para Drive: GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN, '
+            'GOOGLE_DRIVE_OAUTH_CLIENT_ID y GOOGLE_DRIVE_OAUTH_CLIENT_SECRET '
+            '(proyecto Google Cloud con API “Google Drive” habilitada y consentimiento con alcance drive).'
+        )
     try:
-        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        creds = OAuthCredentials(
+            token=None,
+            refresh_token=refresh,
+            token_uri='https://oauth2.googleapis.com/token',
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=SCOPES,
+        )
+        creds.refresh(Request())
         return build('drive', 'v3', credentials=creds, cache_discovery=False)
     except GoogleAuthError as e:
-        raise ValueError(_mensaje_error_credenciales_google(e)) from e
+        raise ValueError(
+            'No se pudo autenticar en Google Drive con OAuth. '
+            'Revisa refresh token, client_id y client_secret. '
+            f'Detalle: {e!s}'
+        ) from e
 
 
 def backup_filename() -> str:
@@ -168,28 +153,22 @@ def _mensaje_drive_http_error(exc: HttpError) -> str:
     razon = _razon_http_error_drive(exc)
     if status == 403 and razon == 'storageQuotaExceeded':
         return (
-            'Google Drive rechazó la subida: las cuentas de servicio no tienen cuota de almacenamiento propia. '
-            'Soluciones: (1) **Google Workspace — Unidad compartida (Shared Drive):** crea una carpeta dentro '
-            'de una unidad compartida, añade el `client_email` del JSON como miembro con rol de colaborador '
-            'o gestor de contenido, y usa el ID de esa carpeta en GOOGLE_DRIVE_BACKUP_FOLDER_ID. '
-            '(2) **Carpeta en “Mi unidad” compartida con la cuenta de servicio:** comparte la carpeta con el '
-            '`client_email` como **Editor** (no solo lector), confirma que GOOGLE_DRIVE_BACKUP_FOLDER_ID es '
-            'el ID de la barra de URL de esa carpeta (no un acceso directo ni otra ruta). '
-            '(3) Tras cambiar el alcance OAuth a `drive`, vuelve a desplegar; si persiste el error, Google '
-            'está aplicando la política solo a Unidades compartidas — usa entonces Workspace con Shared Drive. '
+            'Google Drive rechazó la subida por cuota de almacenamiento. '
+            'Libera espacio en la cuenta de Google asociada al OAuth o revisa que '
+            'GOOGLE_DRIVE_BACKUP_FOLDER_ID sea una carpeta en «Mi unidad» de esa misma cuenta. '
             f'Detalle API: {exc!s}'
         )
     if status in (401, 403):
         return (
-            f'Google Drive respondió {status}. Habilita la API “Google Drive” en el proyecto de la cuenta '
-            'de servicio, revisa GOOGLE_DRIVE_BACKUP_FOLDER_ID y comparte la carpeta con el client_email '
-            f'del JSON (permiso de editor). Detalle: {exc!s}'
+            f'Google Drive respondió {status}. Habilita la API “Google Drive” en el proyecto OAuth, '
+            'revisa el refresh token y que GOOGLE_DRIVE_BACKUP_FOLDER_ID sea el ID de la carpeta '
+            f'en la cuenta autorizada. Detalle: {exc!s}'
         )
     return f'Error al usar Google Drive (HTTP {status}): {exc!s}'
 
 
 def verificar_carpeta_backup(service, folder_id: str) -> None:
-    """Comprueba que la carpeta existe y la cuenta de servicio puede verla (Shared Drive o compartida)."""
+    """Comprueba que la carpeta existe y el usuario OAuth puede acceder a ella."""
     meta = (
         service.files()
         .get(
@@ -288,7 +267,7 @@ def run_backup_to_drive() -> dict:
         deleted = cleanup_keep_two_most_recent(service, folder_id)
         return {'ok': True, 'archivo': name, 'eliminados_en_drive': len(deleted)}
     except GoogleAuthError as e:
-        raise ValueError(_mensaje_error_credenciales_google(e)) from e
+        raise ValueError(_mensaje_error_oauth_drive(e)) from e
     except HttpError as e:
         status = getattr(e.resp, 'status', None) if e.resp else None
         if status in (401, 403):

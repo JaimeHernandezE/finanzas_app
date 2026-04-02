@@ -299,7 +299,9 @@ export default function DashboardScreen() {
   }, [movimientosCuenta])
 
   const categoriasComparadas = useMemo(() => {
-    return (qPresupuesto.data ?? [])
+    const data = qPresupuesto.data ?? []
+    const nombrePorId = new Map(data.map(f => [f.categoria_id, f.categoria_nombre || '']))
+    return data
       .filter((f) => {
         if (f.es_agregado_padre) {
           const p = Math.round(Number(f.monto_presupuestado) || 0)
@@ -313,18 +315,31 @@ export default function DashboardScreen() {
         const gastado = Math.round(Number(f.gastado) || 0)
         const pct = porcentaje(gastado, presupuestado)
         const esAgg = Boolean(f.es_agregado_padre)
+        const nombreBase = f.categoria_nombre || 'Otros'
         return {
           categoriaId: f.categoria_id,
-          categoria: esAgg
-            ? `${f.categoria_nombre || 'Otros'} (total subcategorías)`
-            : f.categoria_nombre || 'Otros',
+          categoria: esAgg ? `${nombreBase} (total subcategorías)` : nombreBase,
+          nombreBase,
+          categoriaPadreId: f.categoria_padre_id ?? null,
           gastado,
           presupuestado,
           pct,
           esAgregadoPadre: esAgg,
         }
       })
-      .sort((a, b) => b.pct - a.pct)
+      .sort((a, b) => {
+        const aRaiz = a.esAgregadoPadre || a.categoriaPadreId == null
+        const bRaiz = b.esAgregadoPadre || b.categoriaPadreId == null
+        if (aRaiz !== bRaiz) return aRaiz ? -1 : 1
+        if (aRaiz) {
+          return a.nombreBase.localeCompare(b.nombreBase, 'es', { sensitivity: 'base' })
+        }
+        const pa = nombrePorId.get(a.categoriaPadreId!) || ''
+        const pb = nombrePorId.get(b.categoriaPadreId!) || ''
+        const c = pa.localeCompare(pb, 'es', { sensitivity: 'base' })
+        if (c !== 0) return c
+        return a.nombreBase.localeCompare(b.nombreBase, 'es', { sensitivity: 'base' })
+      })
   }, [qPresupuesto.data])
 
   const totalCatGastado = useMemo(
@@ -581,8 +596,9 @@ export default function DashboardScreen() {
                 <View className="gap-3">
                   {categoriasComparadas.map((cat) => {
                     const pct = cat.pct
+                    const esHija = !cat.esAgregadoPadre && cat.categoriaPadreId != null
                     return (
-                      <View key={cat.categoriaId}>
+                      <View key={cat.categoriaId} className={esHija ? 'pl-5' : ''}>
                         <View className="flex-row items-center justify-between mb-1">
                           <Text className="text-sm text-dark font-medium flex-1 mr-2" numberOfLines={1}>
                             {cat.categoria}

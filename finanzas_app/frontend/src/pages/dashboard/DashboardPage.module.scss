@@ -529,6 +529,11 @@
   gap: $space-3;
 }
 
+/** Subcategoría en el resumen: sangría respecto a padres / raíces */
+.catPresupuestoHija {
+  padding-left: $space-5;
+}
+
 .catHint {
   font-size: $font-size-sm;
   color: $color-text-muted;

@@ -173,14 +173,14 @@ export default function PresupuestoScreen() {
       })),
       ...sueltas.map((fila) => ({ tipo: 'suelta' as const, fila })),
     ]
-    const pctUso = (f: PresupuestoMesFila) => {
-      const pr = montoNum(f.monto_presupuestado)
-      return pr > 0 ? (f.gastado / pr) * 100 : 0
-    }
     bloques.sort((a, b) => {
-      const fa = a.tipo === 'grupo' ? a.parent : a.fila
-      const fb = b.tipo === 'grupo' ? b.parent : b.fila
-      return pctUso(fb) - pctUso(fa)
+      const rank = (bl: Bloque) => (bl.tipo === 'grupo' ? 0 : 1)
+      const rA = rank(a)
+      const rB = rank(b)
+      if (rA !== rB) return rA - rB
+      const na = a.tipo === 'grupo' ? a.parent.categoria_nombre || '' : a.fila.categoria_nombre || ''
+      const nb = b.tipo === 'grupo' ? b.parent.categoria_nombre || '' : b.fila.categoria_nombre || ''
+      return na.localeCompare(nb, 'es', { sensitivity: 'base' })
     })
     return bloques
   }, [filas])
@@ -499,7 +499,7 @@ export default function PresupuestoScreen() {
                                 const editando = editandoId === fila.presupuesto_id
                                 const sep = hi < hijos.length - 1 ? 'border-b border-border' : ''
                                 return (
-                                  <View key={fila.categoria_id} className={`px-4 py-3 ${sep}`}>
+                                  <View key={fila.categoria_id} className={`pl-8 pr-4 py-3 ${sep}`}>
                                     {editando ? (
                                       <View>
                                         <Text className="text-xs font-semibold text-muted mb-2">{fila.categoria_nombre}</Text>

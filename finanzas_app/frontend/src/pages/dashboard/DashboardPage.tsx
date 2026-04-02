@@ -812,7 +812,9 @@ export default function DashboardPage() {
   }, [movimientos, cuentaTab])
 
   const categoriasComparadas = useMemo(() => {
-    return (presupuestoData ?? [])
+    const data = presupuestoData ?? []
+    const nombrePorId = new Map(data.map(f => [f.categoria_id, f.categoria_nombre || '']))
+    return data
       .filter(f => {
         if (f.es_agregado_padre) {
           const p = Math.round(Number(f.monto_presupuestado) || 0)
@@ -826,18 +828,31 @@ export default function DashboardPage() {
         const gastado = Math.round(Number(f.gastado) || 0)
         const pct = presupuestado > 0 ? (gastado / presupuestado) * 100 : 0
         const esAgg = Boolean(f.es_agregado_padre)
+        const nombreBase = f.categoria_nombre || 'Otros'
         return {
           categoriaId: f.categoria_id,
-          nombre: esAgg
-            ? `${f.categoria_nombre || 'Otros'} (total subcategorías)`
-            : f.categoria_nombre || 'Otros',
+          nombre: esAgg ? `${nombreBase} (total subcategorías)` : nombreBase,
+          nombreBase,
+          categoriaPadreId: f.categoria_padre_id ?? null,
           gastado,
           presupuestado,
           pct,
           esAgregadoPadre: esAgg,
         }
       })
-      .sort((a, b) => b.pct - a.pct)
+      .sort((a, b) => {
+        const aRaiz = a.esAgregadoPadre || a.categoriaPadreId == null
+        const bRaiz = b.esAgregadoPadre || b.categoriaPadreId == null
+        if (aRaiz !== bRaiz) return aRaiz ? -1 : 1
+        if (aRaiz) {
+          return a.nombreBase.localeCompare(b.nombreBase, 'es', { sensitivity: 'base' })
+        }
+        const pa = nombrePorId.get(a.categoriaPadreId!) || ''
+        const pb = nombrePorId.get(b.categoriaPadreId!) || ''
+        const c = pa.localeCompare(pb, 'es', { sensitivity: 'base' })
+        if (c !== 0) return c
+        return a.nombreBase.localeCompare(b.nombreBase, 'es', { sensitivity: 'base' })
+      })
   }, [presupuestoData])
   const totalCatGastado = categoriasComparadas
     .filter(c => !c.esAgregadoPadre)
@@ -969,6 +984,11 @@ export default function DashboardPage() {
                 nombre={cat.nombre}
                 gastado={cat.gastado}
                 presupuestado={cat.presupuestado}
+                className={
+                  !cat.esAgregadoPadre && cat.categoriaPadreId != null
+                    ? styles.catPresupuestoHija
+                    : undefined
+                }
                 onClick={() => {
                   const params = new URLSearchParams({
                     categoria: String(cat.categoriaId),

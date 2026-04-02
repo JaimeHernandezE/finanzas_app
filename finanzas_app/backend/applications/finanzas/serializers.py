@@ -169,6 +169,18 @@ class MovimientoSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'num_cuotas': 'El número de cuotas es obligatorio para pagos con crédito.'}
                 )
+        categoria = data.get('categoria')
+        if categoria is None and self.instance is not None:
+            categoria = self.instance.categoria
+        if categoria is not None and categoria.es_padre:
+            raise serializers.ValidationError(
+                {
+                    'categoria': (
+                        'Las categorías padre solo agrupan subcategorías; '
+                        'registra el movimiento en una categoría hija.'
+                    ),
+                }
+            )
         return data
 
     def update(self, instance, validated_data):

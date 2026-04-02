@@ -37,11 +37,6 @@ function filaToCat(f: PresupuestoMesFila): CatPres {
   }
 }
 
-function pctUso(cat: CatPres): number {
-  const pa = cat.presupuestado ?? 1
-  return pa > 0 ? (cat.gastado / pa) * 100 : 0
-}
-
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
@@ -234,9 +229,8 @@ export default function PresupuestoPage() {
   })
   const categoriasEgreso = useMemo(
     () =>
-      ((categoriasData ?? []) as { id: number; nombre: string; tipo: string }[]).filter(
-        c => c.tipo === 'EGRESO',
-      ),
+      ((categoriasData ?? []) as { id: number; nombre: string; tipo: string; es_padre?: boolean }[])
+        .filter(c => c.tipo === 'EGRESO' && !c.es_padre),
     [categoriasData],
   )
 
@@ -333,10 +327,15 @@ export default function PresupuestoPage() {
       })),
       ...sueltas.map(cat => ({ tipo: 'suelta' as const, cat })),
     ]
+    // Grupos padre (con subcategorías) primero; luego categorías sueltas; alfabético dentro de cada bloque.
     bloques.sort((a, b) => {
-      const ca = a.tipo === 'grupo' ? a.parent : a.cat
-      const cb = b.tipo === 'grupo' ? b.parent : b.cat
-      return pctUso(cb) - pctUso(ca)
+      const rank = (bl: Bloque) => (bl.tipo === 'grupo' ? 0 : 1)
+      const rA = rank(a)
+      const rB = rank(b)
+      if (rA !== rB) return rA - rB
+      const na = a.tipo === 'grupo' ? a.parent.nombre : a.cat.nombre
+      const nb = b.tipo === 'grupo' ? b.parent.nombre : b.cat.nombre
+      return na.localeCompare(nb, 'es', { sensitivity: 'base' })
     })
     return bloques
   }, [conPresupuesto])

@@ -1,12 +1,12 @@
 # Respaldo diario de PostgreSQL a Google Drive (máx. 2 archivos recientes en la carpeta).
 #
 # Configuración manual (una vez):
-# - Google Cloud: habilitar "Google Drive API" en el proyecto de la service account.
-# - Drive: crear carpeta, compartir con el email …@….iam.gserviceaccount.com como Editor.
+# - Google Cloud: OAuth (escritorio o web) + API “Google Drive” + alcance drive; refresh token de tu cuenta Gmail.
+# - Drive: carpeta en «Mi unidad» de esa cuenta; GOOGLE_DRIVE_BACKUP_FOLDER_ID = ID de la URL.
 # - GitHub → Settings → Secrets → Actions:
-#     DATABASE_URL          = URL externa de Postgres (Render: External Database URL; debe ser alcanzable desde internet).
-#     GOOGLE_DRIVE_CREDENTIALS_JSON = JSON de la service account (puede ser el mismo que Sheets si la carpeta está compartida).
-#     GOOGLE_DRIVE_BACKUP_FOLDER_ID = ID de la carpeta (de la URL de Drive).
+#     DATABASE_URL = URL externa de Postgres (Render: External Database URL; alcanzable desde internet).
+#     GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN, GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET
+#     GOOGLE_DRIVE_BACKUP_FOLDER_ID
 #
 # Nota: si Postgres solo acepta conexiones desde la red interna de Render, este job fallará;
 #       en ese caso usa el respaldo desde la app web o un job en Render.
@@ -38,6 +38,8 @@ jobs:
       - name: Ejecutar respaldo
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+          GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET }}
           GOOGLE_DRIVE_BACKUP_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_BACKUP_FOLDER_ID }}
         run: python finanzas_app/scripts/backup_pg_to_drive.py
