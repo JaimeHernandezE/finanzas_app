@@ -1,6 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { Alert } from 'react-native'
 import { QueryClient } from '@tanstack/react-query'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
+import { invalidateFinanzasTrasMovimiento } from './invalidateFinanzasTrasMovimiento'
+import {
+  scheduleSyncBannerHide,
+  setSyncBannerPhase,
+} from './syncBannerState'
 
 const OUTBOX_KEY = 'finanzas-movimientos-outbox-v1'
 
@@ -56,6 +62,12 @@ async function enqueue(item: OutboxItem) {
   await writeOutbox(items)
 }
 
+async function removeCreateFromOutbox(localId: number) {
+  const items = await readOutbox()
+  const next = items.filter((i) => !(i.kind === 'create' && i.local_id === localId))
+  await writeOutbox(next)
+}
+
 function updateMovimientoInCaches(qc: QueryClient, id: number, patch: Record<string, unknown>) {
   const entries = qc.getQueriesData({ queryKey: ['movimientos'] })
   for (const [key, data] of entries) {
@@ -82,7 +94,11 @@ function replaceMovimientoIdInCaches(qc: QueryClient, fromId: number, toId: numb
     if (!Array.isArray(data)) continue
     qc.setQueryData(
       key,
-      data.map((m: any) => (m?.id === fromId ? { ...m, id: toId, _offline_pending: false } : m)),
+      data.map((m: any) =>
+        m?.id === fromId
+          ? { ...m, id: toId, _offline_pending: false, _sync_pending: false }
+          : m,
+      ),
     )
   }
 }
@@ -95,63 +111,147 @@ function addMovimientoInCaches(qc: QueryClient, mov: Record<string, unknown>) {
   }
 }
 
-export async function createMovimientoOfflineFirst(
-  qc: QueryClient,
-  payload: Record<string, unknown>,
-) {
-  try {
-    const res = await movimientosApi.createMovimiento(payload)
-    qc.invalidateQueries({ queryKey: ['movimientos'] })
-    return { data: res.data, queued: false }
-  } catch (error) {
-    if (!isOfflineError(error)) throw error
-    const localId = -Date.now()
-    await enqueue({
-      kind: 'create',
-      local_id: localId,
-      payload,
-      created_at: Date.now(),
-    })
-    addMovimientoInCaches(qc, {
-      id: localId,
-      ...payload,
-      categoria_nombre: 'Pendiente de sincronizar',
-      _offline_pending: true,
-    })
-    return { data: { id: localId, ...payload }, queued: true }
+function extractErrorMessage(error: unknown): string {
+  const ax = error as { response?: { data?: Record<string, string[] | string> } }
+  const data = ax.response?.data
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const msg = Object.values(data)
+      .map((v) => (Array.isArray(v) ? v.join(' ') : String(v)))
+      .join(' ')
+    if (msg.trim()) return msg
   }
+  return 'No se pudo guardar el movimiento.'
 }
 
-export async function patchMovimientoOfflineFirst(
+/** Id negativo = pendiente de alta en servidor (optimistic / cola). */
+export function movimientoIdEsTemporal(id: number): boolean {
+  return !Number.isFinite(id) || id < 0
+}
+
+export type DisplayMovimientoOptimista = {
+  categoria_nombre: string
+  metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+}
+
+/**
+ * Crea en cache al instante y sincroniza en segundo plano.
+ * Muestra el banner superior (Sincronizando → Sincronizado).
+ */
+export function createMovimientoOptimistic(
+  qc: QueryClient,
+  payload: Record<string, unknown>,
+  display: DisplayMovimientoOptimista,
+): number {
+  const localId = -Date.now()
+  const montoNum = Number(payload.monto)
+  const row: Record<string, unknown> = {
+    id: localId,
+    ...payload,
+    monto: Number.isFinite(montoNum) ? montoNum : payload.monto,
+    categoria_nombre: display.categoria_nombre,
+    metodo_pago_tipo: display.metodo_pago_tipo,
+    _sync_pending: true,
+    _offline_pending: false,
+  }
+  addMovimientoInCaches(qc, row)
+  setSyncBannerPhase(qc, 'syncing')
+
+  void (async () => {
+    try {
+      const res = await movimientosApi.createMovimiento(payload)
+      const remoteId = Number((res.data as { id?: number })?.id)
+      if (Number.isFinite(remoteId)) {
+        replaceMovimientoIdInCaches(qc, localId, remoteId)
+        const server = res.data as Record<string, unknown>
+        updateMovimientoInCaches(qc, remoteId, { ...server, _sync_pending: false })
+      }
+      invalidateFinanzasTrasMovimiento(qc)
+      setSyncBannerPhase(qc, 'synced')
+      scheduleSyncBannerHide(qc, 2000)
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await enqueue({
+          kind: 'create',
+          local_id: localId,
+          payload,
+          created_at: Date.now(),
+        })
+        updateMovimientoInCaches(qc, localId, {
+          _offline_pending: true,
+          _sync_pending: false,
+          categoria_nombre: 'Pendiente de sincronizar',
+        })
+        invalidateFinanzasTrasMovimiento(qc)
+        setSyncBannerPhase(qc, 'offline')
+        scheduleSyncBannerHide(qc, 3500)
+      } else {
+        removeMovimientoInCaches(qc, localId)
+        invalidateFinanzasTrasMovimiento(qc)
+        Alert.alert('Error', extractErrorMessage(error))
+        setSyncBannerPhase(qc, 'error')
+        scheduleSyncBannerHide(qc, 3500)
+      }
+    }
+  })()
+
+  return localId
+}
+
+/**
+ * Actualiza cache al instante y hace PATCH en segundo plano.
+ */
+export function patchMovimientoOptimistic(
   qc: QueryClient,
   id: number,
   payload: Record<string, unknown>,
+  optimisticRowPatch: Record<string, unknown>,
 ) {
-  try {
-    const res = await movimientosApi.patchMovimiento(id, payload)
-    updateMovimientoInCaches(qc, id, res.data as Record<string, unknown>)
-    qc.invalidateQueries({ queryKey: ['movimientos'] })
-    return { data: res.data, queued: false }
-  } catch (error) {
-    if (!isOfflineError(error)) throw error
-    await enqueue({ kind: 'patch', id, payload, created_at: Date.now() })
-    updateMovimientoInCaches(qc, id, { ...payload, _offline_pending: true })
-    return { data: null, queued: true }
+  if (movimientoIdEsTemporal(id)) {
+    throw new Error('Este movimiento aún se está sincronizando.')
   }
+  updateMovimientoInCaches(qc, id, optimisticRowPatch)
+  void (async () => {
+    try {
+      const res = await movimientosApi.patchMovimiento(id, payload)
+      updateMovimientoInCaches(qc, id, res.data as Record<string, unknown>)
+      invalidateFinanzasTrasMovimiento(qc)
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await enqueue({ kind: 'patch', id, payload, created_at: Date.now() })
+        updateMovimientoInCaches(qc, id, { ...payload, _offline_pending: true })
+      } else {
+        invalidateFinanzasTrasMovimiento(qc)
+        Alert.alert('Error', extractErrorMessage(error))
+      }
+    }
+  })()
 }
 
-export async function deleteMovimientoOfflineFirst(qc: QueryClient, id: number) {
-  try {
-    await movimientosApi.deleteMovimiento(id)
+/**
+ * Quita de cache al instante y DELETE en segundo plano (o cola si falla red).
+ */
+export async function deleteMovimientoOptimistic(qc: QueryClient, id: number) {
+  if (movimientoIdEsTemporal(id)) {
+    await removeCreateFromOutbox(id)
     removeMovimientoInCaches(qc, id)
-    qc.invalidateQueries({ queryKey: ['movimientos'] })
-    return { queued: false }
-  } catch (error) {
-    if (!isOfflineError(error)) throw error
-    await enqueue({ kind: 'delete', id, created_at: Date.now() })
-    removeMovimientoInCaches(qc, id)
-    return { queued: true }
+    invalidateFinanzasTrasMovimiento(qc)
+    return
   }
+  removeMovimientoInCaches(qc, id)
+  void (async () => {
+    try {
+      await movimientosApi.deleteMovimiento(id)
+      invalidateFinanzasTrasMovimiento(qc)
+    } catch (error) {
+      if (isOfflineError(error)) {
+        await enqueue({ kind: 'delete', id, created_at: Date.now() })
+      } else {
+        // Restaurar lista desde servidor
+        invalidateFinanzasTrasMovimiento(qc)
+        Alert.alert('Error', 'No se pudo eliminar el movimiento.')
+      }
+    }
+  })()
 }
 
 export async function flushMovimientosOutbox(qc: QueryClient) {
@@ -189,5 +289,5 @@ export async function flushMovimientosOutbox(qc: QueryClient) {
   }
 
   await writeOutbox(pending)
-  qc.invalidateQueries({ queryKey: ['movimientos'] })
+  invalidateFinanzasTrasMovimiento(qc)
 }

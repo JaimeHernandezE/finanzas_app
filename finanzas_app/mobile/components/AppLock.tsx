@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text, TouchableOpacity } from 'react-native'
+import { ActivityIndicator, View, Text, TouchableOpacity } from 'react-native'
 import * as LocalAuthentication from 'expo-local-authentication'
 import { useAuth } from '../context/AuthContext'
 
@@ -53,12 +53,17 @@ export function AppLock({ children }: AppLockProps) {
     void autenticar()
   }
 
-  // Splash mientras se restaura la sesión guardada
-  if (!__DEV__ && authLoading) {
+  // Splash mientras se restaura la sesión (Firebase + token + /me/).
+  // En __DEV__ también: si no, el Slot monta index.tsx y solo se ve un View negro sin spinner.
+  if (authLoading) {
     return (
-      <View className="flex-1 bg-dark items-center justify-center">
+      <View className="flex-1 bg-dark items-center justify-center px-6">
         <Text className="text-white text-2xl font-bold mb-2">Finanzas</Text>
-        <Text className="text-white/50 text-sm">Familiares</Text>
+        <Text className="text-white/50 text-sm mb-8">Familiares</Text>
+        <ActivityIndicator size="large" color="#c8f060" />
+        <Text className="text-white/60 text-sm mt-6 text-center">
+          Restaurando sesión…
+        </Text>
       </View>
     )
   }

@@ -42,6 +42,7 @@ async function removeToken(): Promise<void> {
 
 const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
+  timeout: 25_000,
 })
 
 client.interceptors.request.use(async (config) => {

@@ -374,7 +374,7 @@ export default function GastosScreen() {
         ) : error ? (
           <View className="mx-5 bg-danger/10 border border-danger/30 rounded-xl p-4">
             <Text className="text-danger text-sm text-center">{error}</Text>
-            <TouchableOpacity onPress={refetch} className="mt-2">
+            <TouchableOpacity onPress={() => void refetch()} className="mt-2">
               <Text className="text-dark font-semibold text-sm text-center underline">Reintentar</Text>
             </TouchableOpacity>
           </View>

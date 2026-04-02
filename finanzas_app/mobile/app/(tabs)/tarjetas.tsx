@@ -13,6 +13,8 @@ import { useFocusEffect, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { queryClient } from '../../lib/queryClient'
+import { invalidateFinanzasTrasMovimiento } from '../../lib/invalidateFinanzasTrasMovimiento'
+import { createMovimientoOptimistic } from '../../lib/movimientosOffline'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
@@ -574,7 +576,7 @@ export default function TarjetasScreen() {
       const totalCuotasPagadas = cuotasPorPagar.reduce((s, c) => s + montoNum(c.monto), 0)
       setTotalPagado(totalCuotasPagadas)
       setExitoPostPago(true)
-      void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+      invalidateFinanzasTrasMovimiento(queryClient)
       void refetchCuotas()
       void refetchCuotasTarjeta()
       void refetchMovPersonal()
@@ -643,7 +645,7 @@ export default function TarjetasScreen() {
       })
       setMenuPagoVisible(false)
       setVistaActiva('FACTURADO')
-      void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
+      invalidateFinanzasTrasMovimiento(queryClient)
       void refetchCuotas()
       void refetchCuotasTarjeta()
       void refetchMovPersonal()
@@ -699,34 +701,32 @@ export default function TarjetasScreen() {
       return
     }
 
-    setGuardandoNuevoGasto(true)
-    try {
-      await movimientosApi.createMovimiento({
-        fecha: fechaIso,
-        tipo: 'EGRESO',
-        ambito: nuevoAmbito,
-        categoria: nuevoCategoriaId,
-        cuenta: nuevoAmbito === 'PERSONAL' ? nuevoCuentaId : null,
-        monto: String(monto),
-        comentario: nuevoComentario.trim(),
-        metodo_pago: metodoCreditoId,
-        tarjeta: tarjetaIdEfectivo,
-        num_cuotas: n,
-      })
-
-      setModalNuevoGasto(false)
-      setModalConfirmarPago(false)
-      void refetchCuotas()
-      void refetchCuotasTarjeta()
-      void refetchMovPersonal()
-      void refetchMovComun()
-      // Al crear un nuevo gasto, conviene volver a ver cuotas del mes.
-      setVistaActiva('FACTURADO')
-    } catch {
-      Alert.alert('Error', 'No se pudo crear el gasto con crédito.')
-    } finally {
-      setGuardandoNuevoGasto(false)
+    const payload = {
+      fecha: fechaIso,
+      tipo: 'EGRESO' as const,
+      ambito: nuevoAmbito,
+      categoria: nuevoCategoriaId,
+      cuenta: nuevoAmbito === 'PERSONAL' ? nuevoCuentaId : null,
+      monto: String(monto),
+      comentario: nuevoComentario.trim(),
+      metodo_pago: metodoCreditoId,
+      tarjeta: tarjetaIdEfectivo,
+      num_cuotas: n,
     }
+    const catNombre = categoriasEgreso.find((c) => c.id === nuevoCategoriaId)?.nombre ?? '—'
+    createMovimientoOptimistic(queryClient, payload, {
+      categoria_nombre: catNombre,
+      metodo_pago_tipo: 'CREDITO',
+    })
+
+    setModalNuevoGasto(false)
+    setModalConfirmarPago(false)
+    void refetchCuotas()
+    void refetchCuotasTarjeta()
+    void refetchMovPersonal()
+    void refetchMovComun()
+    setVistaActiva('FACTURADO')
+    setGuardandoNuevoGasto(false)
   }
 
   const tarjetaSeleccionada = useMemo(

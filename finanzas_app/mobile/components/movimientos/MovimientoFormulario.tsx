@@ -29,8 +29,8 @@ import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanz
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { queryClient } from '../../lib/queryClient'
 import {
-  createMovimientoOfflineFirst,
-  patchMovimientoOfflineFirst,
+  createMovimientoOptimistic,
+  patchMovimientoOptimistic,
 } from '../../lib/movimientosOffline'
 
 export type MovimientoFormularioRef = {
@@ -417,6 +417,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         router.replace('/(tabs)/gastos')
         return
       }
+      if (idNum < 0) {
+        Alert.alert(
+          'Espera',
+          'Este movimiento aún se está sincronizando. No se puede editar hasta tener el ID del servidor.',
+        )
+        router.replace('/(tabs)/gastos')
+        return
+      }
       void iniciarEdicion(idNum)
       router.replace('/(tabs)/gastos')
     }, [esStandalone, editar, router, iniciarEdicion])
@@ -429,6 +437,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (!editar) return
       const idNum = parseInt(String(editar), 10)
       if (!Number.isFinite(idNum)) {
+        router.replace('/(tabs)')
+        return
+      }
+      if (idNum < 0) {
+        Alert.alert(
+          'Espera',
+          'Este movimiento aún se está sincronizando. No se puede editar hasta tener el ID del servidor.',
+        )
         router.replace('/(tabs)')
         return
       }
@@ -540,22 +556,29 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }
 
       if (vinculoIngresoComun && editingId != null) {
+        if (editingId < 0) {
+          Alert.alert(
+            'Espera',
+            'Este movimiento aún se está sincronizando con el servidor.',
+          )
+          return
+        }
         setSaving(true)
         try {
-          const res = await patchMovimientoOfflineFirst(queryClient, editingId, {
-            fecha: fechaIso,
-            monto: montoPayloadDesdeForm(monto),
-            comentario: form.comentario.trim(),
-          })
-          if (res.queued) {
-            Alert.alert('Sin conexión', 'Cambio guardado localmente. Se sincronizará cuando vuelva internet.')
-          }
-          void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
-          void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
-          void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
-          void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
-          void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
-          void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
+          patchMovimientoOptimistic(
+            queryClient,
+            editingId,
+            {
+              fecha: fechaIso,
+              monto: montoPayloadDesdeForm(monto),
+              comentario: form.comentario.trim(),
+            },
+            {
+              fecha: fechaIso,
+              monto,
+              comentario: form.comentario.trim(),
+            },
+          )
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
           if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${idCuentaTrasGuardar || cuentaFija}` as never)
@@ -674,50 +697,71 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           tipo === 'EGRESO' && metodoTipo === 'CREDITO' ? montoCuotaManual ?? montoCuotaCalculado : null,
       }
 
-      setSaving(true)
-      try {
-        if (editingId != null) {
-          const res = await patchMovimientoOfflineFirst(queryClient, editingId, payload)
-          if (res.queued) {
-            Alert.alert('Sin conexión', 'Edición guardada localmente. Se sincronizará cuando vuelva internet.')
-          }
-        } else {
-          const res = await createMovimientoOfflineFirst(queryClient, payload)
-          if (res.queued) {
-            Alert.alert('Sin conexión', 'Movimiento guardado localmente. Se sincronizará cuando vuelva internet.')
-          }
+      const cuentaDestino =
+        payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
+
+      if (editingId != null) {
+        if (editingId < 0) {
+          Alert.alert(
+            'Espera',
+            'Este movimiento aún se está sincronizando con el servidor.',
+          )
+          return
         }
-        void queryClient.invalidateQueries({ queryKey: ['movimientos'] })
-        void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
-        void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
-        void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
-        void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
-        void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
-        const cuentaDestino =
-          payload.ambito === 'PERSONAL' && payload.cuenta ? Number(payload.cuenta) : 0
-        if (esStandalone && cuentaFija != null) {
-          router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
-        } else {
-          cerrarForm()
-          if (payload.ambito === 'PERSONAL' && cuentaDestino > 0) {
-            router.replace(`/cuenta/${cuentaDestino}` as never)
+        setSaving(true)
+        try {
+          const optimisticRowPatch: Record<string, unknown> = {
+            fecha: fechaIso,
+            tipo: payload.tipo,
+            ambito: payload.ambito,
+            monto,
+            comentario: form.comentario.trim(),
+            categoria: form.categoria,
+            categoria_nombre: categoriaNombre ?? '—',
+            metodo_pago_tipo: metodoTipo,
+            cuenta: payload.cuenta,
+          }
+          patchMovimientoOptimistic(queryClient, editingId, payload, optimisticRowPatch)
+          if (esStandalone && cuentaFija != null) {
+            router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
           } else {
-            refetchMovimientosComun?.()
+            cerrarForm()
+            if (payload.ambito === 'PERSONAL' && cuentaDestino > 0) {
+              router.replace(`/cuenta/${cuentaDestino}` as never)
+            } else {
+              refetchMovimientosComun?.()
+            }
           }
+        } catch (err: unknown) {
+          const ax = err as { response?: { data?: Record<string, string[] | string> } }
+          const data = ax.response?.data
+          if (data && typeof data === 'object' && !Array.isArray(data)) {
+            const msg = Object.values(data)
+              .map((v) => (Array.isArray(v) ? v.join(' ') : String(v)))
+              .join(' ')
+            setErrorGeneral(msg || 'No se pudo guardar el movimiento.')
+          } else {
+            setErrorGeneral('No se pudo guardar el movimiento. Verifica la conexión.')
+          }
+        } finally {
+          setSaving(false)
         }
-      } catch (err: unknown) {
-        const ax = err as { response?: { data?: Record<string, string[] | string> } }
-        const data = ax.response?.data
-        if (data && typeof data === 'object' && !Array.isArray(data)) {
-          const msg = Object.values(data)
-            .map((v) => (Array.isArray(v) ? v.join(' ') : String(v)))
-            .join(' ')
-          setErrorGeneral(msg || 'No se pudo guardar el movimiento.')
+        return
+      }
+
+      createMovimientoOptimistic(queryClient, payload, {
+        categoria_nombre: categoriaNombre ?? '—',
+        metodo_pago_tipo: metodoTipo,
+      })
+      if (esStandalone && cuentaFija != null) {
+        router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
+      } else {
+        cerrarForm()
+        if (payload.ambito === 'PERSONAL' && cuentaDestino > 0) {
+          router.replace(`/cuenta/${cuentaDestino}` as never)
         } else {
-          setErrorGeneral('No se pudo guardar el movimiento. Verifica la conexión.')
+          refetchMovimientosComun?.()
         }
-      } finally {
-        setSaving(false)
       }
     }
 

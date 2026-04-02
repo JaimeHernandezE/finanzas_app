@@ -180,24 +180,6 @@ export default function DashboardScreen() {
     ])
   }, [queryClient])
 
-  // Cuando se invalidan movimientos (tras crear/editar/eliminar),
-  // invalida también las queries derivadas del dashboard
-  useEffect(() => {
-    return queryClient.getQueryCache().subscribe((event) => {
-      if (
-        event.type === 'updated' &&
-        Array.isArray(event.query.queryKey) &&
-        event.query.queryKey[0] === 'movimientos'
-      ) {
-        void queryClient.invalidateQueries({ queryKey: ['efectivoDisponible'] })
-        void queryClient.invalidateQueries({ queryKey: ['deudaPendiente'] })
-        void queryClient.invalidateQueries({ queryKey: ['liquidacion'] })
-        void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
-        void queryClient.invalidateQueries({ queryKey: ['compensacion'] })
-      }
-    })
-  }, [queryClient])
-
   async function onRefresh() {
     setRefreshing(true)
     await refetchAll()
@@ -236,7 +218,7 @@ export default function DashboardScreen() {
       setSueldosProrrateo({})
       return
     }
-    if (qLiquidacionAnterior.isPending || qSueldos.isPending) return
+    if (qLiquidacionAnterior.isLoading || qSueldos.isLoading) return
 
     const prevById = Object.fromEntries(
       (qLiquidacionAnterior.data?.ingresos ?? []).map((i) => [
@@ -260,9 +242,9 @@ export default function DashboardScreen() {
     esActual,
     qCompensacion.data,
     qLiquidacionAnterior.data,
-    qLiquidacionAnterior.isPending,
+    qLiquidacionAnterior.isLoading,
     qSueldos.data,
-    qSueldos.isPending,
+    qSueldos.isLoading,
   ])
 
   const saldoCompensacionDetalle = useMemo(() => {
@@ -359,15 +341,14 @@ export default function DashboardScreen() {
     (qLiquidacion.error ? String(qLiquidacion.error) : null) ||
     (qLiquidacionAnterior.error ? String(qLiquidacionAnterior.error) : null)
 
-  // isPending solo es true cuando no hay NINGÚN dato en cache (primera carga real).
-  // Con staleTime:Infinity + persister, en aperturas normales todos tienen data → no bloquea.
+  // isLoading: primera carga sin datos en cache; refetch en background no activa pantalla completa.
   const isLoading = !refreshing && (
     loading ||
-    qEfectivo.isPending ||
-    qDeuda.isPending ||
-    qLiquidacion.isPending ||
-    qLiquidacionAnterior.isPending ||
-    (esActual && qSueldos.isPending)
+    qEfectivo.isLoading ||
+    qDeuda.isLoading ||
+    qLiquidacion.isLoading ||
+    qLiquidacionAnterior.isLoading ||
+    (esActual && qSueldos.isLoading)
   )
   // Indicador discreto de sincronía en segundo plano
   const isSyncing = !refreshing && isFetchingRQ > 0
@@ -573,7 +554,7 @@ export default function DashboardScreen() {
                 </Text>
               </View>
 
-              {qPresupuesto.isPending ? (
+              {qPresupuesto.isLoading ? (
                 <Text className="text-muted text-sm text-center py-2">Cargando comparación…</Text>
               ) : qPresupuesto.error ? (
                 <Text className="text-muted text-sm text-center py-2">No se pudo cargar presupuesto del período.</Text>

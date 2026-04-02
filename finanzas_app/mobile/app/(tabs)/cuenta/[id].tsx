@@ -28,6 +28,8 @@ interface Movimiento {
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   /** Autor del movimiento (pk usuario); puede venir como número o string desde la API */
   usuario?: number | string
+  /** Optimistic: aún no confirmado por POST */
+  _sync_pending?: boolean
 }
 
 const MESES = [
@@ -352,7 +354,7 @@ export default function CuentaPersonalScreen() {
         ) : error ? (
           <View className="mx-5 bg-danger/10 border border-danger/30 rounded-xl p-4">
             <Text className="text-danger text-sm text-center">{error}</Text>
-            <TouchableOpacity onPress={refetch} className="mt-2">
+            <TouchableOpacity onPress={() => void refetch()} className="mt-2">
               <Text className="text-dark font-semibold text-sm text-center underline">Reintentar</Text>
             </TouchableOpacity>
           </View>
@@ -396,6 +398,9 @@ export default function CuentaPersonalScreen() {
                         user?.id,
                         cuenta.es_propia,
                       )
+                      const syncBloqueaEdicion = mov.id < 0 || Boolean(mov._sync_pending)
+                      /** Durante el POST de alta: no eliminar; con id temporal ya sincronizado en cola offline sí se puede borrar local. */
+                      const syncBloqueaEliminar = Boolean(mov._sync_pending)
                       return (
                         <View
                           key={mov.id}
@@ -422,7 +427,7 @@ export default function CuentaPersonalScreen() {
                                   {badge.label}
                                 </Text>
                               </View>
-                              {puedeEditar && (
+                              {puedeEditar && !syncBloqueaEdicion && (
                                 <TouchableOpacity
                                   onPress={() => irEditarMovimiento(mov.id)}
                                   hitSlop={8}
@@ -431,7 +436,12 @@ export default function CuentaPersonalScreen() {
                                   <Text className="text-dark text-xs font-semibold">Editar</Text>
                                 </TouchableOpacity>
                               )}
-                              <TouchableOpacity onPress={() => confirmarEliminar(mov)} hitSlop={8}>
+                              <TouchableOpacity
+                                onPress={() => confirmarEliminar(mov)}
+                                hitSlop={8}
+                                disabled={syncBloqueaEliminar}
+                                style={{ opacity: syncBloqueaEliminar ? 0.35 : 1 }}
+                              >
                                 <Text className="text-danger text-sm">🗑</Text>
                               </TouchableOpacity>
                             </View>

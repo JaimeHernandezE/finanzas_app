@@ -8,6 +8,7 @@ import { ConfiguracionFaltante } from '../components/ConfiguracionFaltante'
 import { isFirebaseConfigured } from '../lib/firebase'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { queryClient, persister, persistOptions } from '../lib/queryClient'
+import { SyncStatusBanner } from '../components/SyncStatusBanner'
 
 export default function RootLayout() {
   if (!isFirebaseConfigured()) {
@@ -26,6 +27,7 @@ export default function RootLayout() {
         <AuthProvider>
           <ViajeProvider>
             <AppLock>
+              <SyncStatusBanner />
               <Slot />
             </AppLock>
           </ViajeProvider>
