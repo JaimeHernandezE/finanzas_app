@@ -6,6 +6,8 @@ export interface MovimientoFiltros {
   solo_mios?: boolean
   mes?: number
   anio?: number
+  fecha_desde?: string
+  fecha_hasta?: string
   tipo?: 'INGRESO' | 'EGRESO'
   categoria?: number
   metodo?: 'EFECTIVO' | 'DEBITO' | 'CREDITO'

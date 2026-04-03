@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
@@ -6,6 +6,16 @@ import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
 import { formatMontoNetoContribucion } from '@/utils/montoClp'
+import { SeccionPeriodoFiltro } from './SeccionPeriodoFiltro'
+import {
+  etiquetaEncabezadoRango,
+  etiquetaTotalPeriodo,
+  movimientosParamsPeriodo,
+  primerUltimoDiaMesISO,
+  type ModoPeriodo,
+} from './periodoMovimientos'
+import { CategoriaSidebarChecks } from './CategoriaSidebarChecks'
+import { toggleCategoriaConJerarquia, type CategoriaFiltroFila } from './categoriasFiltroSidebar'
 import styles from './CuentaPage.module.scss'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +159,7 @@ function SegmentedControl({
 
 function FilterSidebar({
   abierto,
+  periodoSlot,
   categorias,
   filtrosCategorias,
   filtrosMetodos,
@@ -158,10 +169,11 @@ function FilterSidebar({
   onLimpiar,
 }: {
   abierto:           boolean
-  categorias:        { id: number; nombre: string }[]
+  periodoSlot:       ReactNode
+  categorias:        CategoriaFiltroFila[]
   filtrosCategorias: string[]
   filtrosMetodos:    string[]
-  onToggleCategoria: (cat: string) => void
+  onToggleCategoria: (cat: CategoriaFiltroFila) => void
   onToggleMetodo:    (met: string) => void
   onClose:           () => void
   onLimpiar:         () => void
@@ -182,19 +194,18 @@ function FilterSidebar({
         </div>
 
         <div className={styles.filterBody}>
+          {periodoSlot}
+
           {/* Categorías */}
           <div className={styles.filterSection}>
             <p className={styles.filterSectionLabel}>Categoría</p>
-            {categorias.map(cat => (
-              <label key={cat.id} className={styles.checkItem}>
-                <input
-                  type="checkbox"
-                  checked={filtrosCategorias.includes(cat.nombre)}
-                  onChange={() => onToggleCategoria(cat.nombre)}
-                />
-                {cat.nombre}
-              </label>
-            ))}
+            <CategoriaSidebarChecks
+              categorias={categorias}
+              filtrosCategorias={filtrosCategorias}
+              onToggleCategoria={onToggleCategoria}
+              classNameItem={styles.checkItem}
+              classNameItemIndented={styles.checkItemIndented}
+            />
           </div>
 
           {/* Método de pago */}
@@ -396,6 +407,10 @@ export default function CuentaPage() {
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [modoPeriodo, setModoPeriodo] = useState<ModoPeriodo>('MES')
+  const iniMes = primerUltimoDiaMesISO(hoy.getFullYear(), hoy.getMonth())
+  const [rangoDesde, setRangoDesde] = useState(iniMes.desde)
+  const [rangoHasta, setRangoHasta] = useState(iniMes.hasta)
   const [filtroTipo,         setFiltroTipo]         = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
   const [busqueda,           setBusqueda]           = useState('')
   const [filtrosCategorias,  setFiltrosCategorias]  = useState<string[]>([])
@@ -407,36 +422,69 @@ export default function CuentaPage() {
     ambito: 'PERSONAL',
     cuenta: id ? Number(id) : undefined,
   })
-  const categorias = (categoriasData ?? []) as { id: number; nombre: string }[]
+  const categorias = (categoriasData ?? []) as CategoriaFiltroFila[]
+
+  const paramsPeriodo = useMemo(
+    () => movimientosParamsPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta),
+    [modoPeriodo, mes, anio, rangoDesde, rangoHasta],
+  )
 
   const { movimientos, loading, error, refetch, eliminar } = useMovimientos({
     cuenta: id ? Number(id) : undefined,
     ambito: 'PERSONAL',
-    mes: mes + 1,
-    anio,
+    ...paramsPeriodo,
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
     q: busqueda || undefined,
   })
   const movimientosTyped = (movimientos ?? []) as Movimiento[]
 
-  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  const esActualMes = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  const esAnioMaximo = anio >= hoy.getFullYear()
 
-  const irAnterior = () => {
+  const irAnteriorMes = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
     else setMes(m => m - 1)
   }
-  const irSiguiente = () => {
-    if (esActual) return
+  const irSiguienteMes = () => {
+    if (esActualMes) return
     if (mes === 11) { setMes(0); setAnio(a => a + 1) }
     else setMes(m => m + 1)
   }
 
+  const irAnteriorAnio = () => setAnio(a => a - 1)
+  const irSiguienteAnio = () => {
+    if (esAnioMaximo) return
+    setAnio(a => a + 1)
+  }
+
+  const handleModoPeriodo = (m: ModoPeriodo) => {
+    setModoPeriodo((prev) => {
+      if (m === 'RANGO') {
+        if (prev === 'ANIO') {
+          setRangoDesde(`${anio}-01-01`)
+          setRangoHasta(`${anio}-12-31`)
+        } else {
+          const x = primerUltimoDiaMesISO(anio, mes)
+          setRangoDesde(x.desde)
+          setRangoHasta(x.hasta)
+        }
+      }
+      return m
+    })
+  }
+
+  const cerrarSidebarAplicar = () => {
+    if (modoPeriodo === 'RANGO' && rangoDesde && rangoHasta && rangoDesde > rangoHasta) {
+      setRangoDesde(rangoHasta)
+      setRangoHasta(rangoDesde)
+    }
+    setSidebarAbierto(false)
+  }
+
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
 
-  const toggleCategoria = (cat: string) =>
-    setFiltrosCategorias(prev =>
-      prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat],
-    )
+  const toggleCategoria = (cat: CategoriaFiltroFila) =>
+    setFiltrosCategorias((prev) => toggleCategoriaConJerarquia(prev, cat, categorias))
 
   const toggleMetodo = (met: string) =>
     setFiltrosMetodos(prev =>
@@ -472,7 +520,7 @@ export default function CuentaPage() {
 
   const grupos = groupByDate(movimientosFiltrados)
 
-  const sinFiltrosRestrictivos =
+  const puedeMostrarEtiquetaPeriodo =
     filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
 
   const sumaMostrada = useMemo(
@@ -480,7 +528,12 @@ export default function CuentaPage() {
     [movimientosFiltrados],
   )
 
-  const hayFiltros = !sinFiltrosRestrictivos
+  const totalLabel = puedeMostrarEtiquetaPeriodo
+    ? etiquetaTotalPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta)
+    : 'Total (filtros activos)'
+
+  const hayFiltros =
+    filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.trim() !== ''
 
   if (cuentasLoading) return <Cargando />
   if (cuentasError) return <ErrorCarga mensaje={cuentasError} />
@@ -507,11 +560,27 @@ export default function CuentaPage() {
               <span className={styles.duenio}>({cuenta.duenio})</span>
             )}
           </div>
-          <div className={styles.mesNav}>
-            <button className={styles.mesBtn} onClick={irAnterior} aria-label="Mes anterior">‹</button>
-            <span className={styles.mesLabel}>{MESES[mes]} {anio}</span>
-            <button className={styles.mesBtn} onClick={irSiguiente} disabled={esActual} aria-label="Mes siguiente">›</button>
-          </div>
+          {modoPeriodo === 'MES' && (
+            <div className={styles.mesNav}>
+              <button type="button" className={styles.mesBtn} onClick={irAnteriorMes} aria-label="Mes anterior">‹</button>
+              <span className={styles.mesLabel}>{MESES[mes]} {anio}</span>
+              <button type="button" className={styles.mesBtn} onClick={irSiguienteMes} disabled={esActualMes} aria-label="Mes siguiente">›</button>
+            </div>
+          )}
+          {modoPeriodo === 'ANIO' && (
+            <div className={styles.mesNav}>
+              <button type="button" className={styles.mesBtn} onClick={irAnteriorAnio} aria-label="Año anterior">‹</button>
+              <span className={styles.mesLabel}>{anio}</span>
+              <button type="button" className={styles.mesBtn} onClick={irSiguienteAnio} disabled={esAnioMaximo} aria-label="Año siguiente">›</button>
+            </div>
+          )}
+          {modoPeriodo === 'RANGO' && (
+            <div className={styles.mesNav}>
+              <span className={`${styles.mesLabel} ${styles.mesLabelRango}`}>
+                {etiquetaEncabezadoRango(rangoDesde, rangoHasta)}
+              </span>
+            </div>
+          )}
         </div>
         <div className={styles.headerActions}>
           <button type="button" className={styles.btnGhost} onClick={irResumen}>
@@ -561,12 +630,8 @@ export default function CuentaPage() {
 
       <div className={styles.totalSuma}>
         <div>
-          <div className={styles.totalSumaLabel}>
-            {sinFiltrosRestrictivos
-              ? `Total ${MESES[mes]} ${anio}`
-              : 'Total (filtros activos)'}
-          </div>
-          {!sinFiltrosRestrictivos && (
+          <div className={styles.totalSumaLabel}>{totalLabel}</div>
+          {!puedeMostrarEtiquetaPeriodo && (
             <div className={styles.totalSumaHint}>
               Tipo, búsqueda o panel lateral
             </div>
@@ -597,12 +662,25 @@ export default function CuentaPage() {
       {/* ── Sidebar de filtros ── */}
       <FilterSidebar
         abierto={sidebarAbierto}
+        periodoSlot={(
+          <SeccionPeriodoFiltro
+            modo={modoPeriodo}
+            onModoChange={handleModoPeriodo}
+            mes={mes}
+            anio={anio}
+            onMesAnioChange={(m, a) => { setMes(m); setAnio(a) }}
+            rangoDesde={rangoDesde}
+            rangoHasta={rangoHasta}
+            onRangoChange={(desde, hasta) => { setRangoDesde(desde); setRangoHasta(hasta) }}
+            anioMaximo={hoy.getFullYear()}
+          />
+        )}
         categorias={categorias}
         filtrosCategorias={filtrosCategorias}
         filtrosMetodos={filtrosMetodos}
         onToggleCategoria={toggleCategoria}
         onToggleMetodo={toggleMetodo}
-        onClose={() => setSidebarAbierto(false)}
+        onClose={cerrarSidebarAplicar}
         onLimpiar={limpiarFiltros}
       />
 

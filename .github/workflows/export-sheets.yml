@@ -2,8 +2,8 @@ name: Export diario a Google Sheets
 
 on:
   schedule:
-    # 11:00 UTC ≈ 08:00 Chile (UTC-3). En invierno (UTC-4) será 07:00 Chile.
-    - cron: '0 11 * * *'
+    # 18:00 UTC ≈ 15:00 Chile (UTC-3). Respaldo pg_dump 30 min después (mismo desfase que antes).
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,6 +11,8 @@ jobs:
     name: Exportar BD a Sheets
     runs-on: ubuntu-latest
     steps:
+      # "Re-run failed jobs" reutiliza el workflow del commit original, no el último push.
+      # Para probar cambios en este YAML: push a la rama por defecto y "Run workflow" o espera al cron.
       - name: Llamar endpoint de exportación
         run: |
           response=$(curl --silent --show-error --fail \
@@ -21,6 +23,8 @@ jobs:
 
           echo "Respuesta: $response"
 
-          echo "$response" | grep -q '"ok": true' && \
-            echo "Exportación exitosa" || \
-            (echo "Exportación fallida" && exit 1)
+          if ! echo "$response" | python3 -c "import sys, json; d=json.load(sys.stdin); sys.exit(0 if d.get(\"ok\") is True else 1)"; then
+            echo "Exportación fallida (respuesta sin ok: true)"
+            exit 1
+          fi
+          echo "Exportación exitosa"

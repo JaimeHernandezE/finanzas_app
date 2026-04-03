@@ -84,12 +84,21 @@ def backup_filename() -> str:
     return f"{BACKUP_NAME_PREFIX}{now:%Y-%m-%d_%H%M}{BACKUP_NAME_SUFFIX}"
 
 
+def pg_dump_executable() -> str:
+    """
+    Ruta al binario pg_dump. Variable PG_DUMP (p. ej. en CI) evita usar un cliente
+    viejo en PATH cuando el servidor es más nuevo (server version mismatch).
+    """
+    return (os.getenv('PG_DUMP') or 'pg_dump').strip() or 'pg_dump'
+
+
 def run_pg_dump_plain_gz(database_url: str, out_path: str) -> None:
     """pg_dump formato texto plano comprimido con gzip (compatible con psql en import)."""
+    dump_bin = pg_dump_executable()
     with open(out_path, 'wb') as out_f:
         p = subprocess.Popen(
             [
-                'pg_dump',
+                dump_bin,
                 '--no-owner',
                 '--no-acl',
                 '-Fp',
@@ -116,9 +125,10 @@ def iter_pg_dump_gzip_chunks(database_url: str) -> Iterator[bytes]:
     Generador para StreamingHttpResponse: bytes gzip (zlib con cabecera gzip)
     del volcado pg_dump en texto plano.
     """
+    dump_bin = pg_dump_executable()
     compressor = zlib.compressobj(9, zlib.DEFLATED, zlib.MAX_WBITS | 16)
     p = subprocess.Popen(
-        ['pg_dump', '--no-owner', '--no-acl', '-Fp', database_url],
+        [dump_bin, '--no-owner', '--no-acl', '-Fp', database_url],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

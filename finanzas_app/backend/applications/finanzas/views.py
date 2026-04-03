@@ -447,6 +447,22 @@ def cuenta_personal_detalle(request, pk):
 
 # ── MOVIMIENTOS ───────────────────────────────────────────────────────────────
 
+def _parse_movimiento_fecha_query(raw):
+    """
+    Devuelve (date|None, invalida_no_vacia).
+    Vacío o ausente → (None, False). Texto no vacío ilegible → (None, True).
+    """
+    if raw is None:
+        return None, False
+    s = str(raw).strip()
+    if not s:
+        return None, False
+    try:
+        return date.fromisoformat(s), False
+    except ValueError:
+        return None, True
+
+
 @api_view(['GET', 'POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -455,7 +471,10 @@ def movimientos(request):
     GET  → Lista movimientos con filtros opcionales por query params:
            ?cuenta=1        filtra por CuentaPersonal
            ?ambito=COMUN    filtra por ámbito (PERSONAL / COMUN)
-           ?mes=3&anio=2026 filtra por mes y año
+           ?fecha_desde=2026-01-01&fecha_hasta=2026-03-31  rango inclusive (prioridad
+                         sobre mes/año); cada extremo es opcional
+           ?mes=3&anio=2026 filtra por mes y año (si no hay rango por fechas)
+           ?anio=2026       solo año calendario (sin mes)
            ?tipo=EGRESO     filtra por tipo (INGRESO / EGRESO)
            ?categoria=1     filtra por categoría
            ?metodo=CREDITO  filtra por tipo de método de pago
@@ -484,6 +503,8 @@ def movimientos(request):
         categoria = request.GET.get('categoria')
         metodo = request.GET.get('metodo')
         q = request.GET.get('q')
+        fecha_desde_raw = request.GET.get('fecha_desde')
+        fecha_hasta_raw = request.GET.get('fecha_hasta')
 
         if cuenta:
             qs = qs.filter(
@@ -493,10 +514,58 @@ def movimientos(request):
             qs = qs.filter(ambito=ambito)
         if solo_mios in ('1', 'true', 'True', 'yes', 'on'):
             qs = qs.filter(usuario=usuario)
-        if mes and anio:
-            qs = qs.filter(fecha__month=mes, fecha__year=anio)
+
+        rango_solicitado = bool(
+            (fecha_desde_raw or '').strip() or (fecha_hasta_raw or '').strip()
+        )
+        if rango_solicitado:
+            d_val, d_inv = _parse_movimiento_fecha_query(fecha_desde_raw)
+            h_val, h_inv = _parse_movimiento_fecha_query(fecha_hasta_raw)
+            desde_ne = bool((fecha_desde_raw or '').strip())
+            hasta_ne = bool((fecha_hasta_raw or '').strip())
+            tiene_desde_ok = desde_ne and not d_inv and d_val is not None
+            tiene_hasta_ok = hasta_ne and not h_inv and h_val is not None
+
+            if desde_ne and d_inv and hasta_ne and h_inv:
+                return Response(
+                    {
+                        'error': 'fecha_desde y fecha_hasta no son fechas válidas (use YYYY-MM-DD).',
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if desde_ne and d_inv and not tiene_hasta_ok:
+                return Response(
+                    {'error': 'fecha_desde no es una fecha válida (use YYYY-MM-DD).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if hasta_ne and h_inv and not tiene_desde_ok:
+                return Response(
+                    {'error': 'fecha_hasta no es una fecha válida (use YYYY-MM-DD).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if tiene_desde_ok:
+                qs = qs.filter(fecha__gte=d_val)
+            if tiene_hasta_ok:
+                qs = qs.filter(fecha__lte=h_val)
+        elif mes and anio:
+            try:
+                m_int = int(mes)
+                y_int = int(anio)
+                qs = qs.filter(fecha__month=m_int, fecha__year=y_int)
+            except (TypeError, ValueError):
+                pass
+        elif anio:
+            try:
+                y_int = int(anio)
+                qs = qs.filter(fecha__year=y_int)
+            except (TypeError, ValueError):
+                pass
         elif mes:
-            qs = qs.filter(fecha__month=mes)
+            try:
+                m_int = int(mes)
+                qs = qs.filter(fecha__month=m_int)
+            except (TypeError, ValueError):
+                pass
         if tipo:
             qs = qs.filter(tipo=tipo)
         if categoria:

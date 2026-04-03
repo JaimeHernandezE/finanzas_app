@@ -1,0 +1,79 @@
+@use "variables" as *;
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sectionLabel {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: $space-2;
+}
+
+.radioItem {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-2 0;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  color: $color-text;
+  user-select: none;
+
+  input[type='radio'] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #0f0f0f;
+    flex-shrink: 0;
+  }
+}
+
+.rowControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+  padding: 0 0 $space-3 $space-6;
+}
+
+.select {
+  flex: 1;
+  min-width: 120px;
+  padding: $space-2 $space-3;
+  font-size: $font-size-sm;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  background: #fff;
+  color: $color-text;
+}
+
+.dateRow {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  padding: 0 0 $space-3 $space-6;
+}
+
+.dateField {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.dateFieldLabel {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+}
+
+.dateInput {
+  padding: $space-2 $space-3;
+  font-size: $font-size-sm;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  color: $color-text;
+}

@@ -2,7 +2,6 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   ScrollView,
   Text,
   TextInput,
@@ -16,7 +15,18 @@ import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../../components/layout/MobileShell'
+import { MovimientosFiltrosModal } from '../../../components/movimientos/MovimientosFiltrosModal'
 import { useAuth } from '../../../context/AuthContext'
+import {
+  toggleCategoriaConJerarquia,
+  type CategoriaFiltroFila,
+} from '@finanzas/shared/utils/categoriasFiltroSidebar'
+import {
+  etiquetaEncabezadoRango,
+  movimientosParamsPeriodo,
+  primerUltimoDiaMesISO,
+  type ModoPeriodo,
+} from '@finanzas/shared/utils/periodoMovimientos'
 
 interface Movimiento {
   id: number
@@ -115,6 +125,10 @@ export default function CuentaPersonalScreen() {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [modoPeriodo, setModoPeriodo] = useState<ModoPeriodo>('MES')
+  const iniMes = primerUltimoDiaMesISO(hoy.getFullYear(), hoy.getMonth())
+  const [rangoDesde, setRangoDesde] = useState(iniMes.desde)
+  const [rangoHasta, setRangoHasta] = useState(iniMes.hasta)
   const [filtroTipo, setFiltroTipo] = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
   const [busqueda, setBusqueda] = useState('')
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
@@ -125,12 +139,27 @@ export default function CuentaPersonalScreen() {
     ambito: 'PERSONAL',
     cuenta: Number.isFinite(id) ? id : undefined,
   })
-  const categorias = (catData ?? []) as { id: number; nombre: string }[]
+  const categorias = useMemo((): CategoriaFiltroFila[] => {
+    const raw = (catData ?? []) as Array<{
+      id: number
+      nombre: string
+      categoria_padre?: number | null
+    }>
+    return raw.map((c) => ({
+      id: c.id,
+      nombre: c.nombre,
+      categoria_padre: c.categoria_padre ?? null,
+    }))
+  }, [catData])
+
+  const paramsPeriodo = useMemo(
+    () => movimientosParamsPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta),
+    [modoPeriodo, mes, anio, rangoDesde, rangoHasta],
+  )
 
   const { movimientos: raw, loading, error, refetch, eliminar } = useMovimientos({
     cuenta: Number.isFinite(id) ? id : undefined,
-    mes: mes + 1,
-    anio,
+    ...paramsPeriodo,
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
     q: busqueda.trim() || undefined,
   })
@@ -147,21 +176,55 @@ export default function CuentaPersonalScreen() {
     }, [refetch]),
   )
 
-  const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  const esActualMes = mes === hoy.getMonth() && anio === hoy.getFullYear()
+  const esAnioMaximo = anio >= hoy.getFullYear()
 
-  function irAnterior() {
+  function irAnteriorMes() {
     if (mes === 0) {
       setMes(11)
       setAnio((a) => a - 1)
     } else setMes((m) => m - 1)
   }
 
-  function irSiguiente() {
-    if (esActual) return
+  function irSiguienteMes() {
+    if (esActualMes) return
     if (mes === 11) {
       setMes(0)
       setAnio((a) => a + 1)
     } else setMes((m) => m + 1)
+  }
+
+  function irAnteriorAnio() {
+    setAnio((a) => a - 1)
+  }
+
+  function irSiguienteAnio() {
+    if (esAnioMaximo) return
+    setAnio((a) => a + 1)
+  }
+
+  function handleModoPeriodo(m: ModoPeriodo) {
+    setModoPeriodo((prev) => {
+      if (m === 'RANGO') {
+        if (prev === 'ANIO') {
+          setRangoDesde(`${anio}-01-01`)
+          setRangoHasta(`${anio}-12-31`)
+        } else {
+          const x = primerUltimoDiaMesISO(anio, mes)
+          setRangoDesde(x.desde)
+          setRangoHasta(x.hasta)
+        }
+      }
+      return m
+    })
+  }
+
+  function cerrarFiltrosAplicar() {
+    if (modoPeriodo === 'RANGO' && rangoDesde && rangoHasta && rangoDesde > rangoHasta) {
+      setRangoDesde(rangoHasta)
+      setRangoHasta(rangoDesde)
+    }
+    setFiltrosOpen(false)
   }
 
   const movimientosFiltrados = useMemo(() => {
@@ -182,10 +245,8 @@ export default function CuentaPersonalScreen() {
     setFiltrosOpen(false)
   }
 
-  function toggleCategoria(nombre: string) {
-    setFiltrosCategorias((prev) =>
-      prev.includes(nombre) ? prev.filter((c) => c !== nombre) : [...prev, nombre]
-    )
+  function toggleCategoria(cat: CategoriaFiltroFila) {
+    setFiltrosCategorias((prev) => toggleCategoriaConJerarquia(prev, cat, categorias))
   }
 
   function toggleMetodo(met: string) {
@@ -275,28 +336,59 @@ export default function CuentaPersonalScreen() {
             <Text className="text-muted text-xs mb-2">Cuenta de {cuenta.duenio_nombre}</Text>
           )}
 
-          <View className="flex-row items-center justify-between mb-3">
-            <View className="flex-row items-center gap-2 flex-1">
-              <TouchableOpacity
-                onPress={irAnterior}
-                className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
-              >
-                <Text className="text-dark text-lg">‹</Text>
-              </TouchableOpacity>
-              <Text className="text-dark font-semibold text-sm flex-1 text-center">
-                {MESES[mes]} {anio}
-              </Text>
-              <TouchableOpacity
-                onPress={irSiguiente}
-                disabled={esActual}
-                className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
-                  esActual ? 'border-border/40' : 'border-border'
-                }`}
-              >
-                <Text className={`text-lg ${esActual ? 'text-border' : 'text-dark'}`}>›</Text>
-              </TouchableOpacity>
+          {modoPeriodo === 'MES' && (
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center gap-2 flex-1">
+                <TouchableOpacity
+                  onPress={irAnteriorMes}
+                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
+                >
+                  <Text className="text-dark text-lg">‹</Text>
+                </TouchableOpacity>
+                <Text className="text-dark font-semibold text-sm flex-1 text-center">
+                  {MESES[mes]} {anio}
+                </Text>
+                <TouchableOpacity
+                  onPress={irSiguienteMes}
+                  disabled={esActualMes}
+                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                    esActualMes ? 'border-border/40' : 'border-border'
+                  }`}
+                >
+                  <Text className={`text-lg ${esActualMes ? 'text-border' : 'text-dark'}`}>›</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          )}
+          {modoPeriodo === 'ANIO' && (
+            <View className="flex-row items-center justify-between mb-3">
+              <View className="flex-row items-center gap-2 flex-1">
+                <TouchableOpacity
+                  onPress={irAnteriorAnio}
+                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
+                >
+                  <Text className="text-dark text-lg">‹</Text>
+                </TouchableOpacity>
+                <Text className="text-dark font-semibold text-sm flex-1 text-center">{anio}</Text>
+                <TouchableOpacity
+                  onPress={irSiguienteAnio}
+                  disabled={esAnioMaximo}
+                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                    esAnioMaximo ? 'border-border/40' : 'border-border'
+                  }`}
+                >
+                  <Text className={`text-lg ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {modoPeriodo === 'RANGO' && (
+            <View className="mb-3 px-1">
+              <Text className="text-dark font-semibold text-sm text-center" numberOfLines={2}>
+                {etiquetaEncabezadoRango(rangoDesde, rangoHasta)}
+              </Text>
+            </View>
+          )}
 
           <TouchableOpacity
             onPress={irNuevoMovimiento}
@@ -457,73 +549,31 @@ export default function CuentaPersonalScreen() {
         )}
       </ScrollView>
 
-      <Modal visible={filtrosOpen} transparent animationType="slide" onRequestClose={() => setFiltrosOpen(false)}>
-        <View className="flex-1 bg-black/40 justify-end">
-          <View className="bg-white rounded-t-2xl max-h-[85%]">
-            <View className="flex-row items-center justify-between px-5 py-4 border-b border-border">
-              <Text className="text-lg font-bold text-dark">Filtros</Text>
-              <TouchableOpacity onPress={() => setFiltrosOpen(false)}>
-                <Text className="text-muted text-xl">×</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView className="px-5 py-4">
-              <Text className="text-xs text-muted font-semibold uppercase mb-2">Categoría</Text>
-              {categorias.map((cat) => (
-                <TouchableOpacity
-                  key={cat.id}
-                  onPress={() => toggleCategoria(cat.nombre)}
-                  className="flex-row items-center py-2.5 border-b border-border"
-                >
-                  <View
-                    className={`w-5 h-5 rounded border mr-3 items-center justify-center ${
-                      filtrosCategorias.includes(cat.nombre) ? 'bg-dark border-dark' : 'border-border'
-                    }`}
-                  >
-                    {filtrosCategorias.includes(cat.nombre) && (
-                      <Text className="text-white text-xs font-bold">✓</Text>
-                    )}
-                  </View>
-                  <Text className="text-dark text-sm">{cat.nombre}</Text>
-                </TouchableOpacity>
-              ))}
-
-              <Text className="text-xs text-muted font-semibold uppercase mt-4 mb-2">Método de pago</Text>
-              {(['EFECTIVO', 'DEBITO', 'CREDITO'] as const).map((met) => {
-                const label = met === 'EFECTIVO' ? 'Efectivo' : met === 'DEBITO' ? 'Débito' : 'Crédito'
-                return (
-                  <TouchableOpacity
-                    key={met}
-                    onPress={() => toggleMetodo(met)}
-                    className="flex-row items-center py-2.5 border-b border-border"
-                  >
-                    <View
-                      className={`w-5 h-5 rounded border mr-3 items-center justify-center ${
-                        filtrosMetodos.includes(met) ? 'bg-dark border-dark' : 'border-border'
-                      }`}
-                    >
-                      {filtrosMetodos.includes(met) && (
-                        <Text className="text-white text-xs font-bold">✓</Text>
-                      )}
-                    </View>
-                    <Text className="text-dark text-sm">{label}</Text>
-                  </TouchableOpacity>
-                )
-              })}
-            </ScrollView>
-            <View className="flex-row gap-3 px-5 py-4 border-t border-border">
-              <TouchableOpacity onPress={limpiarFiltros} className="flex-1 border border-border rounded-xl py-3 items-center">
-                <Text className="text-dark font-semibold">Limpiar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setFiltrosOpen(false)}
-                className="flex-1 bg-dark rounded-xl py-3 items-center"
-              >
-                <Text className="text-white font-semibold">Aplicar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <MovimientosFiltrosModal
+        visible={filtrosOpen}
+        onRequestClose={cerrarFiltrosAplicar}
+        modoPeriodo={modoPeriodo}
+        onModoPeriodoChange={handleModoPeriodo}
+        mes={mes}
+        anio={anio}
+        onMesAnioChange={(m, a) => {
+          setMes(m)
+          setAnio(a)
+        }}
+        rangoDesde={rangoDesde}
+        rangoHasta={rangoHasta}
+        onRangoChange={(desde, hasta) => {
+          setRangoDesde(desde)
+          setRangoHasta(hasta)
+        }}
+        anioMaximo={hoy.getFullYear()}
+        categorias={categorias}
+        filtrosCategorias={filtrosCategorias}
+        onToggleCategoria={toggleCategoria}
+        filtrosMetodos={filtrosMetodos}
+        onToggleMetodo={toggleMetodo}
+        onLimpiar={limpiarFiltros}
+      />
     </MobileShell>
   )
 }

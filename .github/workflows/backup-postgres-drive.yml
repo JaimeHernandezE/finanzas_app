@@ -15,7 +15,8 @@ name: Backup PostgreSQL a Drive
 
 on:
   schedule:
-    - cron: '30 11 * * *'
+    # 18:30 UTC ≈ 15:30 Chile (UTC-3). +7 h respecto al horario anterior (~08:30 Chile).
+    - cron: '30 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -32,11 +33,18 @@ jobs:
       - name: Dependencias del sistema y Python
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y ca-certificates curl gnupg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+          echo "deb [signed-by=/etc/apt/trusted.gpg.d/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          # Misma major que el servidor (p. ej. Render con PG 18); pg_dump más antiguo falla con "server version mismatch".
+          sudo apt-get install -y postgresql-client-18
+          /usr/lib/postgresql/18/bin/pg_dump --version
           pip install --quiet google-api-python-client google-auth
 
       - name: Ejecutar respaldo
         env:
+          PG_DUMP: /usr/lib/postgresql/18/bin/pg_dump
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN }}
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
