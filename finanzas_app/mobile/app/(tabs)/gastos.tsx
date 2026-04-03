@@ -25,9 +25,12 @@ import {
   toggleCategoriaConJerarquia,
   type CategoriaFiltroFila,
 } from '@finanzas/shared/utils/categoriasFiltroSidebar'
+import { formatMontoNetoContribucion } from '@finanzas/shared/utils/formatMontoNetoContribucion'
 import {
   etiquetaEncabezadoRango,
+  etiquetaTotalPeriodo,
   movimientosParamsPeriodo,
+  puedeRetrocederAnioMovimientos,
   primerUltimoDiaMesISO,
   type ModoPeriodo,
 } from '@finanzas/shared/utils/periodoMovimientos'
@@ -37,7 +40,7 @@ interface Movimiento {
   fecha: string
   tipo: 'INGRESO' | 'EGRESO'
   ambito: 'PERSONAL' | 'COMUN'
-  monto: number
+  monto: number | string
   comentario: string
   categoria_nombre: string
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
@@ -61,6 +64,24 @@ const TAB_BAR_HEIGHT = 66
 function montoSeguro(valor: unknown): number {
   const n = typeof valor === 'number' ? valor : Number(valor)
   return Number.isFinite(n) ? n : 0
+}
+
+function toMontoNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const txt = value.trim()
+    if (!txt) return 0
+    const parsed = Number(txt)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+/** Misma lógica que GastosComunesPage web: neto por día sin TC en el cálculo. */
+function contribucionSaldo(m: Movimiento): number {
+  const monto = toMontoNumber(m.monto)
+  if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return 0
+  return m.tipo === 'EGRESO' ? monto : -monto
 }
 
 function hoyISO(): string {
@@ -148,10 +169,15 @@ export default function GastosScreen() {
 
   const esActualMes = mes === hoy.getMonth() && anio === hoy.getFullYear()
   const esAnioMaximo = anio >= hoy.getFullYear()
+  const esAnioMinimo = !puedeRetrocederAnioMovimientos(anio)
+  const esMesMinimo = mes === 0 && esAnioMinimo
 
   function irAnteriorMes() {
-    if (mes === 0) { setMes(11); setAnio((a) => a - 1) }
-    else setMes((m) => m - 1)
+    if (mes === 0) {
+      if (!puedeRetrocederAnioMovimientos(anio)) return
+      setMes(11)
+      setAnio((a) => a - 1)
+    } else setMes((m) => m - 1)
   }
 
   function irSiguienteMes() {
@@ -161,6 +187,7 @@ export default function GastosScreen() {
   }
 
   function irAnteriorAnio() {
+    if (!puedeRetrocederAnioMovimientos(anio)) return
     setAnio((a) => a - 1)
   }
 
@@ -203,22 +230,17 @@ export default function GastosScreen() {
 
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
 
-  const totalMes = useMemo(
-    () =>
-      movimientosTyped
-        .filter((m) => m.tipo === 'EGRESO' && m.metodo_pago_tipo !== 'CREDITO')
-        .reduce((s, m) => s + montoSeguro(m.monto), 0),
-    [movimientosTyped],
-  )
-
-  const labelEgresosPeriodo =
-    modoPeriodo === 'MES'
-      ? `Egresos ${MESES[mes]} ${anio}`
-      : modoPeriodo === 'ANIO'
-        ? `Egresos año ${anio}`
-        : 'Egresos del período'
-
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
+  const puedeMostrarEtiquetaPeriodo =
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+  const sumaMostrada = useMemo(
+    () => movimientosFiltrados.reduce((acc, m) => acc + contribucionSaldo(m), 0),
+    [movimientosFiltrados],
+  )
+  const totalLabel = puedeMostrarEtiquetaPeriodo
+    ? etiquetaTotalPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta)
+    : 'Total (filtros activos)'
+
   const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.trim().length > 0
 
   function limpiarFiltros() {
@@ -258,16 +280,14 @@ export default function GastosScreen() {
 
   // Sección para FlatList: cabecera de grupo + sus movimientos
   type ListItem =
-    | { kind: 'header'; fecha: string; label: string; subtotal: number }
+    | { kind: 'header'; fecha: string; label: string; netoDia: number }
     | { kind: 'row'; mov: Movimiento; isLast: boolean }
 
   const listItems = useMemo<ListItem[]>(() => {
     const items: ListItem[] = []
     for (const grupo of grupos) {
-      const subtotal = grupo.movimientos
-        .filter((m) => m.tipo === 'EGRESO' && m.metodo_pago_tipo !== 'CREDITO')
-        .reduce((acc, m) => acc + montoSeguro(m.monto), 0)
-      items.push({ kind: 'header', fecha: grupo.fecha, label: grupo.label, subtotal })
+      const netoDia = grupo.movimientos.reduce((acc, m) => acc + contribucionSaldo(m), 0)
+      items.push({ kind: 'header', fecha: grupo.fecha, label: grupo.label, netoDia })
       grupo.movimientos.forEach((mov, idx) => {
         items.push({ kind: 'row', mov, isLast: idx === grupo.movimientos.length - 1 })
       })
@@ -278,14 +298,18 @@ export default function GastosScreen() {
   function renderItem({ item }: { item: ListItem }) {
     if (item.kind === 'header') {
       return (
-        <View className="flex-row items-baseline flex-wrap mb-2 mt-4 px-5">
-          <Text className="text-xs font-bold text-muted tracking-wide">{item.label.toUpperCase()}</Text>
-          {item.subtotal > 0 && (
-            <>
-              <Text className="text-xs text-muted mx-1">—</Text>
-              <Text className="text-xs font-semibold text-dark">{formatMonto(item.subtotal)}</Text>
-            </>
-          )}
+        <View className="mb-2 mt-4 flex-row items-center justify-between px-5">
+          <Text className="text-xs font-bold uppercase tracking-wider text-muted">
+            {item.label.toUpperCase()}
+          </Text>
+          <View className="items-end">
+            <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Neto del día
+            </Text>
+            <Text className="text-sm font-bold text-dark tabular-nums">
+              {formatMontoNetoContribucion(item.netoDia, formatMonto)}
+            </Text>
+          </View>
         </View>
       )
     }
@@ -351,6 +375,33 @@ export default function GastosScreen() {
     })
   }, [listItems])
 
+  const listHeaderResumen = useMemo(() => {
+    if (listItemsConBordes.length === 0) return null
+    return (
+      <View className="px-5 mb-4">
+        <View className="flex-row items-baseline justify-between gap-3 rounded-xl border border-[#e8e8e4] bg-[#f7f7f5] px-4 py-3">
+          <View className="flex-1 min-w-0">
+            <Text className="text-sm font-semibold text-muted">{totalLabel}</Text>
+            {!puedeMostrarEtiquetaPeriodo && (
+              <Text className="mt-0.5 text-[11px] text-muted">
+                Tipo, búsqueda o filtros del panel
+              </Text>
+            )}
+          </View>
+          <Text className="text-lg font-bold text-dark tabular-nums">
+            {formatMontoNetoContribucion(sumaMostrada, formatMonto)}
+          </Text>
+        </View>
+      </View>
+    )
+  }, [
+    listItemsConBordes.length,
+    totalLabel,
+    puedeMostrarEtiquetaPeriodo,
+    sumaMostrada,
+    formatMonto,
+  ])
+
   return (
     <MobileShell title="Gastos comunes">
       <View className="flex-1 bg-surface">
@@ -362,9 +413,12 @@ export default function GastosScreen() {
               <View className="flex-row items-center gap-2 flex-1">
                 <TouchableOpacity
                   onPress={irAnteriorMes}
-                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
+                  disabled={esMesMinimo}
+                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                    esMesMinimo ? 'border-border/40' : 'border-border'
+                  }`}
                 >
-                  <Text className="text-dark text-lg">‹</Text>
+                  <Text className={`text-lg ${esMesMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
                 </TouchableOpacity>
                 <Text className="text-dark font-semibold text-sm flex-1 text-center">
                   {MESES[mes]} {anio}
@@ -380,23 +434,31 @@ export default function GastosScreen() {
             </View>
           )}
           {modoPeriodo === 'ANIO' && (
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-2 flex-1">
-                <TouchableOpacity
-                  onPress={irAnteriorAnio}
-                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
-                >
-                  <Text className="text-dark text-lg">‹</Text>
-                </TouchableOpacity>
-                <Text className="text-dark font-semibold text-sm flex-1 text-center">{anio}</Text>
-                <TouchableOpacity
-                  onPress={irSiguienteAnio}
-                  disabled={esAnioMaximo}
-                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${esAnioMaximo ? 'border-border/40' : 'border-border'}`}
-                >
-                  <Text className={`text-lg ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
-                </TouchableOpacity>
+            <View className="flex-row items-stretch gap-2 mb-3">
+              <TouchableOpacity
+                onPress={irAnteriorAnio}
+                disabled={esAnioMinimo}
+                accessibilityLabel="Año anterior"
+                className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                  esAnioMinimo ? 'border-border/40' : 'border-border'
+                }`}
+              >
+                <Text className={`text-xl ${esAnioMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
+              </TouchableOpacity>
+              <View className="flex-1 min-w-0 rounded-xl border border-[#e8e8e4] bg-[#f7f7f5] py-2.5 px-2 items-center justify-center">
+                <Text className="text-[10px] font-semibold uppercase text-muted">Año</Text>
+                <Text className="text-xl font-bold text-dark tabular-nums">{anio}</Text>
               </View>
+              <TouchableOpacity
+                onPress={irSiguienteAnio}
+                disabled={esAnioMaximo}
+                accessibilityLabel="Año siguiente"
+                className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                  esAnioMaximo ? 'border-border/40' : 'border-border'
+                }`}
+              >
+                <Text className={`text-xl ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
+              </TouchableOpacity>
             </View>
           )}
           {modoPeriodo === 'RANGO' && (
@@ -406,11 +468,6 @@ export default function GastosScreen() {
               </Text>
             </View>
           )}
-
-          <Text className="text-muted text-xs font-medium mb-3">
-            {labelEgresosPeriodo}:{' '}
-            <Text className="text-dark font-semibold">{formatMonto(totalMes)}</Text>
-          </Text>
 
           {/* Botón nuevo */}
           <TouchableOpacity
@@ -477,6 +534,7 @@ export default function GastosScreen() {
               item.kind === 'header' ? `h-${item.fecha}` : `r-${item.mov.id}-${idx}`
             }
             renderItem={renderItem}
+            ListHeaderComponent={listHeaderResumen ?? undefined}
             contentContainerStyle={
               listItemsConBordes.length === 0
                 ? { flex: 1, paddingBottom: 130 }

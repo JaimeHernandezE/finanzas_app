@@ -440,7 +440,7 @@
 
 .cuotaRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: $space-3;
   padding: $space-3 $space-4;
   border-top: 1px solid #e8e8e4;
@@ -459,6 +459,7 @@
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+  margin-top: 2px;
   cursor: pointer;
   accent-color: #0f0f0f;
 
@@ -471,6 +472,12 @@
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: $space-1;
+}
+
+.cuotaLinePrimaria {
+  display: flex;
   align-items: center;
   gap: $space-3;
   flex-wrap: wrap;
@@ -481,7 +488,7 @@
   font-weight: $font-weight-medium;
   color: $color-text;
   flex: 1;
-  min-width: 0;
+  min-width: 120px;
 
   &.excluida {
     text-decoration: line-through;
@@ -489,10 +496,12 @@
   }
 }
 
-.cuotaMeta {
+.cuotaMovLinea {
+  margin: 0;
   font-size: $font-size-xs;
+  line-height: 1.4;
   color: $color-text-muted;
-  flex-shrink: 0;
+  padding-right: $space-2;
 }
 
 .cuotaMonto {
@@ -721,6 +730,38 @@
   padding: $space-3 $space-4;
   font-size: $font-size-base;
   font-weight: $font-weight-semibold;
+}
+
+/* ── Nuevo movimiento (pie vista Facturado) ──────────────────────────────────── */
+
+.nuevoMovSection {
+  margin-top: $space-6;
+  margin-bottom: $space-8;
+  padding: $space-5;
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-xl;
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+  align-items: flex-start;
+}
+
+.nuevoMovSectionTitulo {
+  margin: 0;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.nuevoMovSectionTexto {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  line-height: 1.45;
+  max-width: 520px;
 }
 
 /* ── Modales ─────────────────────────────────────────────────────────────────── */

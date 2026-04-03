@@ -21,10 +21,16 @@ export function primerUltimoDiaMesISO(anio: number, mes0: number): { desde: stri
   return { desde, hasta }
 }
 
-export function rangoAniosSelect(anioCentro: number, span = 18): number[] {
-  const min = anioCentro - span
+export const ANIO_MIN_NAVEGACION_MOVIMIENTOS = 1990
+
+export function puedeRetrocederAnioMovimientos(anio: number): boolean {
+  return anio > ANIO_MIN_NAVEGACION_MOVIMIENTOS
+}
+
+export function rangoAniosSelect(anioMax: number, span = 18): number[] {
+  const min = Math.max(anioMax - span, ANIO_MIN_NAVEGACION_MOVIMIENTOS)
   const out: number[] = []
-  for (let y = anioCentro; y >= min; y -= 1) out.push(y)
+  for (let y = anioMax; y >= min; y -= 1) out.push(y)
   return out
 }
 

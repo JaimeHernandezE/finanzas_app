@@ -25,7 +25,7 @@ export function SeccionPeriodoFiltro({
   onRangoChange,
   anioMaximo,
 }: Props) {
-  const anos = rangoAniosSelect(anioMaximo, 18)
+  const anos = rangoAniosSelect(anioMaximo, 28)
 
   return (
     <div className={styles.section}>

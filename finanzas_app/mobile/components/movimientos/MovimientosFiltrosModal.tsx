@@ -15,9 +15,12 @@ import {
 } from '@finanzas/shared/utils/categoriasFiltroSidebar'
 import {
   MESES_ETIQUETAS,
+  puedeRetrocederAnioMovimientos,
   rangoAniosSelect,
   type ModoPeriodo,
 } from '@finanzas/shared/utils/periodoMovimientos'
+
+const SPAN_ANIOS_EN_REJILLA = 28
 
 type Props = {
   visible: boolean
@@ -64,7 +67,7 @@ export function MovimientosFiltrosModal({
   onToggleMetodo,
   onLimpiar,
 }: Props) {
-  const anos = rangoAniosSelect(anioMaximo, 18)
+  const anos = rangoAniosSelect(anioMaximo, SPAN_ANIOS_EN_REJILLA)
   const filasCat = filasCategoriasOrdenadas(categorias)
 
   const esActualMes = (() => {
@@ -72,17 +75,21 @@ export function MovimientosFiltrosModal({
     return mes === h.getMonth() && anio === h.getFullYear()
   })()
   const esAnioMaximo = anio >= anioMaximo
+  const esAnioMinimo = !puedeRetrocederAnioMovimientos(anio)
 
   const irMesPrev = () => {
-    if (mes === 0) onMesAnioChange(11, anio - 1)
-    else onMesAnioChange(mes - 1, anio)
+    if (mes === 0) {
+      if (puedeRetrocederAnioMovimientos(anio)) onMesAnioChange(11, anio - 1)
+    } else onMesAnioChange(mes - 1, anio)
   }
   const irMesSig = () => {
     if (esActualMes) return
     if (mes === 11) onMesAnioChange(0, anio + 1)
     else onMesAnioChange(mes + 1, anio)
   }
-  const irAnioPrev = () => onMesAnioChange(mes, anio - 1)
+  const irAnioPrev = () => {
+    if (puedeRetrocederAnioMovimientos(anio)) onMesAnioChange(mes, anio - 1)
+  }
   const irAnioSig = () => {
     if (esAnioMaximo) return
     onMesAnioChange(mes, anio + 1)
@@ -156,11 +163,14 @@ export function MovimientosFiltrosModal({
                   <View className="flex-row items-center gap-2">
                     <TouchableOpacity
                       onPress={irAnioPrev}
-                      className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
+                      disabled={esAnioMinimo}
+                      className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                        esAnioMinimo ? 'border-border/40' : 'border-border'
+                      }`}
                     >
-                      <Text className="text-dark text-lg">‹</Text>
+                      <Text className={`text-lg ${esAnioMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
                     </TouchableOpacity>
-                    <Text className="flex-1 text-center text-dark font-semibold text-sm">{anio}</Text>
+                    <Text className="flex-1 text-center text-dark font-semibold text-sm tabular-nums">{anio}</Text>
                     <TouchableOpacity
                       onPress={irAnioSig}
                       disabled={esAnioMaximo}
@@ -175,43 +185,62 @@ export function MovimientosFiltrosModal({
               )}
 
               {modoPeriodo === 'ANIO' && (
-                <View className="flex-row items-center gap-2 mb-4">
-                  <TouchableOpacity
-                    onPress={() => onMesAnioChange(mes, anio - 1)}
-                    className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
-                  >
-                    <Text className="text-dark text-lg">‹</Text>
-                  </TouchableOpacity>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1 max-h-10">
-                    <View className="flex-row items-center gap-1 flex-wrap">
-                      {anos.map((y) => (
+                <View className="mb-4 gap-3">
+                  <View className="flex-row items-stretch gap-2">
+                    <TouchableOpacity
+                      onPress={irAnioPrev}
+                      disabled={esAnioMinimo}
+                      accessibilityLabel="Año anterior"
+                      className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                        esAnioMinimo ? 'border-border/40' : 'border-border'
+                      }`}
+                    >
+                      <Text className={`text-xl ${esAnioMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
+                    </TouchableOpacity>
+                    <View className="flex-1 min-w-0 rounded-xl border border-[#e8e8e4] bg-[#f7f7f5] py-3 px-2 items-center justify-center">
+                      <Text className="text-[10px] font-semibold uppercase text-muted">Año del listado</Text>
+                      <Text className="text-2xl font-bold text-dark tabular-nums">{anio}</Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={irAnioSig}
+                      disabled={esAnioMaximo}
+                      accessibilityLabel="Año siguiente"
+                      className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                        esAnioMaximo ? 'border-border/40' : 'border-border'
+                      }`}
+                    >
+                      <Text className={`text-xl ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text className="text-[11px] text-muted leading-snug">
+                    Toca un año para ir directo ({anos[anos.length - 1]}–{anos[0]}).
+                  </Text>
+                  <View className="flex-row flex-wrap" style={{ gap: 8 }}>
+                    {anos.map((y) => {
+                      const selected = anio === y
+                      return (
                         <TouchableOpacity
                           key={y}
                           onPress={() => onMesAnioChange(mes, y)}
-                          className={`px-2.5 py-1.5 rounded-lg border ${
-                            anio === y ? 'bg-dark border-dark' : 'border-border bg-white'
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`Año ${y}`}
+                          className={`rounded-xl border-2 py-3 items-center justify-center ${
+                            selected ? 'bg-dark border-dark' : 'border-border bg-white'
                           }`}
+                          style={{ width: '31%' }}
                         >
                           <Text
-                            className={`text-xs font-semibold ${anio === y ? 'text-white' : 'text-dark'}`}
+                            className={`text-base font-semibold tabular-nums ${
+                              selected ? 'text-white' : 'text-dark'
+                            }`}
                           >
                             {y}
                           </Text>
                         </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (!esAnioMaximo) onMesAnioChange(mes, anio + 1)
-                    }}
-                    disabled={esAnioMaximo}
-                    className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
-                      esAnioMaximo ? 'border-border/40' : 'border-border'
-                    }`}
-                  >
-                    <Text className={`text-lg ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
-                  </TouchableOpacity>
+                      )
+                    })}
+                  </View>
                 </View>
               )}
 

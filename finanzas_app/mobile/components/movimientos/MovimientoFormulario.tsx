@@ -35,6 +35,8 @@ import {
 
 export type MovimientoFormularioRef = {
   abrirNuevoComun: () => void
+  /** Nuevo egreso a crédito con tarjeta fija (p. ej. desde pantalla Tarjetas). */
+  abrirNuevoConTarjetaCredito: (tarjetaId: number) => void
   iniciarEdicion: (id: number) => void
 }
 
@@ -210,13 +212,15 @@ export type MovimientoFormularioProps = {
   /** @deprecated — ya no es necesario, el overlay usa Modal nativo */
   sheetMarginBottom?: number
   refetchMovimientosComun?: () => void
+  /** Tras crear movimiento desde `abrirNuevoConTarjetaCredito` (sin navegar a cuenta). */
+  onPostMovimientoGuardado?: () => void
   /** En standalone: id de cuenta personal fija */
   cuentaPersonalFija?: number
 }
 
 export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, MovimientoFormularioProps>(
   function MovimientoFormulario(
-    { variant, refetchMovimientosComun, cuentaPersonalFija },
+    { variant, refetchMovimientosComun, onPostMovimientoGuardado, cuentaPersonalFija },
     ref,
   ) {
     const router = useRouter()
@@ -262,6 +266,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [busquedaCategoria, setBusquedaCategoria] = useState('')
     /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
+    /** Modo «nuevo gasto con esta tarjeta»: crédito + tarjeta fijos; ámbito y cuenta editables. */
+    const [creditoTarjetaFijaId, setCreditoTarjetaFijaId] = useState<number | null>(null)
     const formScrollRef = useRef<RNScrollView | null>(null)
     const [keyboardHeight, setKeyboardHeight] = useState(0)
     const { data: catData } = useCategorias({
@@ -272,6 +278,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const categorias = (catData as Categoria[] | null) ?? []
     const metodos = (metData as MetodoPago[] | null) ?? []
     const tarjetas = (tarjetasData as Tarjeta[] | null) ?? []
+
+    const modoTarjetaCreditoFija = creditoTarjetaFijaId != null
 
     const cerrarForm = useCallback(() => {
       if (esStandalone && cuentaFija != null) {
@@ -284,6 +292,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setLoadingDetalle(false)
       setErrorGeneral(null)
       setBaseMetodoPagoId(null)
+      setCreditoTarjetaFijaId(null)
     }, [esStandalone, cuentaFija, router])
 
     function setField<K extends keyof typeof FORM_INICIAL>(key: K, val: (typeof FORM_INICIAL)[K]) {
@@ -294,9 +303,28 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setLoadingDetalle(false)
       setEditingId(null)
       setVinculoIngresoComun(false)
+      setCreditoTarjetaFijaId(null)
       setForm(formInicial())
       setTipo('EGRESO')
       setMetodoTipo('DEBITO')
+      setErrorGeneral(null)
+      setBaseMetodoPagoId(null)
+      setShowForm(true)
+    }
+
+    function abrirNuevoConTarjetaCredito(tarjetaId: number) {
+      setLoadingDetalle(false)
+      setEditingId(null)
+      setVinculoIngresoComun(false)
+      setCreditoTarjetaFijaId(tarjetaId)
+      const inicial = formInicial()
+      inicial.ambito = 'PERSONAL'
+      inicial.cuenta = cuentasPropias[0]?.id ?? 0
+      inicial.tarjeta = tarjetaId
+      inicial.num_cuotas = '1'
+      setForm(inicial)
+      setTipo('EGRESO')
+      setMetodoTipo('CREDITO')
       setErrorGeneral(null)
       setBaseMetodoPagoId(null)
       setShowForm(true)
@@ -307,6 +335,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setErrorGeneral(null)
         setEditingId(null)
         setVinculoIngresoComun(false)
+        setCreditoTarjetaFijaId(null)
         setShowForm(true)
         setLoadingDetalle(true)
         try {
@@ -365,8 +394,17 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }
     }, [])
 
+    useEffect(() => {
+      if (!modoTarjetaCreditoFija || !showForm) return
+      if (form.ambito !== 'PERSONAL') return
+      if (form.cuenta !== 0) return
+      const first = cuentasPropias[0]?.id
+      if (first) setForm((f) => ({ ...f, cuenta: first }))
+    }, [modoTarjetaCreditoFija, showForm, form.ambito, form.cuenta, cuentasPropias])
+
     useImperativeHandle(ref, () => ({
       abrirNuevoComun,
+      abrirNuevoConTarjetaCredito,
       iniciarEdicion,
     }))
 
@@ -395,6 +433,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         const cuentaId = Number.isFinite(cuentaIdRaw) ? cuentaIdRaw : 0
         setEditingId(null)
         setVinculoIngresoComun(false)
+        setCreditoTarjetaFijaId(null)
         setForm({
           ...formInicial(),
           ambito: ambitoForm,
@@ -519,6 +558,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     }, [metodoTipo, form.num_cuotas, form.monto_cuota, montoEnteroForm])
 
     function onElegirMetodoPago(m: MetodoTipo) {
+      if (modoTarjetaCreditoFija) return
       if (metodoTipo === 'CREDITO' && m !== 'CREDITO') {
         setField('tarjeta', 0)
         setField('num_cuotas', '')
@@ -537,10 +577,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }, 220)
     }
 
-    // ¿Se debe mostrar el campo Ámbito?
-    // Se oculta cuando está predefinido por el contexto (standalone con cuenta fija = PERSONAL,
-    // o overlay = COMUN fijo desde la pantalla de gastos)
-    const mostrarAmbito = !esStandalone && !vinculoIngresoComun && !cuentaFija
+    // Ámbito en overlay: solo lectura salvo modo tarjeta fija (desde Tarjetas).
+    const mostrarAmbitoSoloLectura =
+      !esStandalone && !vinculoIngresoComun && !cuentaFija && !modoTarjetaCreditoFija
+    const mostrarAmbitoEditable =
+      !esStandalone && !vinculoIngresoComun && !cuentaFija && modoTarjetaCreditoFija
 
     async function guardar() {
       setErrorGeneral(null)
@@ -749,10 +790,16 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         return
       }
 
+      const eraModoTarjetaFija = creditoTarjetaFijaId != null
       createMovimientoOptimistic(queryClient, payload, {
         categoria_nombre: categoriaNombre ?? '—',
         metodo_pago_tipo: metodoTipo,
       })
+      if (eraModoTarjetaFija) {
+        onPostMovimientoGuardado?.()
+        cerrarForm()
+        return
+      }
       if (esStandalone && cuentaFija != null) {
         router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
       } else {
@@ -873,7 +920,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
         {/* Tipo */}
         <Text className="text-xs text-muted font-semibold mb-1">Tipo</Text>
-        {vinculoIngresoComun ? (
+        {vinculoIngresoComun || modoTarjetaCreditoFija ? (
           <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
             <Text className="text-dark font-semibold">{tipo === 'EGRESO' ? 'Egreso' : 'Ingreso'}</Text>
           </View>
@@ -900,8 +947,44 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
-        {/* Ámbito — solo si no está predefinido */}
-        {mostrarAmbito && (
+        {mostrarAmbitoEditable && (
+          <>
+            <Text className="text-xs text-muted font-semibold mb-1">Ámbito</Text>
+            <View className="flex-row border border-border rounded-lg overflow-hidden mb-4">
+              <TouchableOpacity
+                onPress={() => {
+                  setForm((f) => ({
+                    ...f,
+                    ambito: 'PERSONAL',
+                    cuenta: f.cuenta || cuentasPropias[0]?.id || 0,
+                  }))
+                }}
+                className={`flex-1 py-2.5 items-center ${form.ambito === 'PERSONAL' ? 'bg-dark' : 'bg-white'}`}
+              >
+                <Text
+                  className={`font-semibold ${form.ambito === 'PERSONAL' ? 'text-white' : 'text-muted'}`}
+                >
+                  Personal
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setForm((f) => ({ ...f, ambito: 'COMUN', cuenta: 0 }))
+                }}
+                className={`flex-1 py-2.5 items-center border-l border-border ${
+                  form.ambito === 'COMUN' ? 'bg-dark' : 'bg-white'
+                }`}
+              >
+                <Text
+                  className={`font-semibold ${form.ambito === 'COMUN' ? 'text-white' : 'text-muted'}`}
+                >
+                  Común
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+        {mostrarAmbitoSoloLectura && (
           <>
             <Text className="text-xs text-muted font-semibold mb-1">Ámbito</Text>
             <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
@@ -987,7 +1070,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         />
 
         {/* Método de pago */}
-        {tipo === 'EGRESO' && !vinculoIngresoComun && (
+        {tipo === 'EGRESO' && !vinculoIngresoComun && !modoTarjetaCreditoFija && (
           <>
             <Text className="text-xs text-muted font-semibold mb-1">Método de pago</Text>
             <View className="flex-row gap-2 mb-4">
@@ -1009,6 +1092,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             </View>
           </>
         )}
+        {tipo === 'EGRESO' && modoTarjetaCreditoFija && !vinculoIngresoComun && (
+          <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
+            <Text className="text-dark font-semibold">Método: Crédito</Text>
+          </View>
+        )}
         {tipo === 'EGRESO' && vinculoIngresoComun && (
           <View className="border border-border rounded-lg py-2.5 px-3 mb-4 bg-surface">
             <Text className="text-dark font-semibold">
@@ -1027,6 +1115,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
                 No tienes tarjetas registradas. Añádelas desde la sección «Tarjetas» en la app (misma idea
                 que Configuración → Tarjetas en la web) y vuelve aquí.
               </Text>
+            ) : modoTarjetaCreditoFija ? (
+              <View className="border border-border rounded-lg py-2.5 px-3 mb-3 bg-white">
+                <Text className="text-dark font-semibold">
+                  {tarjetas.find((t) => t.id === form.tarjeta)?.nombre ?? '—'}
+                </Text>
+              </View>
             ) : (
               <View className="flex-row flex-wrap gap-2 mb-3">
                 {tarjetas.map((t) => (

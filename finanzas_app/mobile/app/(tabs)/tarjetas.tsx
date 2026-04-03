@@ -11,15 +11,17 @@ import {
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
-import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
+import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { queryClient } from '../../lib/queryClient'
 import { invalidateFinanzasTrasMovimiento } from '../../lib/invalidateFinanzasTrasMovimiento'
-import { createMovimientoOptimistic } from '../../lib/movimientosOffline'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
-import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
+import {
+  MovimientoFormulario,
+  type MovimientoFormularioRef,
+} from '../../components/movimientos/MovimientoFormulario'
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -33,12 +35,14 @@ interface Tarjeta {
 
 interface Cuota {
   id: number
-  movimiento: number
+  movimiento?: number | null
   numero: number
   monto: string | number
   mes_facturacion: string
   estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
   incluir: boolean
+  movimiento_comentario?: string | null
+  movimiento_categoria_nombre?: string | null
 }
 
 type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
@@ -64,18 +68,6 @@ interface MovimientoCredito {
   usuario?: number | string
 }
 
-interface Categoria {
-  id: number
-  nombre: string
-  tipo: string
-}
-
-interface MetodoPago {
-  id: number
-  nombre: string
-  tipo: string
-}
-
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
 const MESES = [
@@ -93,6 +85,39 @@ function montoNum(v: string | number | null | undefined): number {
   if (v == null) return 0
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+type DetalleMovMap = Map<number, { cat: string; com: string }>
+
+/** Lee categoría/comentario de la cuota (API) o variantes camelCase si vinieran transformadas. */
+function camposDesdeCuotaApi(c: Cuota): { cat: string; com: string } {
+  const r = c as Cuota & Record<string, unknown>
+  const cat = String(
+    r.movimiento_categoria_nombre ?? r.movimientoCategoriaNombre ?? '',
+  ).trim()
+  const com = String(r.movimiento_comentario ?? r.movimientoComentario ?? '').trim()
+  return { cat, com }
+}
+
+/**
+ * Una línea: «Categoría - Comentario».
+ * Si la API de cuotas no trae texto, usa los movimientos TC ya cargados (lista utilizado).
+ */
+function lineaCategoriaComentarioCuota(c: Cuota, detallePorMov?: DetalleMovMap): string | null {
+  let { cat, com } = camposDesdeCuotaApi(c)
+  const midRaw = c.movimiento
+  const mid = midRaw != null ? Number(midRaw) : NaN
+  if (detallePorMov && Number.isFinite(mid)) {
+    const det = detallePorMov.get(mid)
+    if (det) {
+      if (!cat) cat = det.cat
+      if (!com) com = det.com
+    }
+  }
+  if (cat && com) return `${cat} - ${com}`
+  if (cat) return cat
+  if (com) return com
+  return null
 }
 
 function parseDia(val: string): number | null {
@@ -210,19 +235,10 @@ export default function TarjetasScreen() {
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
   const [menuPagoVisible, setMenuPagoVisible] = useState(false)
-  const [seleccionPagoIds, setSeleccionPagoIds] = useState<Set<number>>(new Set())
+  /** `null` = todos los ítems activos seleccionados (valor por defecto al abrir). Si no fuera `null`, un toggle sobre Set vacío solo añadiría un id e «invertiría» la selección. */
+  const [seleccionPagoIds, setSeleccionPagoIds] = useState<Set<number> | null>(null)
 
-  // ── Modal nuevo gasto (para flujo +Gasto en web) ──
-  const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
-  const [nuevoAmbito, setNuevoAmbito] = useState<'PERSONAL' | 'COMUN'>('PERSONAL')
-  const [nuevoCuentaId, setNuevoCuentaId] = useState<number | null>(null)
-  const [nuevoCategoriaId, setNuevoCategoriaId] = useState<number | null>(null)
-  const [nuevoFecha, setNuevoFecha] = useState(() => new Date().toISOString().slice(0, 10))
-  const [nuevoMonto, setNuevoMonto] = useState('')
-  const [nuevoNumCuotas, setNuevoNumCuotas] = useState('1')
-  const [nuevoComentario, setNuevoComentario] = useState('')
-  const [guardandoNuevoGasto, setGuardandoNuevoGasto] = useState(false)
-  const [nuevoGastoError, setNuevoGastoError] = useState<string | null>(null)
+  const movFormRef = useRef<MovimientoFormularioRef>(null)
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
   const tarjetaIdEfectivo = tarjetaId ?? tarjetas[0]?.id ?? null
@@ -302,28 +318,23 @@ export default function TarjetasScreen() {
   const movPersonal = movPersonalData ?? []
   const movComun = movComunData ?? []
 
-  // ── Catálogos para +Gasto ──
-  const { data: categoriasData } = useCategorias()
-  const categoriasEgreso = useMemo(() => {
-    const list = (categoriasData ?? []) as Categoria[]
-    return list.filter((c) => c.tipo === 'EGRESO').sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
-  }, [categoriasData])
-
-  const { data: metodosData, loading: loadingMetodosPago } = useMetodosPago()
-  const metodoCreditoId = useMemo(() => {
-    const list = (metodosData ?? []) as MetodoPago[]
-    const normalizar = (raw: string) => raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase()
-    const m = list.find((x) => normalizar(String(x.tipo ?? '')) === 'CREDITO')
-    return m?.id ?? null
-  }, [metodosData])
-
-  const { data: cuentasRes } = useApi<CuentaPersonalApi[]>(
-    () => finanzasApi.getCuentasPersonales(),
-    [],
-  )
-  const cuentasPropias = useMemo(() => {
-    return ((cuentasRes ?? []) as CuentaPersonalApi[]).filter((c) => c.es_propia).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
-  }, [cuentasRes])
+  /** Para mostrar «categoría - comentario» en cuotas aunque el serializer no los envíe. */
+  const detallePorMovimientoId = useMemo(() => {
+    const map: DetalleMovMap = new Map()
+    if (tarjetaIdEfectivo == null) return map
+    const put = (m: MovimientoCredito) => {
+      if (m.tarjeta !== tarjetaIdEfectivo) return
+      const id = Number(m.id)
+      if (!Number.isFinite(id)) return
+      map.set(id, {
+        cat: String(m.categoria_nombre ?? '').trim(),
+        com: String(m.comentario ?? '').trim(),
+      })
+    }
+    movPersonal.forEach(put)
+    movComun.forEach(put)
+    return map
+  }, [movPersonal, movComun, tarjetaIdEfectivo])
 
   const omitirPrimerFoco = useRef(true)
   useFocusEffect(
@@ -451,7 +462,9 @@ export default function TarjetasScreen() {
   const estadoPorMovimiento = useMemo(() => {
     const map = new Map<number, 'ACTIVO' | 'PAGADO'>()
     for (const c of cuotasTarjeta) {
-      const movId = c.movimiento
+      if (c.movimiento == null) continue
+      const movId = Number(c.movimiento)
+      if (!Number.isFinite(movId)) continue
       const prev = map.get(movId)
       if (c.estado !== 'PAGADO') map.set(movId, 'ACTIVO')
       else if (!prev) map.set(movId, 'PAGADO')
@@ -478,8 +491,11 @@ export default function TarjetasScreen() {
   const totalCuotasPorMovimiento = useMemo(() => {
     const map = new Map<number, number>()
     for (const c of cuotasTarjeta) {
-      const prev = map.get(c.movimiento) ?? 0
-      map.set(c.movimiento, Math.max(prev, c.numero))
+      if (c.movimiento == null) continue
+      const mid = Number(c.movimiento)
+      if (!Number.isFinite(mid)) continue
+      const prev = map.get(mid) ?? 0
+      map.set(mid, Math.max(prev, c.numero))
     }
     return map
   }, [cuotasTarjeta])
@@ -593,11 +609,20 @@ export default function TarjetasScreen() {
     setTarjetaId(tarjeta.id)
     setMenuPagoVisible(true)
     // selección inicial se recalcula al render según cuotas activas
-    setSeleccionPagoIds(new Set())
+    setSeleccionPagoIds(null)
+    void refetchCuotasTarjeta()
+    void refetchMovPersonal()
+    void refetchMovComun()
   }
 
   function toggleSeleccionPago(id: number) {
     setSeleccionPagoIds((prev) => {
+      const todos = cuotasActivasConTipo.map((c) => c.id)
+      if (prev == null) {
+        const next = new Set(todos)
+        next.delete(id)
+        return next
+      }
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -620,8 +645,7 @@ export default function TarjetasScreen() {
   }, [cuotasActivasMenuPago, nowMonthIdx])
 
   const seleccionEfectivaPagoIds = useMemo(() => {
-    if (seleccionPagoIds.size > 0) return seleccionPagoIds
-    // por defecto seleccionar todo lo pendiente al abrir menú
+    if (seleccionPagoIds != null) return seleccionPagoIds
     return new Set(cuotasActivasConTipo.map((c) => c.id))
   }, [seleccionPagoIds, cuotasActivasConTipo])
 
@@ -657,76 +681,18 @@ export default function TarjetasScreen() {
     }
   }
 
-  function abrirModalNuevoGasto() {
-    setNuevoGastoError(null)
-    setNuevoAmbito('PERSONAL')
-    setNuevoCuentaId(cuentasPropias[0]?.id ?? null)
-    setNuevoCategoriaId(categoriasEgreso[0]?.id ?? null)
-    setNuevoFecha(new Date().toISOString().slice(0, 10))
-    setNuevoMonto('')
-    setNuevoNumCuotas('1')
-    setNuevoComentario('')
-    setModalNuevoGasto(true)
+  function abrirFormMovimientoConTarjeta() {
+    if (tarjetaIdEfectivo == null) return
+    movFormRef.current?.abrirNuevoConTarjetaCredito(tarjetaIdEfectivo)
   }
 
-  async function guardarNuevoGasto() {
-    setNuevoGastoError(null)
-    if (tarjetaIdEfectivo == null || metodoCreditoId == null) {
-      Alert.alert('Falta datos', 'No hay método de crédito configurado o tarjeta seleccionada.')
-      return
-    }
-    const monto = parseMontoEnteroDesdeInput(nuevoMonto)
-    const n = parseInt(nuevoNumCuotas, 10)
-
-    if (!monto || monto <= 0) {
-      setNuevoGastoError('Ingresa un monto mayor a 0.')
-      return
-    }
-    if (!Number.isFinite(n) || n < 1 || n > 48) {
-      setNuevoGastoError('Ingresa un número de cuotas entre 1 y 48.')
-      return
-    }
-    if (!nuevoCategoriaId) {
-      setNuevoGastoError('Selecciona una categoría.')
-      return
-    }
-    if (nuevoAmbito === 'PERSONAL' && (nuevoCuentaId == null || !Number.isFinite(nuevoCuentaId))) {
-      setNuevoGastoError('Selecciona una cuenta personal.')
-      return
-    }
-
-    const fechaIso = nuevoFecha.trim()
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaIso)) {
-      setNuevoGastoError('Fecha inválida. Usa formato YYYY-MM-DD.')
-      return
-    }
-
-    const payload = {
-      fecha: fechaIso,
-      tipo: 'EGRESO' as const,
-      ambito: nuevoAmbito,
-      categoria: nuevoCategoriaId,
-      cuenta: nuevoAmbito === 'PERSONAL' ? nuevoCuentaId : null,
-      monto: String(monto),
-      comentario: nuevoComentario.trim(),
-      metodo_pago: metodoCreditoId,
-      tarjeta: tarjetaIdEfectivo,
-      num_cuotas: n,
-    }
-    const catNombre = categoriasEgreso.find((c) => c.id === nuevoCategoriaId)?.nombre ?? '—'
-    createMovimientoOptimistic(queryClient, payload, {
-      categoria_nombre: catNombre,
-      metodo_pago_tipo: 'CREDITO',
-    })
-
-    setModalNuevoGasto(false)
-    setModalConfirmarPago(false)
+  function trasGuardarMovimientoDesdeTarjeta() {
+    invalidateFinanzasTrasMovimiento(queryClient)
     void refetchCuotas()
     void refetchCuotasTarjeta()
     void refetchMovPersonal()
     void refetchMovComun()
     setVistaActiva('FACTURADO')
-    setGuardandoNuevoGasto(false)
   }
 
   const tarjetaSeleccionada = useMemo(
@@ -1105,7 +1071,7 @@ export default function TarjetasScreen() {
                           </View>
 
                           <TouchableOpacity
-                            onPress={abrirModalNuevoGasto}
+                            onPress={abrirFormMovimientoConTarjeta}
                             className="bg-accent rounded-xl px-4 py-3 items-center mb-4"
                           >
                             <Text className="text-dark font-bold text-sm">+ Gasto</Text>
@@ -1117,11 +1083,16 @@ export default function TarjetasScreen() {
                               const cargando = actualizando.has(cuota.id)
                               const isLast = idx === cuotas.length - 1
                               const deshabilitado = cuota.estado === 'PAGADO'
-                              const totalCuotasMovimiento = totalCuotasPorMovimiento.get(cuota.movimiento)
+                              const totalCuotasMovimiento =
+                                cuota.movimiento != null
+                                  ? totalCuotasPorMovimiento.get(cuota.movimiento)
+                                  : undefined
+                              const lineaMov = lineaCategoriaComentarioCuota(cuota, detallePorMovimientoId)
                               return (
                                 <View
                                   key={cuota.id}
-                                  className={`px-4 py-3 flex-row items-center ${!isLast ? 'border-b border-border' : ''}`}
+                                  className={`px-4 py-3 flex-row ${!isLast ? 'border-b border-border' : ''}`}
+                                  style={{ alignItems: 'flex-start' }}
                                 >
                                   <TouchableOpacity
                                     onPress={() => {
@@ -1129,7 +1100,7 @@ export default function TarjetasScreen() {
                                       toggleIncluir(cuota)
                                     }}
                                     disabled={deshabilitado || cargando}
-                                    className={`w-5 h-5 rounded border mr-3 items-center justify-center ${
+                                    className={`w-5 h-5 rounded border mr-3 mt-0.5 items-center justify-center ${
                                       cuota.incluir ? 'bg-dark border-dark' : 'border-border'
                                     }`}
                                   >
@@ -1145,9 +1116,18 @@ export default function TarjetasScreen() {
                                       Cuota {cuota.numero}/{totalCuotasMovimiento ?? cuota.numero}
                                     </Text>
                                     <Text className="text-muted text-xs mt-0.5">{cuota.estado}</Text>
+                                    {lineaMov ? (
+                                      <Text className="text-dark text-xs mt-1.5 leading-snug" numberOfLines={4}>
+                                        {lineaMov}
+                                      </Text>
+                                    ) : (
+                                      <Text className="text-muted text-[11px] mt-1.5 italic" numberOfLines={1}>
+                                        Sin categoría ni comentario
+                                      </Text>
+                                    )}
                                   </View>
 
-                                  <View className="items-end gap-1">
+                                  <View className="items-end gap-1 shrink-0">
                                     <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(cuota.monto))}</Text>
                                     <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
                                       <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
@@ -1354,13 +1334,15 @@ export default function TarjetasScreen() {
                           {cuotasActivasConTipo.map((c, idx) => {
                             const selected = seleccionEfectivaPagoIds.has(c.id)
                             const isLast = idx === cuotasActivasConTipo.length - 1
+                            const lineaMov = lineaCategoriaComentarioCuota(c, detallePorMovimientoId)
                             return (
                               <TouchableOpacity
                                 key={c.id}
                                 onPress={() => toggleSeleccionPago(c.id)}
-                                className={`px-4 py-3 flex-row items-center ${!isLast ? 'border-b border-border' : ''}`}
+                                className={`px-4 py-3 flex-row ${!isLast ? 'border-b border-border' : ''}`}
+                                style={{ alignItems: 'flex-start' }}
                               >
-                                <View className={`w-5 h-5 rounded border mr-3 items-center justify-center ${selected ? 'bg-dark border-dark' : 'border-border'}`}>
+                                <View className={`w-5 h-5 rounded border mr-3 mt-0.5 items-center justify-center ${selected ? 'bg-dark border-dark' : 'border-border'}`}>
                                   {selected && <Text className="text-white text-xs font-bold">✓</Text>}
                                 </View>
                                 <View className="flex-1 min-w-0 mr-2">
@@ -1370,12 +1352,31 @@ export default function TarjetasScreen() {
                                   <Text className="text-muted text-xs mt-0.5">
                                     {c.porFacturar ? 'Por facturar' : 'Facturado'} · {c.mes_facturacion}
                                   </Text>
+                                  {lineaMov ? (
+                                    <Text className="text-dark text-xs mt-1.5 leading-snug" numberOfLines={4}>
+                                      {lineaMov}
+                                    </Text>
+                                  ) : (
+                                    <Text className="text-muted text-[11px] mt-1.5 italic" numberOfLines={1}>
+                                      Sin categoría ni comentario
+                                    </Text>
+                                  )}
                                 </View>
-                                <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(c.monto))}</Text>
+                                <Text className="text-dark font-semibold text-sm shrink-0">{formatMonto(montoNum(c.monto))}</Text>
                               </TouchableOpacity>
                             )
                           })}
                         </ScrollView>
+
+                        <TouchableOpacity
+                          onPress={() => {
+                            setMenuPagoVisible(false)
+                            abrirFormMovimientoConTarjeta()
+                          }}
+                          className="mb-3 rounded-xl border-2 border-border bg-white py-3.5 items-center"
+                        >
+                          <Text className="text-dark font-bold text-sm">+ Nuevo movimiento con esta tarjeta</Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                           disabled={guardandoPago || seleccionEfectivaPagoIds.size === 0}
@@ -1391,150 +1392,15 @@ export default function TarjetasScreen() {
                   </View>
                 </View>
               </Modal>
-
-              {/* Modal nuevo gasto (flujo crédito) */}
-              <Modal visible={modalNuevoGasto} transparent animationType="slide" onRequestClose={() => setModalNuevoGasto(false)}>
-                <View className="flex-1 bg-black/50 justify-center px-6">
-                  <ScrollView className="bg-white rounded-2xl p-5 max-h-[90%]">
-                    <Text className="text-lg font-bold text-dark mb-1">Nuevo gasto</Text>
-                    <Text className="text-muted text-sm mb-4">
-                      Método: Crédito · Tarjeta: {tarjetaSeleccionada?.nombre ?? '—'}
-                    </Text>
-
-                    {/* Tipo (fijado a EGRESO por cuotas) */}
-                    <View className="flex-row items-center justify-between mb-4">
-                      <Text className="text-xs text-muted font-semibold uppercase">Tipo</Text>
-                      <Text className="text-dark font-semibold">Egreso</Text>
-                    </View>
-
-                    {/* Ámbito */}
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Ámbito</Text>
-                    <View className="flex-row border border-border rounded-lg overflow-hidden mb-4 bg-white">
-                      {(['PERSONAL', 'COMUN'] as const).map((v, i) => (
-                        <TouchableOpacity
-                          key={v}
-                          onPress={() => setNuevoAmbito(v)}
-                          className={`flex-1 py-2.5 items-center ${i > 0 ? 'border-l border-border' : ''} ${
-                            nuevoAmbito === v ? 'bg-dark' : 'bg-white'
-                          }`}
-                        >
-                          <Text className={`text-xs font-semibold ${nuevoAmbito === v ? 'text-white' : 'text-muted'}`}>
-                            {v === 'PERSONAL' ? 'Personal' : 'Común'}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
-                    {nuevoAmbito === 'PERSONAL' && (
-                      <View className="mb-4">
-                        <Text className="text-xs text-muted font-semibold uppercase mb-2">Cuenta personal</Text>
-                        {cuentasPropias.length === 0 ? (
-                          <Text className="text-danger text-sm">No tienes cuentas personales disponibles.</Text>
-                        ) : (
-                          <View className="flex-row flex-wrap gap-2">
-                            {cuentasPropias.map((c) => (
-                              <TouchableOpacity
-                                key={c.id}
-                                onPress={() => setNuevoCuentaId(c.id)}
-                                className={`px-3 py-1.5 rounded-lg border ${
-                                  nuevoCuentaId === c.id ? 'bg-dark border-dark' : 'bg-white border-border'
-                                }`}
-                              >
-                                <Text className={`text-xs font-medium ${nuevoCuentaId === c.id ? 'text-white' : 'text-dark'}`}>
-                                  {c.nombre}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
-                      </View>
-                    )}
-
-                    {/* Categoría */}
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Categoría</Text>
-                    <View className="border border-border rounded-xl p-3 mb-4">
-                      {categoriasEgreso.length === 0 ? (
-                        <Text className="text-muted text-sm">Cargando categorías…</Text>
-                      ) : (
-                        <ScrollView style={{ maxHeight: 160 }}>
-                          {categoriasEgreso.map((c) => (
-                            <TouchableOpacity
-                              key={c.id}
-                              onPress={() => setNuevoCategoriaId(c.id)}
-                              className={`px-3 py-2 rounded-lg mb-2 ${
-                                nuevoCategoriaId === c.id ? 'bg-accent' : 'bg-white'
-                              } border border-border`}
-                            >
-                              <Text className="text-dark font-medium text-sm">{c.nombre}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </ScrollView>
-                      )}
-                    </View>
-
-                    {/* Fecha + Monto + Cuotas */}
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Fecha</Text>
-                    <TextInput
-                      value={nuevoFecha}
-                      onChangeText={setNuevoFecha}
-                      placeholder="YYYY-MM-DD"
-                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
-                    />
-
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Monto (CLP)</Text>
-                    <TextInput
-                      value={nuevoMonto}
-                      onChangeText={(v) => setNuevoMonto(v.replace(/\D/g, '').slice(0, 12))}
-                      placeholder="Ej: 50000"
-                      keyboardType="numeric"
-                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
-                    />
-
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">N° cuotas</Text>
-                    <TextInput
-                      value={nuevoNumCuotas}
-                      onChangeText={(v) => setNuevoNumCuotas(v.replace(/\D/g, '').slice(0, 2))}
-                      keyboardType="numeric"
-                      placeholder="1–48"
-                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
-                    />
-
-                    <Text className="text-xs text-muted font-semibold uppercase mb-2">Comentario (opcional)</Text>
-                    <TextInput
-                      value={nuevoComentario}
-                      onChangeText={setNuevoComentario}
-                      placeholder="Ej: Supermercado"
-                      className="border border-border rounded-lg px-3 py-2.5 text-dark bg-white mb-4"
-                    />
-
-                    {nuevoGastoError && (
-                      <Text className="text-danger text-sm mb-4">{nuevoGastoError}</Text>
-                    )}
-
-                    <View className="flex-row gap-3">
-                      <TouchableOpacity
-                        onPress={() => setModalNuevoGasto(false)}
-                        className="flex-1 border border-border rounded-xl py-3 items-center"
-                      >
-                        <Text className="text-dark font-semibold text-sm">Cancelar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        disabled={guardandoNuevoGasto}
-                        onPress={() => void guardarNuevoGasto()}
-                        className="flex-1 bg-dark rounded-xl py-3 items-center"
-                      >
-                        <Text className="text-white font-semibold text-sm">
-                          {guardandoNuevoGasto ? 'Creando…' : 'Guardar gasto'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </ScrollView>
-                </View>
-              </Modal>
             </>
           )}
         </View>
       </ScrollView>
+      <MovimientoFormulario
+        ref={movFormRef}
+        variant="overlay"
+        onPostMovimientoGuardado={trasGuardarMovimientoDesdeTarjeta}
+      />
     </MobileShell>
   )
 }

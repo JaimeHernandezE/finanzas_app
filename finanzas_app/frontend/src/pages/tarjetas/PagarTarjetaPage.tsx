@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Button, Input, InputMontoClp, Select, Textarea } from '@/components/ui'
+import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
-import { useTarjetas } from '@/hooks/useCatalogos'
+import { useTarjetas, useCategorias, useMetodosPago } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { movimientosApi } from '@/api'
@@ -31,7 +31,11 @@ interface Cuota {
   mes_facturacion?: string
   estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
   incluir: boolean
-  /** Solo en flujo "nuevo gasto" local */
+  /** Comentario del movimiento origen (API `movimiento_comentario`) */
+  movimiento_comentario?: string | null
+  /** Categoría del movimiento origen (API `movimiento_categoria_nombre`) */
+  movimiento_categoria_nombre?: string | null
+  /** Solo en flujo legacy local */
   descripcion?: string
   movimientoId?: number
   numeroCuota?: number
@@ -60,17 +64,6 @@ interface MovimientoAsociado {
 }
 
 type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
-
-const CATEGORIAS_EGRESO: SelectOption[] = [
-  { value: 'alimentacion', label: 'Alimentación' },
-  { value: 'transporte', label: 'Transporte' },
-  { value: 'vivienda', label: 'Vivienda' },
-  { value: 'salud', label: 'Salud' },
-  { value: 'entretenimiento', label: 'Entretenimiento' },
-  { value: 'ropa', label: 'Ropa' },
-  { value: 'educacion', label: 'Educación' },
-  { value: 'otros', label: 'Otros' },
-]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -109,6 +102,15 @@ function CuotaRow({
     : cuota.estado === 'FACTURADO' ? styles.badgeFacturado
     : styles.badgePagado
 
+  const cat =
+    (cuota.movimiento_categoria_nombre != null && String(cuota.movimiento_categoria_nombre).trim()) || ''
+  const com =
+    (cuota.movimiento_comentario != null && String(cuota.movimiento_comentario).trim()) ||
+    (cuota.descripcion != null && String(cuota.descripcion).trim()) ||
+    ''
+  const lineaCategoriaComentario =
+    cat && com ? `${cat} - ${com}` : cat || com || null
+
   return (
     <div className={styles.cuotaRow}>
       <input
@@ -120,18 +122,20 @@ function CuotaRow({
         aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''}${totalCuotas ? ` de ${totalCuotas}` : ''} en el pago`}
       />
       <div className={styles.cuotaContent}>
-        <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
-          Cuota {cuota.numero ?? cuota.numeroCuota}{totalCuotas ? `/${totalCuotas}` : ''}
-        </span>
-        <span className={styles.cuotaMeta}>
-          cuota {cuota.numero ?? cuota.numeroCuota}{totalCuotas ? ` de ${totalCuotas}` : ''}
-        </span>
-        <span className={`${styles.cuotaMonto} ${excluida ? styles.excluida : ''}`}>
-          {formatMonto(cuota.monto)}
-        </span>
-        <span className={`${styles.badgeEstado} ${badgeClass}`}>
-          {cuota.estado}
-        </span>
+        <div className={styles.cuotaLinePrimaria}>
+          <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
+            Cuota {cuota.numero ?? cuota.numeroCuota}{totalCuotas ? `/${totalCuotas}` : ''}
+          </span>
+          <span className={`${styles.cuotaMonto} ${excluida ? styles.excluida : ''}`}>
+            {formatMonto(cuota.monto)}
+          </span>
+          <span className={`${styles.badgeEstado} ${badgeClass}`}>
+            {cuota.estado}
+          </span>
+        </div>
+        {lineaCategoriaComentario ? (
+          <p className={styles.cuotaMovLinea}>{lineaCategoriaComentario}</p>
+        ) : null}
       </div>
     </div>
   )
@@ -252,58 +256,119 @@ type TipoGasto = 'EGRESO' | 'INGRESO'
 type AmbitoGasto = 'PERSONAL' | 'COMUN'
 
 function ModalNuevoGasto({
+  tarjetaId,
   tarjetaNombre,
   cuentaOptions,
   onClose,
-  onGuardar,
+  onCreated,
 }: {
+  tarjetaId: number
   tarjetaNombre: string
   cuentaOptions: SelectOption[]
   onClose: () => void
-  onGuardar: (cuotas: Cuota[]) => void
+  onCreated: () => void | Promise<void>
 }) {
   const [tipo, setTipo] = useState<TipoGasto>('EGRESO')
   const [ambito, setAmbito] = useState<AmbitoGasto>('PERSONAL')
+  const [cuentaSel, setCuentaSel] = useState(cuentaOptions[0]?.value ?? '')
+  const [categoriaId, setCategoriaId] = useState('')
   const [monto, setMonto] = useState('')
   const [numCuotas, setNumCuotas] = useState('1')
-  const [errors, setErrors] = useState<{ monto?: string; categoria?: string; numCuotas?: string }>({})
+  const [errors, setErrors] = useState<{
+    monto?: string
+    categoria?: string
+    numCuotas?: string
+    cuenta?: string
+  }>({})
+  const [general, setGeneral] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const { data: metodosData } = useMetodosPago()
+  const metodos = (metodosData ?? []) as { id: number; tipo: string; nombre: string }[]
+  const metodoCreditoId = useMemo(
+    () => metodos.find(m => m.tipo === 'CREDITO')?.id ?? null,
+    [metodos],
+  )
+
+  const { data: categoriasData } = useCategorias({
+    ambito: ambito === 'COMUN' ? 'FAMILIAR' : 'PERSONAL',
+    tipo,
+    cuenta: ambito === 'PERSONAL' && cuentaSel ? Number(cuentaSel) : undefined,
+  })
+  const categorias = (categoriasData ?? []) as {
+    id: number
+    nombre: string
+    tipo: string
+    categoria_padre: number | null
+    es_padre: boolean
+  }[]
+
+  useEffect(() => {
+    setCategoriaId('')
+  }, [tipo, ambito, cuentaSel])
+
+  useEffect(() => {
+    const first = cuentaOptions[0]?.value ?? ''
+    if (ambito !== 'PERSONAL' || !first) return
+    if (!cuentaOptions.some(o => o.value === cuentaSel)) setCuentaSel(first)
+  }, [ambito, cuentaOptions, cuentaSel])
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    setGeneral(null)
     const data = new FormData(e.currentTarget)
-    const descripcion = (data.get('comentario') as string)?.trim() || 'Nuevo gasto'
+    const comentario = ((data.get('comentario') as string) ?? '').trim()
     const next: typeof errors = {}
     const montoTotalVal = montoClpANumero(monto)
     if (!monto || montoTotalVal <= 0) next.monto = 'El monto es obligatorio.'
-    if (!data.get('categoria')) next.categoria = 'Selecciona una categoría.'
+    if (!categoriaId) next.categoria = 'Selecciona una categoría.'
     const n = parseInt(numCuotas, 10)
-    if (!numCuotas || isNaN(n) || n < 1) next.numCuotas = 'Ingresa el número de cuotas.'
+    if (!numCuotas || Number.isNaN(n) || n < 1) next.numCuotas = 'Ingresa el número de cuotas.'
+    if (ambito === 'PERSONAL' && cuentaOptions.length > 0 && !cuentaSel) {
+      next.cuenta = 'Selecciona una cuenta personal.'
+    }
     setErrors(next)
     if (Object.keys(next).length > 0) return
-
-    const montoTotal = montoTotalVal
-    const totalCuotas = Math.max(1, n)
-    const montoPorCuota = Math.ceil(montoTotal / totalCuotas)
-    const baseId = Date.now()
-    const nuevasCuotas: Cuota[] = []
-    for (let i = 0; i < totalCuotas; i++) {
-      nuevasCuotas.push({
-        id: baseId + i,
-        movimientoId: 0,
-        descripcion: totalCuotas > 1 ? `${descripcion} (cuota ${i + 1}/${totalCuotas})` : descripcion,
-        numeroCuota: i + 1,
-        totalCuotas,
-        monto: montoPorCuota,
-        estado: 'PENDIENTE',
-        incluir: true,
-      })
+    if (metodoCreditoId == null) {
+      setGeneral('No hay método de pago «Crédito» configurado. Revísalo en configuración.')
+      return
     }
-    onGuardar(nuevasCuotas)
-    onClose()
+
+    const montoPorCuota = n > 0 ? Math.ceil(montoTotalVal / n) : montoTotalVal
+    setLoading(true)
+    try {
+      await movimientosApi.createMovimiento({
+        fecha: (data.get('fecha') as string) || new Date().toISOString().split('T')[0],
+        tipo,
+        ambito,
+        categoria: Number(categoriaId),
+        cuenta: ambito === 'PERSONAL' && cuentaSel ? Number(cuentaSel) : null,
+        monto: String(montoTotalVal),
+        comentario,
+        metodo_pago: metodoCreditoId,
+        tarjeta: tarjetaId,
+        num_cuotas: n,
+        monto_cuota: montoPorCuota,
+      })
+      await Promise.resolve(onCreated())
+    } catch (err: unknown) {
+      const ax = err as { response?: { data?: Record<string, string[] | string> } }
+      const payload = ax.response?.data
+      if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        const msgs = Object.entries(payload).map(([, v]) =>
+          Array.isArray(v) ? v.join(' ') : String(v),
+        )
+        setGeneral(msgs.join(' ') || 'No se pudo guardar.')
+      } else {
+        setGeneral('No se pudo guardar el movimiento.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className={styles.modalOverlay} onClick={onClose}>
+    <div className={styles.modalOverlay} onClick={loading ? undefined : onClose}>
       <div
         className={`${styles.modalCard} ${styles.modalCardWide} ${styles.modalCardWithClose}`}
         onClick={e => e.stopPropagation()}
@@ -312,11 +377,12 @@ function ModalNuevoGasto({
           type="button"
           className={styles.modalClose}
           onClick={onClose}
+          disabled={loading}
           aria-label="Cerrar"
         >
           ✕
         </button>
-        <h2 className={styles.modalTitulo}>Nuevo gasto</h2>
+        <h2 className={styles.modalTitulo}>Nuevo movimiento con tarjeta</h2>
         <p className={styles.modalTexto}>
           Método: Crédito — Tarjeta: {tarjetaNombre}
         </p>
@@ -326,10 +392,32 @@ function ModalNuevoGasto({
               <div>
                 <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151' }}>Tipo</span>
                 <div style={{ display: 'flex', marginTop: 4 }}>
-                  <button type="button" onClick={() => setTipo('EGRESO')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: tipo === 'EGRESO' ? '#dc2626' : undefined, color: tipo === 'EGRESO' ? '#fff' : undefined }}>
+                  <button
+                    type="button"
+                    onClick={() => setTipo('EGRESO')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 4,
+                      background: tipo === 'EGRESO' ? '#dc2626' : undefined,
+                      color: tipo === 'EGRESO' ? '#fff' : undefined,
+                    }}
+                  >
                     Egreso
                   </button>
-                  <button type="button" onClick={() => setTipo('INGRESO')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: tipo === 'INGRESO' ? '#16a34a' : undefined, color: tipo === 'INGRESO' ? '#fff' : undefined }}>
+                  <button
+                    type="button"
+                    onClick={() => setTipo('INGRESO')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 4,
+                      background: tipo === 'INGRESO' ? '#16a34a' : undefined,
+                      color: tipo === 'INGRESO' ? '#fff' : undefined,
+                    }}
+                  >
                     Ingreso
                   </button>
                 </div>
@@ -337,10 +425,32 @@ function ModalNuevoGasto({
               <div>
                 <span style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151' }}>Ámbito</span>
                 <div style={{ display: 'flex', marginTop: 4 }}>
-                  <button type="button" onClick={() => setAmbito('PERSONAL')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: ambito === 'PERSONAL' ? '#0d6461' : undefined, color: ambito === 'PERSONAL' ? '#fff' : undefined }}>
+                  <button
+                    type="button"
+                    onClick={() => setAmbito('PERSONAL')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 4,
+                      background: ambito === 'PERSONAL' ? '#0d6461' : undefined,
+                      color: ambito === 'PERSONAL' ? '#fff' : undefined,
+                    }}
+                  >
                     Personal
                   </button>
-                  <button type="button" onClick={() => setAmbito('COMUN')} style={{ flex: 1, padding: '6px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: ambito === 'COMUN' ? '#0d6461' : undefined, color: ambito === 'COMUN' ? '#fff' : undefined }}>
+                  <button
+                    type="button"
+                    onClick={() => setAmbito('COMUN')}
+                    style={{
+                      flex: 1,
+                      padding: '6px 12px',
+                      border: '1px solid #d1d5db',
+                      borderRadius: 4,
+                      background: ambito === 'COMUN' ? '#0d6461' : undefined,
+                      color: ambito === 'COMUN' ? '#fff' : undefined,
+                    }}
+                  >
                     Común
                   </button>
                 </div>
@@ -348,21 +458,23 @@ function ModalNuevoGasto({
             </div>
             {ambito === 'PERSONAL' && cuentaOptions.length > 0 && (
               <Select
-                name="cuenta"
                 label="Cuenta"
                 options={cuentaOptions}
                 placeholder="Selecciona cuenta…"
-                defaultValue={cuentaOptions[0]?.value}
+                value={cuentaSel}
+                onChange={e => setCuentaSel(e.target.value)}
+                error={errors.cuenta}
               />
             )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Select
-                name="categoria"
+              <CategoriaSelect
+                categorias={categorias}
+                tipo={tipo}
+                value={categoriaId}
+                onChange={setCategoriaId}
                 label="Categoría"
-                options={CATEGORIAS_EGRESO}
-                placeholder="Selecciona…"
                 error={errors.categoria}
-                required
+                placeholder="Selecciona…"
               />
               <Input
                 name="fecha"
@@ -392,13 +504,23 @@ function ModalNuevoGasto({
               error={errors.numCuotas}
               required
             />
-            <Textarea name="comentario" label="Descripción / Comentario" placeholder="Ej: Supermercado Lider…" rows={2} />
+            <Textarea
+              name="comentario"
+              label="Descripción / comentario"
+              placeholder="Ej: Supermercado Líder…"
+              rows={2}
+            />
+            {general && (
+              <p style={{ color: '#b91c1c', fontSize: 14, margin: 0 }}>{general}</p>
+            )}
           </div>
           <div className={styles.modalBtns}>
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>
               Cancelar
             </Button>
-            <Button type="submit">Guardar movimiento</Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? 'Guardando…' : 'Guardar movimiento'}
+            </Button>
           </div>
         </form>
       </div>
@@ -757,6 +879,7 @@ export default function PagarTarjetaPage() {
         <button
           type="button"
           className={styles.btnPrimary}
+          disabled={tarjetaId == null}
           onClick={() => setModalNuevoGasto(true)}
         >
           + Gasto
@@ -931,6 +1054,24 @@ export default function PagarTarjetaPage() {
               setModalConfirmarPago(true)
             }}
           />
+
+          <section className={styles.nuevoMovSection} aria-labelledby="pagar-tc-nuevo-mov">
+            <h2 id="pagar-tc-nuevo-mov" className={styles.nuevoMovSectionTitulo}>
+              Nuevo movimiento en esta tarjeta
+            </h2>
+            <p className={styles.nuevoMovSectionTexto}>
+              Registra un gasto o ingreso con método crédito; se asociará a {tarjeta?.nombre ?? 'la tarjeta seleccionada'} y
+              se generarán las cuotas automáticamente.
+            </p>
+            <button
+              type="button"
+              className={styles.btnPrimary}
+              disabled={tarjetaId == null}
+              onClick={() => setModalNuevoGasto(true)}
+            >
+              + Nuevo movimiento con esta tarjeta
+            </button>
+          </section>
         </>
       )}
 
@@ -984,14 +1125,19 @@ export default function PagarTarjetaPage() {
       )}
 
       {/* Modal de nuevo gasto — Sección 6 */}
-      {modalNuevoGasto && (
+      {modalNuevoGasto && tarjetaId != null && (
         <ModalNuevoGasto
+          tarjetaId={tarjetaId}
           tarjetaNombre={tarjeta?.nombre ?? ''}
           cuentaOptions={cuentaOptionsModal}
           onClose={() => setModalNuevoGasto(false)}
-          onGuardar={() => {
-            refetch()
-            refetchCuotasTarjeta()
+          onCreated={async () => {
+            await Promise.all([
+              refetch(),
+              refetchCuotasTarjeta(),
+              refetchMovPersonal(),
+              refetchMovComun(),
+            ])
             setModalNuevoGasto(false)
           }}
         />

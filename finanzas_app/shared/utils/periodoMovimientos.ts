@@ -20,11 +20,25 @@ export function primerUltimoDiaMesISO(anio: number, mes0: number): { desde: stri
   return { desde, hasta }
 }
 
-/** Años para selects: [anioMax - span .. anioMax]. */
-export function rangoAniosSelect(anioCentro: number, span = 18): number[] {
-  const min = anioCentro - span
+/**
+ * Año mínimo al navegar con flechas o chips en listados de movimientos
+ * (evita años absurdos y mantiene coherencia con la API).
+ */
+export const ANIO_MIN_NAVEGACION_MOVIMIENTOS = 1990
+
+/** ¿Se puede ir al año anterior sin bajar del mínimo? */
+export function puedeRetrocederAnioMovimientos(anio: number): boolean {
+  return anio > ANIO_MIN_NAVEGACION_MOVIMIENTOS
+}
+
+/**
+ * Años descendentes desde anioMax hasta anioMax − span (inclusive),
+ * sin pasar de ANIO_MIN_NAVEGACION_MOVIMIENTOS.
+ */
+export function rangoAniosSelect(anioMax: number, span = 18): number[] {
+  const min = Math.max(anioMax - span, ANIO_MIN_NAVEGACION_MOVIMIENTOS)
   const out: number[] = []
-  for (let y = anioCentro; y >= min; y -= 1) out.push(y)
+  for (let y = anioMax; y >= min; y -= 1) out.push(y)
   return out
 }
 

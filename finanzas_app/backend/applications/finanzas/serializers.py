@@ -117,12 +117,24 @@ class TarjetaSerializer(serializers.ModelSerializer):
 
 
 class CuotaSerializer(serializers.ModelSerializer):
+    movimiento_comentario = serializers.CharField(
+        source='movimiento.comentario',
+        read_only=True,
+        allow_blank=True,
+    )
+    movimiento_categoria_nombre = serializers.SerializerMethodField()
+
     class Meta:
         model = Cuota
         fields = [
             'id', 'movimiento', 'numero', 'monto', 'mes_facturacion',
-            'estado', 'incluir'
+            'estado', 'incluir', 'movimiento_comentario',
+            'movimiento_categoria_nombre',
         ]
+
+    def get_movimiento_categoria_nombre(self, obj):
+        cat = getattr(obj.movimiento, 'categoria', None)
+        return cat.nombre if cat is not None else ''
 
 
 # Campos que no pueden cambiarse en un movimiento vinculado a IngresoComun

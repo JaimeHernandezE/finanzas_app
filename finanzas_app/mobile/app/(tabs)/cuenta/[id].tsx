@@ -21,9 +21,12 @@ import {
   toggleCategoriaConJerarquia,
   type CategoriaFiltroFila,
 } from '@finanzas/shared/utils/categoriasFiltroSidebar'
+import { formatMontoNetoContribucion } from '@finanzas/shared/utils/formatMontoNetoContribucion'
 import {
   etiquetaEncabezadoRango,
+  etiquetaTotalPeriodo,
   movimientosParamsPeriodo,
+  puedeRetrocederAnioMovimientos,
   primerUltimoDiaMesISO,
   type ModoPeriodo,
 } from '@finanzas/shared/utils/periodoMovimientos'
@@ -33,11 +36,14 @@ interface Movimiento {
   fecha: string
   comentario: string
   categoria_nombre: string
-  monto: number
+  monto: number | string
   tipo: 'INGRESO' | 'EGRESO'
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   /** Autor del movimiento (pk usuario); puede venir como número o string desde la API */
   usuario?: number | string
+  /** Ingreso declarado al fondo común (sueldo); no entra al neto como la web */
+  ingreso_comun?: number | null
+  categoria_es_inversion?: boolean
   /** Optimistic: aún no confirmado por POST */
   _sync_pending?: boolean
 }
@@ -58,6 +64,26 @@ const METODO_BADGE: Record<Movimiento['metodo_pago_tipo'], { label: string; bg: 
 function montoSeguro(valor: unknown): number {
   const n = typeof valor === 'number' ? valor : Number(valor)
   return Number.isFinite(n) ? n : 0
+}
+
+function toMontoNumber(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const txt = value.trim()
+    if (!txt) return 0
+    const parsed = Number(txt)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+/** Alineado a CuentaPage web: sueldos, inversión y TC fuera del neto. */
+function contribucionSaldo(m: Movimiento): number {
+  if (m.tipo === 'INGRESO' && m.ingreso_comun != null) return 0
+  if (m.tipo === 'EGRESO' && m.categoria_es_inversion) return 0
+  const monto = toMontoNumber(m.monto)
+  if (m.tipo === 'EGRESO' && m.metodo_pago_tipo === 'CREDITO') return 0
+  return m.tipo === 'EGRESO' ? monto : -monto
 }
 
 /** IDs desde JSON a veces vienen como string; si la API no manda `usuario`, en cuenta propia se asume editable. */
@@ -178,9 +204,12 @@ export default function CuentaPersonalScreen() {
 
   const esActualMes = mes === hoy.getMonth() && anio === hoy.getFullYear()
   const esAnioMaximo = anio >= hoy.getFullYear()
+  const esAnioMinimo = !puedeRetrocederAnioMovimientos(anio)
+  const esMesMinimo = mes === 0 && esAnioMinimo
 
   function irAnteriorMes() {
     if (mes === 0) {
+      if (!puedeRetrocederAnioMovimientos(anio)) return
       setMes(11)
       setAnio((a) => a - 1)
     } else setMes((m) => m - 1)
@@ -195,6 +224,7 @@ export default function CuentaPersonalScreen() {
   }
 
   function irAnteriorAnio() {
+    if (!puedeRetrocederAnioMovimientos(anio)) return
     setAnio((a) => a - 1)
   }
 
@@ -237,6 +267,15 @@ export default function CuentaPersonalScreen() {
 
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
+  const puedeMostrarEtiquetaPeriodo =
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+  const sumaMostrada = useMemo(
+    () => movimientosFiltrados.reduce((acc, m) => acc + contribucionSaldo(m), 0),
+    [movimientosFiltrados],
+  )
+  const totalLabel = puedeMostrarEtiquetaPeriodo
+    ? etiquetaTotalPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta)
+    : 'Total (filtros activos)'
   const hayFiltros = filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.trim().length > 0
 
   function limpiarFiltros() {
@@ -341,9 +380,12 @@ export default function CuentaPersonalScreen() {
               <View className="flex-row items-center gap-2 flex-1">
                 <TouchableOpacity
                   onPress={irAnteriorMes}
-                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
+                  disabled={esMesMinimo}
+                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
+                    esMesMinimo ? 'border-border/40' : 'border-border'
+                  }`}
                 >
-                  <Text className="text-dark text-lg">‹</Text>
+                  <Text className={`text-lg ${esMesMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
                 </TouchableOpacity>
                 <Text className="text-dark font-semibold text-sm flex-1 text-center">
                   {MESES[mes]} {anio}
@@ -361,25 +403,31 @@ export default function CuentaPersonalScreen() {
             </View>
           )}
           {modoPeriodo === 'ANIO' && (
-            <View className="flex-row items-center justify-between mb-3">
-              <View className="flex-row items-center gap-2 flex-1">
-                <TouchableOpacity
-                  onPress={irAnteriorAnio}
-                  className="w-8 h-8 border border-border rounded-lg items-center justify-center bg-white"
-                >
-                  <Text className="text-dark text-lg">‹</Text>
-                </TouchableOpacity>
-                <Text className="text-dark font-semibold text-sm flex-1 text-center">{anio}</Text>
-                <TouchableOpacity
-                  onPress={irSiguienteAnio}
-                  disabled={esAnioMaximo}
-                  className={`w-8 h-8 border rounded-lg items-center justify-center bg-white ${
-                    esAnioMaximo ? 'border-border/40' : 'border-border'
-                  }`}
-                >
-                  <Text className={`text-lg ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
-                </TouchableOpacity>
+            <View className="flex-row items-stretch gap-2 mb-3">
+              <TouchableOpacity
+                onPress={irAnteriorAnio}
+                disabled={esAnioMinimo}
+                accessibilityLabel="Año anterior"
+                className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                  esAnioMinimo ? 'border-border/40' : 'border-border'
+                }`}
+              >
+                <Text className={`text-xl ${esAnioMinimo ? 'text-border' : 'text-dark'}`}>‹</Text>
+              </TouchableOpacity>
+              <View className="flex-1 min-w-0 rounded-xl border border-[#e8e8e4] bg-[#f7f7f5] py-2.5 px-2 items-center justify-center">
+                <Text className="text-[10px] font-semibold uppercase text-muted">Año</Text>
+                <Text className="text-xl font-bold text-dark tabular-nums">{anio}</Text>
               </View>
+              <TouchableOpacity
+                onPress={irSiguienteAnio}
+                disabled={esAnioMaximo}
+                accessibilityLabel="Año siguiente"
+                className={`w-10 shrink-0 border rounded-xl items-center justify-center bg-white ${
+                  esAnioMaximo ? 'border-border/40' : 'border-border'
+                }`}
+              >
+                <Text className={`text-xl ${esAnioMaximo ? 'text-border' : 'text-dark'}`}>›</Text>
+              </TouchableOpacity>
             </View>
           )}
           {modoPeriodo === 'RANGO' && (
@@ -461,23 +509,37 @@ export default function CuentaPersonalScreen() {
           </View>
         ) : (
           <View className="px-5">
+            <View className="mb-4 flex-row items-baseline justify-between gap-3 rounded-xl border border-[#e8e8e4] bg-[#f7f7f5] px-4 py-3">
+              <View className="flex-1 min-w-0">
+                <Text className="text-sm font-semibold text-muted">{totalLabel}</Text>
+                {!puedeMostrarEtiquetaPeriodo && (
+                  <Text className="mt-0.5 text-[11px] text-muted">
+                    Tipo, búsqueda o filtros del panel
+                  </Text>
+                )}
+              </View>
+              <Text className="text-lg font-bold text-dark tabular-nums">
+                {formatMontoNetoContribucion(sumaMostrada, formatMonto)}
+              </Text>
+            </View>
+
             {grupos.map((grupo) => {
-              const subtotalEgresos = grupo.movimientos.reduce((acc, m) => {
-                if (m.tipo !== 'EGRESO' || m.metodo_pago_tipo === 'CREDITO') return acc
-                return acc + montoSeguro(m.monto)
-              }, 0)
-              const mostrarSubtotal = subtotalEgresos > 0
+              const netoDia = grupo.movimientos.reduce((acc, m) => acc + contribucionSaldo(m), 0)
 
               return (
                 <View key={grupo.fecha} className="mb-5">
-                  <View className="flex-row items-baseline flex-wrap mb-2">
-                    <Text className="text-xs font-bold text-muted tracking-wide">{grupo.label.toUpperCase()}</Text>
-                    {mostrarSubtotal && (
-                      <>
-                        <Text className="text-xs text-muted mx-1">—</Text>
-                        <Text className="text-xs font-semibold text-dark">{formatMonto(subtotalEgresos)}</Text>
-                      </>
-                    )}
+                  <View className="mb-2 flex-row items-center justify-between px-0.5">
+                    <Text className="text-xs font-bold uppercase tracking-wider text-muted">
+                      {grupo.label.toUpperCase()}
+                    </Text>
+                    <View className="items-end">
+                      <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+                        Neto del día
+                      </Text>
+                      <Text className="text-sm font-bold text-dark tabular-nums">
+                        {formatMontoNetoContribucion(netoDia, formatMonto)}
+                      </Text>
+                    </View>
                   </View>
                   <View className="bg-white border border-border rounded-xl overflow-hidden">
                     {grupo.movimientos.map((mov, idx) => {
