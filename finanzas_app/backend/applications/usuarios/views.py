@@ -42,6 +42,7 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
         'email': usuario.email,
         'nombre': usuario.get_full_name() or usuario.username,
         'rol': usuario.rol,
+        'activo': usuario.activo,
         'foto': (decoded or {}).get('picture'),
         'familia': {
             'id': usuario.familia.id,
@@ -69,6 +70,17 @@ def me(request):
 
     try:
         usuario = Usuario.objects.select_related('familia').get(email=email)
+
+        if not usuario.activo:
+            return Response(
+                {
+                    'error': (
+                        'Tu cuenta está deshabilitada. Contacta al administrador de la familia '
+                        'para que la vuelva a habilitar.'
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if usuario.firebase_uid != uid:
             usuario.firebase_uid = uid
@@ -106,7 +118,7 @@ def registrar_usuario(request):
     """
     Crea un usuario nuevo con token Firebase válido.
     Primer usuario del sistema: crea familia y queda como ADMIN.
-    Siguientes: requieren invitación pendiente para ese correo.
+    Con invitación pendiente: crea el usuario sin familia hasta que acepte en la app.
     """
     decoded, error = obtener_usuario_desde_token(request)
     if error:
@@ -116,42 +128,28 @@ def registrar_usuario(request):
     uid = decoded.get('uid')
     nombre = decoded.get('name') or (email.split('@')[0].capitalize() if email else 'Usuario')
 
-    existente = Usuario.objects.filter(email__iexact=email).first()
+    existente = Usuario.objects.filter(email__iexact=email).select_related('familia').first()
     if existente:
         if existente.firebase_uid != uid:
             existente.firebase_uid = uid
             existente.save(update_fields=['firebase_uid'])
-        return Response({
-            'id': existente.id,
-            'email': existente.email,
-            'nombre': existente.get_full_name() or existente.username,
-            'rol': existente.rol,
-            'creado': False,
-        }, status=status.HTTP_200_OK)
+        body = _payload_me(existente, decoded)
+        body['creado'] = False
+        return Response(body, status=status.HTTP_200_OK)
 
-    inv = (
-        InvitacionPendiente.objects.filter(email__iexact=email)
-        .select_related('familia')
-        .first()
-    )
-    if inv:
-        familia = inv.familia
-        InvitacionPendiente.objects.filter(familia=familia, email__iexact=email).delete()
+    invitaciones_correo = InvitacionPendiente.objects.filter(email__iexact=email)
+    if invitaciones_correo.exists():
         usuario = Usuario.objects.create(
             username=email,
             email=email,
             firebase_uid=uid,
             first_name=(nombre or email)[:150],
-            familia=familia,
+            familia=None,
             rol='MIEMBRO',
         )
-        return Response({
-            'id': usuario.id,
-            'email': usuario.email,
-            'nombre': usuario.get_full_name() or usuario.username,
-            'rol': usuario.rol,
-            'creado': True,
-        }, status=status.HTTP_201_CREATED)
+        body = _payload_me(usuario, decoded)
+        body['creado'] = True
+        return Response(body, status=status.HTTP_201_CREATED)
 
     if not Usuario.objects.exists():
         familia = Familia.objects.create(nombre='Mi familia')
@@ -163,13 +161,9 @@ def registrar_usuario(request):
             familia=familia,
             rol='ADMIN',
         )
-        return Response({
-            'id': usuario.id,
-            'email': usuario.email,
-            'nombre': usuario.get_full_name() or usuario.username,
-            'rol': usuario.rol,
-            'creado': True,
-        }, status=status.HTTP_201_CREATED)
+        body = _payload_me(usuario, decoded)
+        body['creado'] = True
+        return Response(body, status=status.HTTP_201_CREATED)
 
     return Response(
         {
@@ -239,9 +233,11 @@ def familia_miembros(request):
             'email': u.email,
             'nombre': u.get_full_name() or u.username,
             'rol': u.rol,
+            'activo': u.activo,
             'puede_quitar': puede_quitar_miembro_familia(
                 usuario.id, usuario.rol, u.id, u.rol, fid
             )[0],
+            'puede_cambiar_activo': usuario.rol == 'ADMIN' and u.id != usuario.id,
         }
         for u in qs
     ])
@@ -284,6 +280,81 @@ def miembro_actualizar_rol(request, pk):
         'email': otro.email,
         'nombre': otro.get_full_name() or otro.username,
         'rol': otro.rol,
+        'activo': otro.activo,
+    })
+
+
+@api_view(['PATCH'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def miembro_actualizar_activo(request, pk):
+    """
+    Habilita o deshabilita un miembro (solo ADMIN, no sobre uno mismo).
+    Los deshabilitados no usan la API y no entran en el prorrateo del mes actual ni futuros.
+    """
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if usuario.rol != 'ADMIN':
+        return Response(
+            {'error': 'Solo un administrador puede habilitar o deshabilitar miembros.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if not usuario.familia_id:
+        return Response({'error': 'Sin familia asignada.'}, status=status.HTTP_400_BAD_REQUEST)
+    if pk == usuario.id:
+        return Response(
+            {'error': 'No puedes deshabilitarte ni habilitarte a ti mismo desde aquí.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        otro = Usuario.objects.get(pk=pk, familia_id=usuario.familia_id)
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Miembro no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    activo_raw = request.data.get('activo')
+    if not isinstance(activo_raw, bool):
+        return Response(
+            {'error': 'El campo "activo" debe ser true o false.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if activo_raw == otro.activo:
+        return Response({
+            'id': otro.id,
+            'email': otro.email,
+            'nombre': otro.get_full_name() or otro.username,
+            'rol': otro.rol,
+            'activo': otro.activo,
+        })
+
+    if not activo_raw:
+        otros_activos = Usuario.objects.filter(
+            familia_id=usuario.familia_id, activo=True
+        ).exclude(pk=otro.pk)
+        if not otros_activos.exists():
+            return Response(
+                {'error': 'Debe quedar al menos un miembro habilitado en la familia.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if otro.rol == 'ADMIN':
+            otros_admins = Usuario.objects.filter(
+                familia_id=usuario.familia_id, rol='ADMIN', activo=True
+            ).exclude(pk=otro.pk)
+            if not otros_admins.exists():
+                return Response(
+                    {'error': 'Debe quedar al menos un administrador habilitado.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+    otro.activo = activo_raw
+    otro.save(update_fields=['activo'])
+    return Response({
+        'id': otro.id,
+        'email': otro.email,
+        'nombre': otro.get_full_name() or otro.username,
+        'rol': otro.rol,
+        'activo': otro.activo,
     })
 
 
@@ -411,5 +482,85 @@ def familia_invitacion_eliminar(request, pk):
         inv = InvitacionPendiente.objects.get(pk=pk, familia_id=usuario.familia_id)
     except InvitacionPendiente.DoesNotExist:
         return Response({'error': 'Invitación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+    inv.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def invitaciones_recibidas_list(request):
+    """
+    Invitaciones pendientes dirigidas al correo del usuario autenticado.
+    Solo relevante mientras el usuario no tiene familia asignada.
+    """
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if usuario.familia_id:
+        return Response([])
+    qs = (
+        InvitacionPendiente.objects.filter(email__iexact=usuario.email)
+        .select_related('familia', 'invitador')
+        .order_by('-created_at')
+    )
+    return Response([
+        {
+            'id': i.id,
+            'familia': {'id': i.familia.id, 'nombre': i.familia.nombre},
+            'fecha_envio': i.created_at.date().isoformat(),
+            'invitador_nombre': i.invitador.get_full_name() or i.invitador.username,
+        }
+        for i in qs
+    ])
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def invitacion_recibida_aceptar(request, pk):
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if usuario.familia_id:
+        return Response(
+            {'error': 'Ya perteneces a una familia.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        inv = InvitacionPendiente.objects.select_related('familia').get(
+            pk=pk,
+            email__iexact=usuario.email,
+        )
+    except InvitacionPendiente.DoesNotExist:
+        return Response(
+            {'error': 'Invitación no encontrada.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    usuario.familia = inv.familia
+    usuario.save(update_fields=['familia'])
+    InvitacionPendiente.objects.filter(email__iexact=usuario.email).delete()
+    return Response(_payload_me(usuario, None))
+
+
+@api_view(['DELETE'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def invitacion_recibida_rechazar(request, pk):
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if usuario.familia_id:
+        return Response(
+            {'error': 'Ya perteneces a una familia.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        inv = InvitacionPendiente.objects.get(pk=pk, email__iexact=usuario.email)
+    except InvitacionPendiente.DoesNotExist:
+        return Response(
+            {'error': 'Invitación no encontrada.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
     inv.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)

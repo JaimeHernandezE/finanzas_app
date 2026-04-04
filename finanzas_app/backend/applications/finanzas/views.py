@@ -1431,14 +1431,20 @@ def liquidacion(request):
         ).values(
             'usuario__id',
             'usuario__first_name',
+            'usuario__last_name',
+            'usuario__username',
         ).annotate(
             total=Sum('monto')
-        ).order_by('usuario__first_name')
+        ).order_by('usuario__first_name', 'usuario__last_name', 'usuario__id')
 
         ingresos = [
             {
                 'usuario_id': i['usuario__id'],
-                'nombre': i['usuario__first_name'],
+                'nombre': services_recalculo.nombre_para_liquidacion_valores(
+                    i.get('usuario__first_name'),
+                    i.get('usuario__last_name'),
+                    i.get('usuario__username'),
+                ),
                 'total': str(i['total']),
             }
             for i in ingresos_qs
@@ -1454,14 +1460,20 @@ def liquidacion(request):
         ).exclude(metodo_pago__tipo='CREDITO').values(
             'usuario__id',
             'usuario__first_name',
+            'usuario__last_name',
+            'usuario__username',
         ).annotate(
             total=Sum('monto')
-        ).order_by('usuario__first_name')
+        ).order_by('usuario__first_name', 'usuario__last_name', 'usuario__id')
 
         gastos_comunes = [
             {
                 'usuario_id': g['usuario__id'],
-                'nombre': g['usuario__first_name'],
+                'nombre': services_recalculo.nombre_para_liquidacion_valores(
+                    g.get('usuario__first_name'),
+                    g.get('usuario__last_name'),
+                    g.get('usuario__username'),
+                ),
                 'total': str(g['total']),
             }
             for g in gastos_qs
@@ -1720,10 +1732,10 @@ def sueldos_estimados_prorrateo(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     primer = _primer_dia_mes_param(mes_i, anio_i)
-    User = get_user_model()
-    miembros_ids = list(
-        User.objects.filter(familia_id=usuario.familia_id).values_list('pk', flat=True)
+    miembros_list = services_recalculo.miembros_para_prorrateo_fondo_comun(
+        usuario.familia_id, primer
     )
+    miembros_ids = [u.pk for u in miembros_list]
     if not miembros_ids:
         return Response({'mes': mes_i, 'anio': anio_i, 'montos': {}}, status=status.HTTP_200_OK)
 

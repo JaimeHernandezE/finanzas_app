@@ -29,7 +29,10 @@ const GRUPOS = [
   },
   {
     grupo: 'FAMILIA',
-    items: [{ icon: '◎', label: 'Miembros', to: '/configuracion/miembros' as const }],
+    items: [
+      { icon: '✉', label: 'Invitaciones recibidas', to: '/configuracion/invitaciones' as const },
+      { icon: '◎', label: 'Miembros', to: '/configuracion/miembros' as const },
+    ],
   },
 ] as const
 
@@ -144,6 +147,7 @@ export default function ConfiguracionPage() {
   const resumenPorRuta = useMemo(
     () => ({
       '/configuracion/categorias': textoCategorias(loadCats, errCats, nCats),
+      '/configuracion/invitaciones': user?.familia ? '—' : 'Pendiente',
       '/configuracion/miembros': textoMiembros(loadM, errM, nM),
       '/configuracion/cuentas': textoCuentas(loadC, errC, nC),
       '/configuracion/importar-cuenta-personal': 'CSV',
@@ -151,7 +155,7 @@ export default function ConfiguracionPage() {
       '/configuracion/importar-sueldos': 'CSV',
       '/configuracion/importar-gastos-comunes': 'CSV',
     }),
-    [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC]
+    [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC, user?.familia]
   )
 
   return (

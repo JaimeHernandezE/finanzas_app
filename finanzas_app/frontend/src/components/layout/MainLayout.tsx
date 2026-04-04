@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useViaje } from '@/context/ViajeContext'
 import { useEffect, useMemo } from 'react'
@@ -107,6 +107,7 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 
 export default function MainLayout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, loading, logout } = useAuth()
   const { viajeActivo } = useViaje()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
@@ -118,6 +119,12 @@ export default function MainLayout() {
     window.addEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
     return () => window.removeEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
   }, [refetchCuentas])
+
+  useEffect(() => {
+    if (loading || !user || user.familia) return
+    if (location.pathname.startsWith('/configuracion')) return
+    navigate('/configuracion/invitaciones', { replace: true })
+  }, [loading, user, location.pathname, navigate])
 
   const { propias, tuteladas } = useMemo(() => {
     const list = (cuentasApi ?? []).map(

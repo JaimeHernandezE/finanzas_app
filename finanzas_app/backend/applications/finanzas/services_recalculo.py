@@ -46,6 +46,22 @@ def meses_desde_hasta(inicio: date, fin: date) -> list[date]:
     return out
 
 
+def miembros_para_prorrateo_fondo_comun(familia_id: int, mes_pd: date) -> list:
+    """
+    Miembros que participan en el prorrateo de gastos comunes para ese mes calendario.
+
+    Meses estrictamente anteriores al mes en curso: todos los de la familia (no se reescribe
+    el historial al deshabilitar alguien). Mes en curso y futuros: solo usuarios con activo=True.
+    """
+    User = get_user_model()
+    base = User.objects.filter(familia_id=familia_id)
+    hoy = timezone.localdate()
+    mes_actual = primer_dia_mes(hoy)
+    if mes_pd < mes_actual:
+        return list(base.order_by('first_name', 'id'))
+    return list(base.filter(activo=True).order_by('first_name', 'id'))
+
+
 def get_recalculo_estado(familia_id: int) -> dict:
     rp = RecalculoPendiente.objects.filter(familia_id=familia_id).first()
     return {
@@ -336,6 +352,21 @@ def procesar_recalculos_pendientes(limit_familias: int | None = None) -> int:
     return n
 
 
+def nombre_usuario_liquidacion(usuario) -> str:
+    """Nombre completo para API de liquidación (coherente con el resto de la app)."""
+    if usuario is None:
+        return ''
+    return (usuario.get_full_name() or usuario.username or str(usuario.pk)).strip()
+
+
+def nombre_para_liquidacion_valores(
+    first_name: str | None, last_name: str | None, username: str | None
+) -> str:
+    """Construye el mismo criterio que get_full_name cuando solo hay columnas en values()."""
+    full = f'{(first_name or "").strip()} {(last_name or "").strip()}'.strip()
+    return full or (username or '').strip() or ''
+
+
 def liquidacion_datos_desde_snapshot_o_query(familia_id: int, mes: int, anio: int):
     """
     Retorna (ingresos_list, gastos_list) como listas de dicts compatibles con la vista liquidacion,
@@ -352,7 +383,7 @@ def liquidacion_datos_desde_snapshot_o_query(familia_id: int, mes: int, anio: in
     ingresos = []
     gastos = []
     for row in qs:
-        nombre = row.usuario.first_name or row.usuario.username
+        nombre = nombre_usuario_liquidacion(row.usuario)
         if row.tipo_linea == 'INGRESO_COMUN':
             ingresos.append(
                 {
@@ -609,18 +640,15 @@ def datos_compensacion_proyectada(usuario, mes: int, anio: int) -> dict | None:
     """
     Base para compensación como Resumen común del mes indicado:
     neto familiar COMÚN (ingresos − egresos COMÚN sin crédito) y, por miembro, neto común real en ese mes.
-    El ingreso_declarado_mes es informativo; el cliente calcula el esperado con sueldos del mes anterior
-    (u otros) vía inputs, no con los sueldos declarados del mes del resumen.
+    ingreso_declarado_mes sirve para restarlo de la base guardada en SueldoEstimadoProrrateoMensual
+    en el mes en curso (sueldo proyectado neto y pesos del prorrateo sin duplicar ingreso real).
     """
     familia_id = usuario.familia_id
     if not familia_id:
         return None
     mes_pd = date(anio, mes, 1)
     neto_familiar = _total_comun_neto_familia_mes(familia_id, mes_pd)
-    User = get_user_model()
-    miembros = list(
-        User.objects.filter(familia_id=familia_id).order_by('first_name', 'id')
-    )
+    miembros = miembros_para_prorrateo_fondo_comun(familia_id, mes_pd)
     if not miembros:
         return None
     out_miembros = []
@@ -695,12 +723,14 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
     Un mes calendario: neto familiar COMÚN (ingresos − egresos), neto por usuario, sueldos
     declarados, prorrateo sobre el neto familiar, compensación (neto vs esperado) y
     transferencias sugeridas.
+
+    Si ``miembros`` es None, el conjunto depende del mes respecto al mes en curso
+    (ver ``miembros_para_prorrateo_fondo_comun``): meses pasados = todos; mes actual y
+    futuros = solo ``Usuario.activo``.
+    El total de ingresos comunes para porcentajes es la suma solo de esos miembros.
     """
-    User = get_user_model()
     if miembros is None:
-        miembros = list(
-            User.objects.filter(familia_id=familia_id).order_by('first_name', 'id')
-        )
+        miembros = miembros_para_prorrateo_fondo_comun(familia_id, mes_pd)
     if not miembros:
         return None
     miembros_ids = [u.pk for u in miembros]
@@ -711,7 +741,10 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
     }
 
     neto_familiar = _total_comun_neto_familia_mes(familia_id, mes_pd)
-    tot_ing = _total_ingresos_comunes_mes(familia_id, mes_pd)
+    tot_ing = sum(
+        (_ingreso_comun_usuario_mes(familia_id, uid, mes_pd) for uid in miembros_ids),
+        start=Decimal('0'),
+    )
 
     gastos_por_usuario = []
     sueldos = []
@@ -810,8 +843,7 @@ def backfill_resumen_historico_snapshots(familia_id: int) -> int:
     Útil tras migraciones o para reparar datos.
     """
     User = get_user_model()
-    miembros = list(User.objects.filter(familia_id=familia_id).order_by('first_name', 'id'))
-    if not miembros:
+    if not User.objects.filter(familia_id=familia_id).exists():
         return 0
     primero = _primer_mes_datos_familia(familia_id)
     if not primero:
@@ -819,7 +851,7 @@ def backfill_resumen_historico_snapshots(familia_id: int) -> int:
     mes_fin = ultimo_mes_cerrado()
     n = 0
     for mes_pd in meses_desde_hasta(primero, mes_fin):
-        row = calcular_resumen_mes(familia_id, mes_pd, miembros=miembros)
+        row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
         if row is None:
             continue
         ResumenHistoricoMesSnapshot.objects.update_or_create(
@@ -839,10 +871,7 @@ def resumen_historico_familia(familia_id: int) -> list[dict]:
     Usa snapshots persistidos; si falta un mes, calcula y guarda.
     """
     User = get_user_model()
-    miembros = list(
-        User.objects.filter(familia_id=familia_id).order_by('first_name', 'id')
-    )
-    if not miembros:
+    if not User.objects.filter(familia_id=familia_id).exists():
         return []
 
     primero = _primer_mes_datos_familia(familia_id)
@@ -859,7 +888,7 @@ def resumen_historico_familia(familia_id: int) -> list[dict]:
         if snap is not None:
             out.append(snap.payload)
             continue
-        row = calcular_resumen_mes(familia_id, mes_pd, miembros=miembros)
+        row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
         if row is None:
             continue
         ResumenHistoricoMesSnapshot.objects.update_or_create(

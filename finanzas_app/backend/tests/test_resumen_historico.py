@@ -236,3 +236,56 @@ class TestResumenSnapshot:
         assert r.status_code == 200
         meses = r.json()['meses']
         assert not any(x['mes'] == 3 and x['anio'] == 2026 for x in meses)
+
+    @patch(
+        'applications.finanzas.services_recalculo.timezone.localdate',
+        return_value=date(2026, 6, 10),
+    )
+    def test_prorrateo_mes_actual_excluye_usuario_inactivo(
+        self,
+        _mock_localdate,
+        usuario,
+        usuario_2,
+        familia,
+        categoria_egreso,
+        metodo_efectivo,
+    ):
+        """Junio = mes en curso: solo miembros activos entran en el prorrateo (tot_ing solo de ellos)."""
+        from applications.finanzas.models import IngresoComun
+
+        mes_pd = date(2026, 6, 1)
+        usuario_2.activo = False
+        usuario_2.save(update_fields=['activo'])
+
+        IngresoComun.objects.create(
+            usuario=usuario,
+            familia=familia,
+            mes=mes_pd,
+            monto='1000000.00',
+            origen='Sueldo',
+        )
+        IngresoComun.objects.create(
+            usuario=usuario_2,
+            familia=familia,
+            mes=mes_pd,
+            monto='500000.00',
+            origen='Sueldo',
+        )
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-06-05',
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto='300000.00',
+            comentario='Gasto',
+            metodo_pago=metodo_efectivo,
+        )
+
+        row = services_recalculo.calcular_resumen_mes(familia.pk, mes_pd)
+        assert row is not None
+        ids = {p['usuario_id'] for p in row['prorrateo_por_usuario']}
+        assert usuario.pk in ids
+        assert usuario_2.pk not in ids
+        assert len(row['prorrateo_por_usuario']) == 1

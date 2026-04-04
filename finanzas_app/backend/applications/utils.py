@@ -27,8 +27,6 @@ def get_usuario_autenticado(request):
         decoded = firebase_auth.verify_id_token(token)
         email = decoded.get('email')
         usuario = Usuario.objects.select_related('familia').get(email=email)
-        return usuario, None
-
     except Usuario.DoesNotExist:
         return None, Response(
             {'error': 'Usuario no registrado.'},
@@ -39,3 +37,15 @@ def get_usuario_autenticado(request):
             {'error': f'Token inválido: {str(e)}'},
             status=status.HTTP_401_UNAUTHORIZED
         )
+
+    if not usuario.activo:
+        return None, Response(
+            {
+                'error': (
+                    'Tu cuenta está deshabilitada. Contacta al administrador de la familia '
+                    'para que la vuelva a habilitar.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return usuario, None

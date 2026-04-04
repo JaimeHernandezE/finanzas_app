@@ -29,6 +29,7 @@ import ConfiguracionPage from '@/pages/configuracion/ConfiguracionPage'
 import CategoriasPage from '@/pages/configuracion/CategoriasPage'
 import CuentasPage from '@/pages/configuracion/CuentasPage'
 import MiembrosPage from '@/pages/configuracion/MiembrosPage'
+import InvitacionesRecibidasPage from '@/pages/configuracion/InvitacionesRecibidasPage'
 import PerfilPage from '@/pages/configuracion/PerfilPage'
 import ImportadorCuentaPersonalPage from '@/pages/configuracion/ImportadorCuentaPersonalPage'
 import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorariosPage'
@@ -102,6 +103,7 @@ function AppRoutes() {
           <Route path="categorias" element={<CategoriasPage />} />
           <Route path="cuentas" element={<CuentasPage />} />
           <Route path="miembros" element={<MiembrosPage />} />
+          <Route path="invitaciones" element={<InvitacionesRecibidasPage />} />
           <Route path="importar-cuenta-personal" element={<ImportadorCuentaPersonalPage />} />
           <Route path="importar-honorarios" element={<ImportadorHonorariosPage />} />
           <Route path="importar-sueldos" element={<ImportadorSueldosPage />} />

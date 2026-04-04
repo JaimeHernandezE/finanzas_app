@@ -146,6 +146,45 @@
   color: $color-text-muted;
 }
 
+.filaInactiva {
+  opacity: 0.72;
+}
+
+.badgeInactivo {
+  font-size: 10px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: $radius-sm;
+  background: #f5f5f0;
+  color: $color-text-muted;
+  border: 1px solid #e0e0dc;
+}
+
+.btnToggleActivo {
+  padding: 2px 8px;
+  margin-right: 2px;
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: $color-bg-white;
+  color: $color-text-muted;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    border-color: #c8c8c0;
+    color: $color-text;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 .btnEdit {
   width: 28px;
   height: 28px;

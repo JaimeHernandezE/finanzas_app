@@ -1,0 +1,161 @@
+// Invitaciones recibidas — aceptar / rechazar unión a familia
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fadeUp {
+  animation: fadeUp 0.25s ease-out;
+}
+
+.page {
+  padding: $space-6 $space-8;
+  max-width: 1000px;
+  background: $color-bg-page;
+  min-height: 100%;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+  margin-bottom: $space-3;
+
+  &:hover {
+    color: $color-text;
+    text-decoration: underline;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  color: $color-text;
+  line-height: 1.1;
+  margin-bottom: $space-2;
+}
+
+.subtitulo {
+  font-size: 14px;
+  color: $color-text-muted;
+  margin-bottom: $space-6;
+  line-height: 1.45;
+}
+
+.section {
+  margin-bottom: $space-8;
+}
+
+.groupHeader {
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: $color-text-muted;
+  margin-bottom: $space-3;
+}
+
+.block {
+  background: $color-bg-white;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  overflow: hidden;
+}
+
+.fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-3 $space-4;
+  padding: $space-4;
+  border-top: 1px solid #e8e8e4;
+
+  &:first-child {
+    border-top: none;
+  }
+}
+
+.filaMain {
+  flex: 1;
+  min-width: 200px;
+}
+
+.familiaNombre {
+  font-size: 15px;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  margin-bottom: $space-1;
+}
+
+.meta {
+  font-size: 13px;
+  color: $color-text-muted;
+}
+
+.acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-2;
+}
+
+.btnAceptar {
+  padding: $space-2 $space-4;
+  font-size: 13px;
+  font-weight: $font-weight-semibold;
+  border: none;
+  border-radius: $radius-base;
+  background: #c8f060;
+  color: #0f0f0f;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &:hover:not(:disabled) {
+    filter: brightness(1.03);
+  }
+}
+
+.btnRechazar {
+  padding: $space-2 $space-4;
+  font-size: 13px;
+  font-weight: $font-weight-semibold;
+  border: 1px solid #d0d0cc;
+  border-radius: $radius-base;
+  background: $color-bg-white;
+  color: $color-text-muted;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: #b0b0a8;
+    color: $color-text;
+  }
+}
+
+.msgErr {
+  font-size: 14px;
+  color: #b42318;
+  margin-top: $space-3;
+}
+
+.msgVacio {
+  font-size: 14px;
+  color: $color-text-muted;
+  padding: $space-4;
+  line-height: 1.5;
+}

@@ -25,6 +25,8 @@ export interface Usuario {
   nombre:   string
   foto:     string | null
   rol:      string
+  /** Cuenta habilitada en la app (false = deshabilitada por un administrador). */
+  activo?:  boolean
   familia:  { id: number; nombre: string } | null
 }
 
@@ -48,6 +50,8 @@ interface AuthContextType {
   changePassword: (newPassword: string) => Promise<void>
   logout:   () => Promise<void>
   updateNombre: (nombre: string) => Promise<void>
+  /** Vuelve a cargar perfil desde GET /api/usuarios/me/ (p. ej. tras aceptar invitación). */
+  refreshUsuario: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -95,6 +99,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null)
   }
 
+  async function refreshUsuario() {
+    const firebaseUser = auth.currentUser
+    if (!firebaseUser) return
+    try {
+      const token = await firebaseUser.getIdToken()
+      const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+      const res = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
+      if (res.ok) {
+        const data = await res.json()
+        localStorage.setItem('auth_token', token)
+        setUsuario((prev) => ({
+          ...data,
+          foto: data?.foto ?? prev?.foto ?? null,
+        }))
+        setError(null)
+      }
+    } catch {
+      // Dejamos el perfil actual; la pantalla que llamó puede mostrar error propio.
+    }
+  }
+
   async function verificarConBackend(firebaseUser: FirebaseUser) {
     try {
       const token = await firebaseUser.getIdToken()
@@ -110,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUsuario(data)
         setError(null)
       } else if (res.status === 404) {
-        // Si existe invitación pendiente (o es primer usuario), el backend lo registra aquí.
+        // Si existe invitación pendiente (o es primer usuario), el backend registra aquí; con invitación puede quedar sin familia hasta aceptar.
         const regRes = await fetch(registroUrl, {
           method: 'POST',
           headers,
@@ -131,6 +156,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           regBody?.error ||
           'Tu cuenta de Gmail no está registrada. Contacta al administrador.'
         )
+      } else if (res.status === 403) {
+        const body = await res.json().catch(() => ({}))
+        await signOut(auth)
+        localStorage.removeItem('auth_token')
+        setUsuario(null)
+        setError(body?.error || 'Tu cuenta no está habilitada para usar la aplicación.')
       } else if (res.status === 401) {
         const body = await res.json().catch(() => ({}))
         const msg = body?.error || 'Sesión no válida'
@@ -491,6 +522,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         changePassword,
         logout,
         updateNombre,
+        refreshUsuario,
       }}
     >
       {children}

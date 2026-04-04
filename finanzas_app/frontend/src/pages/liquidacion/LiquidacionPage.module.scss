@@ -150,8 +150,11 @@
   font-size: $font-size-sm;
   font-weight: $font-weight-semibold;
   color: $color-text;
-  min-width: 80px;
-  flex-shrink: 0;
+  min-width: 72px;
+  max-width: 42%;
+  flex: 0 1 auto;
+  line-height: 1.3;
+  word-wrap: break-word;
 }
 
 .barTrack {
@@ -213,7 +216,7 @@
 
 .prorrateoFila {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: $space-2;
   font-size: $font-size-sm;
   flex-wrap: wrap;
@@ -222,7 +225,10 @@
 .prorrateoNombre {
   font-weight: $font-weight-semibold;
   color: $color-text;
-  min-width: 60px;
+  flex: 1 1 100px;
+  min-width: 0;
+  line-height: 1.3;
+  word-wrap: break-word;
 }
 
 .prorrateoCalc {
@@ -247,7 +253,7 @@
 
 .compFila {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: $space-2;
   font-size: $font-size-sm;
   flex-wrap: wrap;
@@ -256,7 +262,10 @@
 .compNombre {
   font-weight: $font-weight-semibold;
   color: $color-text;
-  min-width: 60px;
+  flex: 1 1 100px;
+  min-width: 0;
+  line-height: 1.3;
+  word-wrap: break-word;
 }
 
 .compDetalle {

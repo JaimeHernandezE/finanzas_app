@@ -67,7 +67,7 @@ function BarraRow({ nombre, valor, max, color, metaDerecha }: {
   return (
     <View className="mb-3">
       <View className="flex-row justify-between items-center mb-1">
-        <Text className="text-dark text-sm font-medium flex-1 mr-2" numberOfLines={1}>{nombre}</Text>
+        <Text className="text-dark text-sm font-medium flex-1 mr-2 shrink">{nombre}</Text>
         <View className="flex-row items-center gap-2">
           {metaDerecha ? <Text className="text-muted text-xs">{metaDerecha}</Text> : null}
           <Text className="text-dark text-sm font-semibold">{formatMonto(valor)}</Text>
@@ -205,9 +205,9 @@ export default function LiquidacionScreen() {
             {/* 3. Prorrateo */}
             <SeccionCard titulo="Prorrateo">
               {deberíaPagar.map((d) => (
-                <View key={d.usuarioId} className="flex-row items-center mb-2">
-                  <Text className="text-dark text-sm font-medium w-20 flex-shrink-0">{d.nombre}</Text>
-                  <Text className="text-muted text-xs flex-1 text-center">
+                <View key={d.usuarioId} className="flex-row items-center mb-2 gap-2">
+                  <Text className="text-dark text-sm font-medium flex-1 mr-1 shrink">{d.nombre}</Text>
+                  <Text className="text-muted text-xs flex-shrink-0 text-center" style={{ maxWidth: '46%' }}>
                     {d.porcentaje.toFixed(1)}% × {formatMonto(totalGastos)}
                   </Text>
                   <Text className="text-dark text-sm font-semibold flex-shrink-0">{formatMonto(d.monto)}</Text>

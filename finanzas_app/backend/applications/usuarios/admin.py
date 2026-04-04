@@ -11,10 +11,10 @@ class FamiliaAdmin(admin.ModelAdmin):
 
 @admin.register(Usuario)
 class UsuarioAdmin(UserAdmin):
-    list_display = ['username', 'email', 'familia', 'rol', 'is_active']
-    list_filter  = ['rol', 'familia', 'is_active']
+    list_display = ['username', 'email', 'familia', 'rol', 'activo', 'is_active']
+    list_filter  = ['rol', 'familia', 'activo', 'is_active']
     fieldsets    = UserAdmin.fieldsets + (
-        ('App Finanzas', {'fields': ('firebase_uid', 'familia', 'rol')}),
+        ('App Finanzas', {'fields': ('firebase_uid', 'familia', 'rol', 'activo')}),
     )
 
 

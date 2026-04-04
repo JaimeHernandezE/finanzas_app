@@ -54,6 +54,19 @@ function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
 }
 
+/**
+ * Base de sueldo estimado (inputs del usuario) menos ingreso común ya declarado en ese mes.
+ * Así el saldo proyectado no duplica lo que ya suma el efectivo disponible (B — sueldo declarado mes actual).
+ */
+function sueldoProyectadoNetoMes(
+  sueldosDigitosStr: string,
+  ingresoDeclaradoMesStr: string | undefined,
+): number {
+  const base = montoClpANumero(sueldosDigitosStr)
+  const decl = Math.round(Number(ingresoDeclaradoMesStr) || 0)
+  return Math.max(0, Math.round(base - decl))
+}
+
 const fechaCorta = (iso: string) => {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d).toLocaleDateString('es-CL', {
@@ -410,15 +423,18 @@ function SaldoProyectadoCard({
             <>
               <div className={styles.metricTooltipTitle}>Cómo se calcula el saldo proyectado</div>
               <p className={styles.saldoDetalleIntro}>
-                Sueldo proyectado más efectivo disponible menos deudas tarjetas más la compensación según prorrateo
-                de sueldos estimados (según mes anterior).
+                Sueldo proyectado (base estimada menos sueldos ya declarados al fondo común en el mes en curso)
+                más efectivo disponible menos deudas tarjetas más la compensación según prorrateo con esas bases
+                netas.
               </p>
               <p className={styles.saldoDetalleFormula}>
                 <strong>Saldo = A + B − C + D</strong>
               </p>
               <div className={styles.metricDesgloseSectionTitle}>Aporte</div>
               <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>A — Sueldo proyectado</span>
+                <span className={styles.metricTooltipKey}>
+                  A — Sueldo proyectado (estimado − ya declarado en el mes)
+                </span>
                 <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
                   +{formatMonto(Math.abs(sueldoProyectado))}
                 </span>
@@ -443,8 +459,8 @@ function SaldoProyectadoCard({
                   {formatMonto(Math.round(netoFamiliarComun))}.
                 </li>
                 <li>
-                  <strong>Tu neto común esperado</strong> (Prorrateado según sueldo estimado):{' '}
-                  {formatMonto(esperadoProrrateo)}.
+                  <strong>Tu neto común esperado</strong> (prorrateo según base estimada neta, ya descontado lo
+                  declarado al fondo común en el mes): {formatMonto(esperadoProrrateo)}.
                 </li>
                 <li>
                   <strong>Tu neto común real</strong> (lo que has aportado o recibiste en común en el mes):{' '}
@@ -770,13 +786,21 @@ export default function DashboardPage() {
     const n = compensacionData.miembros.length
     const netoFam = toPesos(compensacionData.neto_familiar_comun)
     const totEst = compensacionData.miembros.reduce(
-      (s, m) => s + montoClpANumero(sueldosDigitos[m.usuario_id] ?? ''),
+      (s, m) =>
+        s +
+        sueldoProyectadoNetoMes(
+          sueldosDigitos[m.usuario_id] ?? '',
+          m.ingreso_declarado_mes,
+        ),
       0,
     )
     const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
     if (!self) return vacio
     const netoUs = toPesos(self.neto_comun_mes)
-    const meu = montoClpANumero(sueldosDigitos[user.id] ?? '')
+    const meu = sueldoProyectadoNetoMes(
+      sueldosDigitos[user.id] ?? '',
+      self.ingreso_declarado_mes,
+    )
     let esperado = 0
     if (totEst > 0.005) {
       esperado = (meu / totEst) * netoFam
@@ -795,9 +819,13 @@ export default function DashboardPage() {
 
   const compensacionEstimada = saldoCompensacionDetalle.compensacion
   const sueldoProyectado = useMemo(() => {
-    if (!user) return 0
-    return Math.round(montoClpANumero(sueldosDigitos[user.id] ?? ''))
-  }, [sueldosDigitos, user])
+    if (!user || !esActual) return 0
+    const self = compensacionData?.miembros?.find((m) => m.usuario_id === user.id)
+    return sueldoProyectadoNetoMes(
+      sueldosDigitos[user.id] ?? '',
+      self?.ingreso_declarado_mes,
+    )
+  }, [sueldosDigitos, user, esActual, compensacionData])
 
   const saldo = useMemo(() => {
     if (!esActual) {

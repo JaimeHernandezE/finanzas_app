@@ -583,6 +583,9 @@ class SueldoEstimadoProrrateoMensual(models.Model):
     Base de sueldos para prorrateo del saldo proyectado (misma lógica que Resumen común,
     con proporciones editables). Un registro por usuario y mes calendario.
     Al guardar un mes, se eliminan registros de meses anteriores de la misma familia.
+
+    En el mes en curso, el cliente debe usar esta base menos el IngresoComun ya declarado
+    para ese mes (evita duplicar con el término B del efectivo disponible).
     """
 
     usuario = models.ForeignKey(

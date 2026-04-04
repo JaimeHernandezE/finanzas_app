@@ -45,6 +45,11 @@ class Usuario(AbstractUser):
         help_text="Familia a la que pertenece este usuario."
     )
     rol = models.CharField(max_length=10, choices=ROL_CHOICES, default='MIEMBRO')
+    activo = models.BooleanField(
+        default=True,
+        help_text='Si es False, la cuenta no puede usar la API y no participa en el prorrateo '
+                   'de gastos comunes del mes calendario en curso ni de meses futuros.',
+    )
 
     def cuentas_visibles(self):
         """
@@ -64,6 +69,7 @@ class InvitacionPendiente(models.Model):
     """
     Email invitado a unirse a una familia (registro pendiente).
     No envía correo por sí sola; la app solo registra la invitación.
+    El invitado debe aceptar explícitamente en la app (p. ej. Configuración).
     """
 
     familia = models.ForeignKey(

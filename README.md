@@ -123,7 +123,8 @@ Familia (tenant raíz)
 Cada movimiento es `PERSONAL` o `COMUN`. Los comunes entran al fondo familiar y se prorratean; los personales solo afectan el saldo individual. Un usuario puede tener más de una cuenta personal. La cuenta **Personal** viene por defecto pero puedes agregar adicionales, por ejemplo tengo una para honorarios como arquitecto.
 
 ### Dashboard personal
-El Dashboard lleva 3 cards principales: la cuenta de tu efectivo disponible, lo que deberás pagar en tarjetas personales este mes, del saldo proyectado a fin de mes que incluye los gastos comunes prorrateados. Luego muestra los últimos 10 movimientos de tus cuentas personales y el estado de lo gastado versus tu presupuesto estimado por categoría.
+El Dashboard lleva 3 cards principales: la cuenta de tu efectivo disponible, lo que deberás pagar en tarjetas personales este mes y el saldo proyectado a fin de mes que incluye el sueldo estimado de tu mes anterior y los gastos comunes prorrateados. Luego muestra los últimos 10 movimientos de tus cuentas personales y el estado de lo gastado versus tu presupuesto estimado por categoría.
+
 ![1775301465868](image/README/1775301465868.png)
 
 ### Tarjeta de crédito con cuotas reales
@@ -139,6 +140,8 @@ cuotas 2..N                          →  cada una +1 mes
 El redondeo (ej: $100 en 3 cuotas = $33,33...) se absorbe entero en la cuota 1 para nunca superar el monto total.
 
 La vista **Pagar tarjeta** muestra exactamente qué cuotas vencen este mes según el ciclo. Puedes diferir cualquier cuota individualmente (`incluir = False`) y el sistema la mueve automáticamente al mes siguiente.
+
+![1775302151630](image/README/1775302151630.png)
 
 ### Liquidación mensual con prorrateo proporcional
 
@@ -156,6 +159,8 @@ Para cada integrante:
 
 El sistema luego empareja deudores con acreedores para minimizar el número de transferencias.
 
+![1775304020327](image/README/1775304020327.png)
+
 ### Compensación proyectada
 
 Antes de que llegue fin de mes puedes ver un estimado: si declaras cuánto va a ser tu sueldo este mes (o el del otro integrante), el sistema calcula la compensación proyectada usando esos valores en lugar del ingreso real.
@@ -164,11 +169,11 @@ Antes de que llegue fin de mes puedes ver un estimado: si declaras cuánto va a 
 
 Define un monto mensual por categoría. La comparación es **on-the-fly** contra los movimientos reales del mes, sin duplicar datos. Soporte para jerarquía de categorías (padre → hijos con subtotales agregados).
 
-### Inversiones
+### Inversiones (En desarrollo)
 
 Registra fondos de inversión o APV: cada `Aporte` (capital nuevo) y cada `RegistroValor` (valor cuota de fecha X) permiten calcular rentabilidad histórica y valor actual del portafolio.
 
-### Viajes
+### Viajes (En desarrollo)
 
 Modo vacaciones: activa un viaje y todos los gastos del período se pueden asociar a él, con presupuesto propio por categoría. El frontend activa un tema de color distinto mientras hay un viaje activo.
 
@@ -230,6 +235,9 @@ invalidateQueries(['compensacion'])
 
 ### Snapshots para cálculos costosos
 La liquidación mensual requiere agregar ingresos y gastos de múltiples usuarios. En lugar de calcular en cada request, el sistema mantiene snapshots cacheados que se invalidan asincrónicamente cuando cambian los datos, con recalculación síncrona solo para el mes actual y el anterior.
+
+### Snapshot mensual
+El calculo de efectivo (dinero disponible) se cosntruye a partir de los snapshot mensuales, lo que implica que si modificas un gasto en cualquier fecha anterior al mes actual, se reconstruye primero el snapshot del mes específico modificado, y luego el efectivo disponible.
 
 ### Señales de Django para consistencia de datos
 La generación de cuotas y la creación del `Movimiento` espejo de `IngresoComun` se manejan con signals `post_save`, manteniendo consistencia sin que el view necesite conocer esa lógica.

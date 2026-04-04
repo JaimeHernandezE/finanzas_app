@@ -11,6 +11,8 @@ interface Miembro {
   email: string
   foto: string | null
   rol: 'ADMIN' | 'MIEMBRO' | 'LECTURA'
+  activo: boolean
+  puedeCambiarActivo: boolean
   esTuActual: boolean
   puedeQuitar: boolean
 }
@@ -48,6 +50,7 @@ export default function MiembrosPage() {
   const [editRol, setEditRol] = useState<'ADMIN' | 'MIEMBRO' | 'LECTURA'>('MIEMBRO')
   const [savingRol, setSavingRol] = useState(false)
   const [quitarMiembroId, setQuitarMiembroId] = useState<number | null>(null)
+  const [cambiandoActivoId, setCambiandoActivoId] = useState<number | null>(null)
 
   const esAdmin = currentUser?.rol === 'ADMIN'
 
@@ -67,6 +70,8 @@ export default function MiembrosPage() {
           email: m.email,
           foto: null,
           rol: m.rol,
+          activo: m.activo !== false,
+          puedeCambiarActivo: !!m.puede_cambiar_activo,
           esTuActual: m.id === uid,
           puedeQuitar: !!m.puede_quitar,
         }))
@@ -115,7 +120,7 @@ export default function MiembrosPage() {
         ...prev.filter((p) => p.id !== data.id),
       ])
       setMensajeExito(
-        `Invitación registrada para ${email}. Esa persona debe iniciar sesión con ese correo para unirse (no se envía email automático).`
+        `Invitación registrada para ${email}. Esa persona debe iniciar sesión con ese correo y aceptar en Configuración → Invitaciones recibidas (no se envía email automático).`
       )
       setEmailInvitacion('')
     } catch (e: unknown) {
@@ -177,6 +182,28 @@ export default function MiembrosPage() {
 
   const cancelQuitarMiembro = () => setQuitarMiembroId(null)
 
+  const toggleMiembroActivo = async (m: Miembro) => {
+    if (!esAdmin || !m.puedeCambiarActivo || cambiandoActivoId !== null) return
+    const nuevo = !m.activo
+    setApiError('')
+    setCambiandoActivoId(m.id)
+    try {
+      const { data } = await familiaApi.patchMiembroActivo(m.id, nuevo)
+      setMiembros((prev) =>
+        prev.map((x) =>
+          x.id === m.id ? { ...x, activo: data.activo !== false, nombre: data.nombre || x.nombre } : x
+        )
+      )
+    } catch (e: unknown) {
+      const msg =
+        (e as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'No se pudo actualizar el estado de la cuenta.'
+      setApiError(msg)
+    } finally {
+      setCambiandoActivoId(null)
+    }
+  }
+
   const confirmQuitarMiembro = async () => {
     if (quitarMiembroId == null) return
     setApiError('')
@@ -215,11 +242,18 @@ export default function MiembrosPage() {
       {apiError && <p className={styles.msgError}>{apiError}</p>}
 
       <section className={styles.section}>
-        <h2 className={styles.groupHeader}>MIEMBROS ACTIVOS</h2>
+        <h2 className={styles.groupHeader}>MIEMBROS</h2>
         {esAdmin && (
           <p className={styles.hintQuitar}>
-            Puedes quitar de la familia a quien no tenga movimientos, cuentas, tarjetas ni otros datos
-            asociados. Si tiene actividad, primero hay que limpiar o reasignar esos registros.
+            Puedes <strong>deshabilitar</strong> una cuenta para que no pueda usar la app y deje de entrar en
+            el prorrateo de gastos comunes del mes en curso y de los meses futuros (el historial de meses
+            pasados no se reescribe). Puedes volver a habilitarla cuando quieras.
+          </p>
+        )}
+        {esAdmin && (
+          <p className={styles.hintQuitar}>
+            También puedes quitar de la familia a quien no tenga movimientos, cuentas, tarjetas ni otros
+            datos asociados. Si tiene actividad, primero hay que limpiar o reasignar esos registros.
           </p>
         )}
         <div className={styles.block}>
@@ -295,7 +329,10 @@ export default function MiembrosPage() {
             }
 
             return (
-              <div key={m.id} className={styles.fila}>
+              <div
+                key={m.id}
+                className={`${styles.fila} ${!m.activo ? styles.filaInactiva : ''}`}
+              >
                 <div className={styles.filaAvatar}>
                   {m.foto ? (
                     <img src={m.foto} alt="" className={styles.avatarImg} />
@@ -309,9 +346,25 @@ export default function MiembrosPage() {
                     <span className={`${styles.badgeRol} ${styles[`rol${m.rol}`]}`}>
                       {rolLabel(m.rol)}
                     </span>
+                    {!m.activo && (
+                      <span className={styles.badgeInactivo} title="No puede usar la app ni prorratear">
+                        Deshabilitado
+                      </span>
+                    )}
                     {m.esTuActual && <span className={styles.tuBadge}>(tú)</span>}
                     {esAdmin && (
                       <span className={styles.filaActions}>
+                        {m.puedeCambiarActivo && (
+                          <button
+                            type="button"
+                            className={styles.btnToggleActivo}
+                            onClick={() => void toggleMiembroActivo(m)}
+                            disabled={cambiandoActivoId !== null}
+                            title={m.activo ? 'Deshabilitar cuenta' : 'Habilitar cuenta'}
+                          >
+                            {cambiandoActivoId === m.id ? '…' : m.activo ? 'Deshabilitar' : 'Habilitar'}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className={styles.btnEdit}
