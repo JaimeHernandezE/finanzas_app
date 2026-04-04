@@ -1,4 +1,5 @@
 # Finanzas App
+![1775301595542](image/README/1775301595542.png)
 
 > Gestión financiera personal y familiar — web + mobile, offline-first, con liquidación proporcional por sueldo.
 
@@ -13,14 +14,26 @@
 
 ## El problema que resuelve
 
-Llevar las finanzas de una familia con dos ingresos distintos es desordenado. Las apps genéricas no entienden que:
+Llevar las finanzas personales y familiares es realmente una empresa, necesita gestión de pagos, presupuestos y llevar la caja, además, disponer algún sistema de reparto de gastos si es que son compartidos. Esta app entiende que:
 
-- Un gasto en tarjeta de crédito en 12 cuotas **no es 12 gastos**; es un compromiso que aparece en el estado de cuenta mes a mes según el **ciclo de facturación de cada tarjeta**.
-- Los gastos comunes (supermercado, arriendo, colegio) deberían repartirse **proporcionalmente al sueldo de cada integrante**, no en partes iguales.
-- Cada mes necesitas saber **quién le debe cuánto a quién** para cerrar las cuentas.
-- A veces no hay internet. La app **tiene que funcionar igual**.
+- Un gasto en tarjeta de crédito en 12 cuotas **no es 1 solo gasto en el mes x**; es un compromiso que aparece en el estado de cuenta mes a mes y según el **ciclo de facturación de cada tarjeta**.
+- Cada gasto puede estar acotado a un presupuesto, por lo que fácilmente puedes guiar tus finanzas.
 
-Finanzas App resuelve exactamente eso, con una API propia, una app web para escritorio y una app móvil offline-first.
+Sistema de reparto de gastos
+Con mi esposa tenemos el siguiente sistema: Cada uno coloca sus sueldos en un pozo común, se saca el porcentaje de aporte de cada uno en el mes, luego el gasto común será proporcional a los ingresos. Así:
+
+Integrante 1: Sueldo: $4.500 - Porcentaje: 64%
+Integrante 2: Sueldo: $2.000 - Porcentaje: 36%
+
+Gasto común registrado en la app por ambos usuarios $3.500
+
+Integrante 1 debe aportar: $2.240 al gasto común
+Integrante 2 debe aportar: $1.260 al gasto común
+
+- Los gastos comunes (supermercado, arriendo, colegio) se reparten **proporcionalmente al sueldo de cada integrante**. Dentro de la app hay una ventana específica para ingresar Gastos Comunes.
+- Al principio del mes siguiente sabrás **quién le debe cuánto a quién** para cerrar las cuentas. En el ejemplo anterior, Integrante 1 debe aportar $2.240 al gasto común, pero en el registro personal del gasto común tiene $2.800. Por lo tanto, el Integrante 2 le debe $560.
+
+Finanzas App resuelve lo anterior y algunas cosas más, con una API propia, una app web para escritorio y una app móvil offline-first.
 
 ---
 
@@ -55,10 +68,11 @@ finanzas_app/                   ← monorepo
 Familia (tenant raíz)
   └─ Usuario (AbstractUser + firebase_uid + rol)
        └─ CuentaPersonal (agrupador de movimientos)
-            └─ Movimiento ──→ Cuota × N   (crédito en cuotas)
+            └─ Movimiento ──→ Personales por cuenta (Un usuario puede tener varias cuentas)
+                          ──→ Cuota × N   (crédito en cuotas)
                           ──→ IngresoComun (ingreso al fondo común)
   └─ Categoria (árbol 2 niveles, global o de familia)
-  └─ MetodoPago / Tarjeta (catálogo, con ciclo de facturación)
+  └─ MetodoPago / Efectivo, Débito, Tarjeta (catálogo, con ciclo de facturación)
   └─ Presupuesto (meta mensual por categoría)
   └─ Snapshots (caché de cálculos costosos)
        ├─ SaldoMensualSnapshot
@@ -106,7 +120,11 @@ Familia (tenant raíz)
 ## Funcionalidades principales
 
 ### Gastos personales y comunes
-Cada movimiento es `PERSONAL` o `COMUN`. Los comunes entran al fondo familiar y se prorratean; los personales solo afectan el saldo individual.
+Cada movimiento es `PERSONAL` o `COMUN`. Los comunes entran al fondo familiar y se prorratean; los personales solo afectan el saldo individual. Un usuario puede tener más de una cuenta personal. La cuenta **Personal** viene por defecto pero puedes agregar adicionales, por ejemplo tengo una para honorarios como arquitecto.
+
+### Dashboard personal
+El Dashboard lleva 3 cards principales: la cuenta de tu efectivo disponible, lo que deberás pagar en tarjetas personales este mes, del saldo proyectado a fin de mes que incluye los gastos comunes prorrateados. Luego muestra los últimos 10 movimientos de tus cuentas personales y el estado de lo gastado versus tu presupuesto estimado por categoría.
+![1775301465868](image/README/1775301465868.png)
 
 ### Tarjeta de crédito con cuotas reales
 
