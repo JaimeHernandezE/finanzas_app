@@ -119,14 +119,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <ConfigProvider>
-      <BrowserRouter>
-        <AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <ConfigProvider>
           <ViajeProvider>
             <AppRoutes />
           </ViajeProvider>
-        </AuthProvider>
-      </BrowserRouter>
-    </ConfigProvider>
+        </ConfigProvider>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }

@@ -1,13 +1,11 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useViaje } from '@/context/ViajeContext'
+import { useConfig } from '@/context/ConfigContext'
 import { useEffect, useMemo } from 'react'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import styles from './MainLayout.module.scss'
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 interface CuentaNav {
   id:         string
@@ -110,6 +108,7 @@ export default function MainLayout() {
   const location = useLocation()
   const { user, loading, logout } = useAuth()
   const { viajeActivo } = useViaje()
+  const { formatMonto } = useConfig()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
 
   useEffect(() => {
@@ -231,7 +230,7 @@ export default function MainLayout() {
             <span className={styles.viajeBannerDot} aria-hidden>●</span>
             <span className={styles.viajeBannerNombre}>{viajeActivo.nombre}</span>
             <span className={styles.viajeBannerTotales}>
-              {clp(viajeBannerTotales.gastado)} / {clp(viajeBannerTotales.presupuestado)}
+              {formatMonto(viajeBannerTotales.gastado)} / {formatMonto(viajeBannerTotales.presupuestado)}
             </span>
             <Link to={`/viajes/${viajeActivo.id}`} className={styles.viajeBannerLink}>
               Ver viaje

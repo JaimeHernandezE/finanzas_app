@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import i18n from '../i18n'
 import {
   createUserWithEmailAndPassword,
   EmailAuthProvider,
@@ -19,15 +20,18 @@ import {
 import { auth, provider } from '../firebase'
 
 export interface Usuario {
-  id:       number
-  uid?:     string
-  email:    string
-  nombre:   string
-  foto:     string | null
-  rol:      string
+  id:              number
+  uid?:            string
+  email:           string
+  nombre:          string
+  foto:            string | null
+  rol:             string
   /** Cuenta habilitada en la app (false = deshabilitada por un administrador). */
-  activo?:  boolean
-  familia:  { id: number; nombre: string } | null
+  activo?:         boolean
+  familia:         { id: number; nombre: string } | null
+  idioma_ui:       'es' | 'en'
+  moneda_display:  string
+  zona_horaria:    string
 }
 
 interface AuthContextType {
@@ -50,6 +54,7 @@ interface AuthContextType {
   changePassword: (newPassword: string) => Promise<void>
   logout:   () => Promise<void>
   updateNombre: (nombre: string) => Promise<void>
+  updatePreferencias: (prefs: { idioma_ui?: string; moneda_display?: string; zona_horaria?: string }) => Promise<void>
   /** Vuelve a cargar perfil desde GET /api/usuarios/me/ (p. ej. tras aceptar invitación). */
   refreshUsuario: () => Promise<void>
 }
@@ -113,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ...data,
           foto: data?.foto ?? prev?.foto ?? null,
         }))
+        if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
         setError(null)
       }
     } catch {
@@ -133,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json()
         localStorage.setItem('auth_token', token)
         setUsuario(data)
+        if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
         setError(null)
       } else if (res.status === 404) {
         // Si existe invitación pendiente (o es primer usuario), el backend registra aquí; con invitación puede quedar sin familia hasta aceptar.
@@ -444,6 +451,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updatePreferencias(prefs: { idioma_ui?: string; moneda_display?: string; zona_horaria?: string }) {
+    const token = localStorage.getItem('auth_token')
+    if (!token) throw new Error('Sesión no disponible')
+
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/me/`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(prefs),
+    })
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body?.error || 'No se pudo actualizar las preferencias')
+    }
+
+    const data = await res.json()
+    setUsuario(prev => {
+      if (!prev) return data
+      return { ...data, foto: data?.foto ?? prev.foto ?? null }
+    })
+    if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
+  }
+
   async function logout() {
     await signOut(auth)
     localStorage.removeItem('auth_token')
@@ -522,6 +555,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         changePassword,
         logout,
         updateNombre,
+        updatePreferencias,
         refreshUsuario,
       }}
     >

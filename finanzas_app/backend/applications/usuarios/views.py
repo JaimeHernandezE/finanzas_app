@@ -1,4 +1,5 @@
 import logging
+import zoneinfo
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -9,6 +10,8 @@ from firebase_admin import auth as firebase_auth
 from applications import utils as utils_auth
 from .miembro_salida import puede_quitar_miembro_familia
 from .models import Usuario, Familia, InvitacionPendiente
+
+_ZONAS_VALIDAS = zoneinfo.available_timezones()
 
 logger = logging.getLogger(__name__)
 FIREBASE_CLOCK_SKEW_SECONDS = 60
@@ -48,6 +51,9 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
             'id': usuario.familia.id,
             'nombre': usuario.familia.nombre,
         } if usuario.familia else None,
+        'idioma_ui': usuario.idioma_ui,
+        'moneda_display': usuario.moneda_display,
+        'zona_horaria': usuario.zona_horaria,
     }
 
 
@@ -87,20 +93,70 @@ def me(request):
             usuario.save(update_fields=['firebase_uid'])
 
         if request.method == 'PATCH':
-            nombre_raw = (request.data.get('nombre') or '').strip()
-            if not nombre_raw:
+            from django.conf import settings as django_settings
+            es_demo = getattr(django_settings, 'DEMO', False)
+            update_fields = []
+
+            # Nombre: bloqueado en modo DEMO
+            if 'nombre' in request.data:
+                if es_demo:
+                    return Response(
+                        {'error': 'En modo demo no se puede cambiar el nombre.'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                nombre_raw = (request.data.get('nombre') or '').strip()
+                if not nombre_raw:
+                    return Response(
+                        {'error': 'El nombre no puede estar vacío.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                partes = nombre_raw.split(maxsplit=1)
+                usuario.first_name = partes[0][:150]
+                usuario.last_name = (partes[1] if len(partes) > 1 else '')[:150]
+                update_fields += ['first_name', 'last_name']
+
+            # Idioma de la UI
+            if 'idioma_ui' in request.data:
+                idioma = request.data['idioma_ui']
+                codigos_validos = dict(Usuario.IDIOMA_CHOICES)
+                if idioma not in codigos_validos:
+                    return Response(
+                        {'error': f'Idioma inválido. Opciones: {list(codigos_validos.keys())}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                usuario.idioma_ui = idioma
+                update_fields.append('idioma_ui')
+
+            # Moneda de visualización
+            if 'moneda_display' in request.data:
+                moneda = request.data['moneda_display']
+                codigos_validos = dict(Usuario.MONEDA_CHOICES)
+                if moneda not in codigos_validos:
+                    return Response(
+                        {'error': f'Moneda inválida. Opciones: {list(codigos_validos.keys())}'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                usuario.moneda_display = moneda
+                update_fields.append('moneda_display')
+
+            # Zona horaria IANA
+            if 'zona_horaria' in request.data:
+                zona = request.data['zona_horaria']
+                if zona not in _ZONAS_VALIDAS:
+                    return Response(
+                        {'error': 'Zona horaria inválida. Debe ser un identificador IANA válido (ej: America/Santiago).'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                usuario.zona_horaria = zona
+                update_fields.append('zona_horaria')
+
+            if not update_fields:
                 return Response(
-                    {'error': 'El nombre no puede estar vacío.'},
+                    {'error': 'No se proporcionó ningún campo para actualizar.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            partes = nombre_raw.split(maxsplit=1)
-            first_name = partes[0][:150]
-            last_name = (partes[1] if len(partes) > 1 else '')[:150]
-
-            usuario.first_name = first_name
-            usuario.last_name = last_name
-            usuario.save(update_fields=['first_name', 'last_name'])
+            usuario.save(update_fields=update_fields)
 
         return Response(_payload_me(usuario, decoded))
 
