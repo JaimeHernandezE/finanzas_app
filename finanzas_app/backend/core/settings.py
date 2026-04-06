@@ -4,12 +4,25 @@ Django settings for core project.
 
 import os
 from datetime import timedelta
-import dj_database_url
 from pathlib import Path
 
+import dj_database_url
 from corsheaders.defaults import default_headers
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _normalizar_database_url(raw: str | None) -> str | None:
+    """Quita espacios y comillas típicas al pegar desde el panel de Render u otros hosts."""
+    if raw is None:
+        return None
+    s = raw.strip()
+    if not s:
+        return None
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'":
+        s = s[1:-1].strip()
+    return s or None
 
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production'))
 
@@ -74,11 +87,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+DATABASE_URL = _normalizar_database_url(os.environ.get('DATABASE_URL'))
 if DATABASE_URL:
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    }
+    try:
+        DATABASES = {
+            'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        }
+    except dj_database_url.ParseError as exc:
+        raise ImproperlyConfigured(
+            'DATABASE_URL no es una URL válida. Usa la cadena tal cual la copia tu proveedor '
+            '(p. ej. Render Internal/External Database URL, Supabase URI en Settings → Database), '
+            'sin comillas extra ni espacios al inicio/fin. Si la contraseña incluye @, :, /, #, % '
+            'u otros caracteres reservados, debe ir codificada en la URL; mejor pegar desde el panel '
+            'del proveedor que armar la URL a mano.'
+        ) from exc
 else:
     DATABASES = {
         'default': {

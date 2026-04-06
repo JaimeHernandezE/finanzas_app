@@ -53,6 +53,51 @@ Si usas imagen Docker **sin** proceso en primer plano y **sin** Start Command en
 
 **Migraciones en Docker:** al no ejecutarse `build.sh` dentro de la imagen, aplica migraciones con un **Release Command** en Render (`python manage.py migrate`), un job manual, o incorpora ese paso al flujo que uses. El servicio **Python** del blueprint sí corre migraciones en cada deploy vía `build.sh`.
 
+#### `dj_database_url.ParseError` / `DATABASE_URL` inválida
+
+Si Gunicorn cae al arrancar con error de parseo de URL:
+
+1. En **Environment** del backend (p. ej. Render), revisa que `DATABASE_URL` sea la cadena **completa** que te da tu proveedor, **sin** comillas `"..."` alrededor del valor.
+2. Sin espacios ni saltos de línea al inicio o al final.
+3. Si armaste la URL a mano y la contraseña lleva caracteres especiales (`@`, `:`, `/`, `#`, etc.), deben ir **URL-encoded**. Lo más seguro es usar siempre el botón **copiar** del panel (Render **Internal/External Database URL**, Supabase **URI**, etc.).
+4. Con **PostgreSQL en Render** enlazado al servicio web: usa Internal o External según corresponda.
+
+##### PostgreSQL en **Supabase** (backend en Render u otro host)
+
+Supabase es totalmente válido como `DATABASE_URL`; no hace falta crear otra BD en Render.
+
+1. En [Supabase](https://supabase.com) → tu proyecto → **Project Settings** (engranaje) → **Database** → **Connect** (arriba).
+2. En **Connection string**, elige el modo **URI** (a veces aparece bajo “PostgreSQL” / “ORMs”). Sustituye `[YOUR-PASSWORD]` por la contraseña real del proyecto **solo si el asistente lo pide**; muchas veces el botón de copiar ya deja la URL lista.
+3. Pega ese valor en Render (u otro host) como variable **`DATABASE_URL`**, sin comillas. La plantilla de Supabase suele incluir **`?sslmode=require`** al final; **déjalo**: Django/psycopg2 lo usan para TLS.
+
+**Ejemplo de variable de entorno (conexión directa, puerto 5432)**
+
+| Dónde | Qué poner |
+|-------|-----------|
+| **Nombre** (Render, etc.) | `DATABASE_URL` |
+| **Valor** | Una sola línea, **sin** comillas. La contraseña va **entre** el segundo `:` y la `@` (ver abajo). |
+
+Formato típico (el host `db.<ref>.supabase.co` lo copias de tu proyecto; el `<ref>` es distinto en cada uno):
+
+```text
+postgresql://postgres:<CONTRASEÑA>@db.<ref>.supabase.co:5432/postgres?sslmode=require
+```
+
+- **`postgres`** (después del primer `//`): usuario por defecto de la base.
+- **`<CONTRASEÑA>`**: aquí va la **contraseña de la base de datos** del proyecto Supabase (**Project Settings → Database**; es la que elegiste al crear el proyecto o la que reseteaste con “Reset database password”). Sustituye **solo** ese fragmento; no pongas espacios ni comillas alrededor de la URL completa.
+- **`db.<ref>.supabase.co`**: host de **conexión directa** que muestra Supabase en la misma pantalla (no lo inventes: cópialo del panel).
+- **`?sslmode=require`**: conviene dejarlo; si tu plantilla de Supabase no lo trae, añádelo al final.
+
+Ejemplo **no válido** (solo ilustrativo; no uses estos datos reales):
+
+```text
+postgresql://postgres:miClaveSecreta123@db.abcdefghijklmnop.supabase.co:5432/postgres?sslmode=require
+```
+
+Si la contraseña contiene caracteres reservados en URLs (`@`, `:`, `/`, `#`, `%`, etc.), deben ir **codificados** en ese segmento, o usa la URI que Supabase genera al **copiar** desde el asistente (así evitas errores y `ParseError`).
+4. **Conexión directa vs pooler:** para una app Django con Gunicorn (proceso largo) suele ir bien la conexión **directa** (`db.<ref>.supabase.co`, puerto **5432**). El **pooler en modo transacción** (puerto **6543**) a veces da problemas con migraciones o sentencias preparadas; si notas errores raros al migrar, prueba la URI de **sesión** o la directa según la documentación actual de Supabase.
+5. Si el backend **no llega a conectar** (timeout / refused) pero la URL es válida: revisa en Supabase **Database → Network restrictions** (si restringiste IPs) y, en planes que solo exponían IPv6 en el host directo, el **pooler** o el add-on **IPv4** que ofrece Supabase para clientes solo IPv4 (p. ej. algunos PaaS).
+
 ### Generar SECRET_KEY
 
 Puedes generar una `SECRET_KEY` nueva de varias formas:
@@ -157,6 +202,19 @@ El plan gratuito duerme el servidor tras 15 min sin tráfico.
 
 Render despliega automáticamente en cada push a `main`.
 El workflow `.github/workflows/tests.yml` corre los tests antes del deploy.
+
+### Fallo del build: «Exited with status 1 while building your code»
+
+Ese mensaje solo indica que **algo falló durante el Build Command** (p. ej. `./build.sh`), no durante el arranque de Gunicorn.
+
+1. Abre el deploy en Render y **baja hasta la última línea en rojo** del log; ahí está el comando que falló (traceback de Django, pip, etc.).
+2. El script `build.sh` imprime líneas `==> build.sh: …` para cada paso. **La última línea `==>` que aparezca antes del error** te dice el paso concreto:
+   - **`pip install`** — conflicto de dependencias o error de red.
+   - **`collectstatic`** — a veces falla `CompressedManifestStaticFilesStorage` si falta un estático referenciado; el log suele mencionar `Missing staticfiles` o `ValueError`.
+   - **`migrate`** — `DATABASE_URL` incorrecta, BD inalcanzable, permisos en Supabase, migración inconsistente.
+   - **`seed_demo`** — solo si `DEMO=True`; revisa el traceback (datos previos, métodos de pago, etc.).
+
+**Nota sobre el commit del Dockerfile:** si el servicio está en **entorno Python** (Build Command `./build.sh`), los cambios del **Dockerfile no forman parte de ese build**. Un rollback del Dockerfile **no arregla** un fallo de `build.sh`; hace falta el log del paso que rompió.
 
 ### Limitaciones del plan gratuito
 
