@@ -261,7 +261,7 @@ Si quieres que **cada noche** la demo vuelva a un estado conocido (y se pierdan 
 
 1. Crea el secret **`DATABASE_URL_DEMO`** con la **External Database URL** del Postgres **solo** de la demo (no uses la URL de producción).
 2. Opcional: cambia el `cron` del YAML (horario en **UTC**).
-3. **Manual:** pestaña **Actions** → workflow **Reset demo nightly** → **Run workflow**.
+3. **Forzar ahora (prueba):** en GitHub, pestaña **Actions** → en la izquierda elige **Reset demo nightly** → botón **Run workflow** → rama `main` (o la que uses) → **Run workflow**. Espera a que el job termine (puede tardar varios minutos por el volumen de `seed_demo`) y recarga la app demo.
 
 `seed_demo` solo borra y recrea la familia cuyo nombre es **«Demo»** y sus datos. Si en esa misma BD hubiera **otras** familias o usuarios ajenos a la demo, **no** los elimina; lo más seguro es un **Postgres dedicado** a la instancia demo.
 

@@ -31,6 +31,15 @@ jobs:
       - name: Dependencias Python (Django + apps)
         run: pip install --quiet -r finanzas_app/backend/requirements.txt
 
+      - name: Comprobar secret DATABASE_URL_DEMO
+        env:
+          DATABASE_URL_DEMO: ${{ secrets.DATABASE_URL_DEMO }}
+        run: |
+          if [ -z "$DATABASE_URL_DEMO" ]; then
+            echo "::error::Define el secret DATABASE_URL_DEMO (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
       - name: seed_demo en BD demo
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DEMO }}
