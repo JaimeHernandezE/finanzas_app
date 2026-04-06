@@ -148,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       return
     }
+    if (!auth) return
     const firebaseUser = auth.currentUser
     if (!firebaseUser) return
     try {
@@ -203,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const regBody = await regRes.json().catch(() => ({}))
-        await signOut(auth)
+        if (auth) await signOut(auth)
         localStorage.removeItem('auth_token')
         setUsuario(null)
         setError(
@@ -212,7 +213,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         )
       } else if (res.status === 403) {
         const body = await res.json().catch(() => ({}))
-        await signOut(auth)
+        if (auth) await signOut(auth)
         localStorage.removeItem('auth_token')
         setUsuario(null)
         setError(body?.error || 'Tu cuenta no está habilitada para usar la aplicación.')
@@ -305,6 +306,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
+      if (!auth) {
+        if (!cancelled) setLoading(false)
+        return
+      }
+
       try {
         const result = await getRedirectResult(auth)
         if (cancelled) return
@@ -343,6 +349,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function login() {
     setError(null)
     setLoading(true)
+    if (!auth || !provider) {
+      setError('Inicio con Google no está disponible en este entorno.')
+      setLoading(false)
+      return
+    }
     try {
       const result = await signInWithPopup(auth, provider)
       await verificarConBackend(result.user)
@@ -360,6 +371,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function loginWithEmail(email: string, password: string) {
     setError(null)
     setLoading(true)
+    if (!auth) {
+      setError('Inicio con email no está disponible en este entorno.')
+      setLoading(false)
+      return
+    }
     try {
       const emailNormalizado = email.trim().toLowerCase()
       const result = await signInWithEmailAndPassword(auth, emailNormalizado, password)
@@ -391,6 +407,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Fallback a Firebase cliente si el backend no responde.
     }
 
+    if (!auth) {
+      return {
+        exists: false,
+        requiresLinking: false,
+        hasPassword: false,
+      }
+    }
+
     try {
       const methods = await fetchSignInMethodsForEmail(auth, emailNormalizado)
       const hasPassword = methods.includes(PASSWORD_PROVIDER_ID)
@@ -416,6 +440,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function registerWithEmail(email: string, password: string) {
     setError(null)
     setLoading(true)
+    if (!auth) {
+      setError('Registro no disponible en este entorno.')
+      setLoading(false)
+      return { requiresLinking: false }
+    }
     try {
       const emailNormalizado = email.trim().toLowerCase()
       const result = await createUserWithEmailAndPassword(auth, emailNormalizado, password)
@@ -469,6 +498,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function linkEmailToGoogleAccount(email: string, password: string) {
     setError(null)
     setLoading(true)
+    if (!auth) {
+      setError('Esta acción no está disponible en este entorno.')
+      setLoading(false)
+      return
+    }
     try {
       const emailNormalizado = email.trim().toLowerCase()
       const linkProvider = new GoogleAuthProvider()
@@ -504,6 +538,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function changePassword(newPassword: string) {
+    if (!auth) {
+      throw new Error('Cambio de contraseña no disponible en este entorno.')
+    }
     const firebaseUser = auth.currentUser
     if (!firebaseUser || !firebaseUser.email) {
       throw new Error('No hay una sesión activa para cambiar la contraseña.')
@@ -589,7 +626,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
-    await signOut(auth)
+    if (auth) {
+      await signOut(auth)
+    }
     localStorage.removeItem('auth_token')
     setUsuario(null)
     navigate('/login', { replace: true })

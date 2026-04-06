@@ -204,14 +204,30 @@ Pasos:
 - **Build Command:** `npm install && npm run build`
 - **Publish Directory:** `dist`
 
-Variables de entorno:
+Variables de entorno (definir **antes** del build: Vite las incrusta en el JS en tiempo de compilación):
+
+**Producción real (login Firebase en el cliente):**
 
 ```
-VITE_API_URL               = https://<backend>.onrender.com
-VITE_FIREBASE_API_KEY      = <de Firebase Console>
-VITE_FIREBASE_AUTH_DOMAIN  = <de Firebase Console>
-VITE_FIREBASE_PROJECT_ID   = <de Firebase Console>
+VITE_API_URL                          = https://<backend>.onrender.com
+VITE_FIREBASE_API_KEY                 = <Firebase Console → Config del proyecto>
+VITE_FIREBASE_AUTH_DOMAIN             = <ej. tu-proyecto.firebaseapp.com>
+VITE_FIREBASE_PROJECT_ID              = <project id>
+VITE_FIREBASE_STORAGE_BUCKET          = <opcional; suele venir en el snippet>
+VITE_FIREBASE_MESSAGING_SENDER_ID     = <opcional>
+VITE_FIREBASE_APP_ID                  = <opcional>
 ```
+
+Sin comillas en los valores. Si falta o está mal **`VITE_FIREBASE_API_KEY`**, el navegador muestra **`auth/invalid-api-key`**.
+
+**Solo entorno demo (backend con `DEMO=True`, login por `/api/usuarios/demo-login/`):** el cliente **no** inicializa Firebase. Configura:
+
+```
+VITE_ES_DEMO = true
+VITE_API_URL = https://<backend-demo>.onrender.com
+```
+
+No necesitas `VITE_FIREBASE_*` en el Static Site demo (evita el error `invalid-api-key`). Tras añadir o cambiar variables, haz **Clear build cache & deploy** o un deploy nuevo para que el build las tome.
 
 #### 4. Firebase — dominios autorizados
 
@@ -221,6 +237,7 @@ En Firebase Console → Authentication → Settings → Dominios autorizados:
 
 #### Demo (backend + frontend en URLs distintas)
 
+- En el **Static Site** demo usa **`VITE_ES_DEMO=true`** + **`VITE_API_URL`** hacia el backend demo; así no hace falta configurar claves Firebase en el front (ver tabla de variables arriba).
 - **Si aún no desplegaste el frontend en Render**, no tendrás la app web en ninguna URL pública: solo existe la **API** en el Web Service. Es normal que en `https://<backend>.onrender.com/` veas JSON (o antes un 404) y **no** la interfaz React. La UI aparece cuando crees el **Static Site** del paso **«3. Static Site (frontend)»** más arriba (Root Directory `finanzas_app/frontend`, `VITE_API_URL` apuntando a tu backend demo).
 - Mientras tanto puedes probar el API con **Django Admin** (`/admin/`) si tienes superusuario, con **Postman/curl**, o correr el front **en local**: `cd finanzas_app/frontend && npm run dev` y en `.env` o `.env.local` poner `VITE_API_URL=https://<tu-backend-demo>.onrender.com`.
 - **`ALLOWED_HOSTS`** en el Web Service debe incluir el host del API (p. ej. `finanzas-app-demo.onrender.com`). Si no está, Django responde **400** a `GET /` (cabecera `Host` rechazada).
