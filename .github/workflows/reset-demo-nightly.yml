@@ -1,0 +1,41 @@
+# Reinicia los datos de la instancia DEMO cada noche ejecutando seed_demo (completo).
+# La familia «Demo» y todo lo asociado se borran y se vuelven a generar (Jaime/Glori + historia).
+# Cualquier cambio que usuarios de prueba hubieran hecho en esa familia desaparece.
+#
+# Requisitos:
+# - Postgres de la demo accesible desde internet (p. ej. External Database URL de Render).
+# - Repositorio con Actions habilitados.
+#
+# Secret (GitHub → Settings → Secrets and variables → Actions):
+#   DATABASE_URL_DEMO  → URL **solo** de la BD demo (nunca la de producción).
+#
+# Ajusta `cron` si quieres otra hora (hora UTC).
+
+name: Reset demo nightly
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC (~03:00 Chile aprox., según DST)
+  workflow_dispatch:
+
+jobs:
+  reset-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Dependencias Python (Django + apps)
+        run: pip install --quiet -r finanzas_app/backend/requirements.txt
+
+      - name: seed_demo en BD demo
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DEMO }}
+          DEMO: 'true'
+          SECRET_KEY: github-actions-demo-nightly-reset
+          DEBUG: 'False'
+        working-directory: finanzas_app/backend
+        run: python manage.py seed_demo

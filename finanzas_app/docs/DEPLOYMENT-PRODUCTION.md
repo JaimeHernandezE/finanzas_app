@@ -255,6 +255,18 @@ En Firebase Console → Authentication → Settings → Dominios autorizados:
 - La ruta **`/`** del backend devuelve un **JSON** con enlaces a `/admin/` y prefijos `/api/…`; **no** es la aplicación React. En el Static Site define `VITE_API_URL=https://<tu-backend-demo>.onrender.com` (sin barra final, salvo que tu front lo exija).
 - Si ves “Not Found” en `/` en un despliegue antiguo sin la vista raíz, actualiza el backend; **para usar la app como en producción** abre la URL del **frontend** desplegado, no solo la del API.
 
+#### Reset nocturno de la demo (datos de prueba efímeros)
+
+Si quieres que **cada noche** la demo vuelva a un estado conocido (y se pierdan los datos que usuarios de prueba crearon **en la familia «Demo»**), puedes usar el workflow **`.github/workflows/reset-demo-nightly.yml`**: ejecuta **`python manage.py seed_demo`** contra la BD demo vía GitHub Actions (misma lógica que en local).
+
+1. Crea el secret **`DATABASE_URL_DEMO`** con la **External Database URL** del Postgres **solo** de la demo (no uses la URL de producción).
+2. Opcional: cambia el `cron` del YAML (horario en **UTC**).
+3. **Manual:** pestaña **Actions** → workflow **Reset demo nightly** → **Run workflow**.
+
+`seed_demo` solo borra y recrea la familia cuyo nombre es **«Demo»** y sus datos. Si en esa misma BD hubiera **otras** familias o usuarios ajenos a la demo, **no** los elimina; lo más seguro es un **Postgres dedicado** a la instancia demo.
+
+Esto **no** sustituye tu respaldo de **producción** a Drive; es independiente y solo afecta la BD que indiques en `DATABASE_URL_DEMO`.
+
 ### Evitar el sleep del plan gratuito (UptimeRobot)
 
 El plan gratuito duerme el servidor tras 15 min sin tráfico.
