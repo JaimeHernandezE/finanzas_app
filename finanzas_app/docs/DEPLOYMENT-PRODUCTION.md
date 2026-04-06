@@ -51,7 +51,9 @@ En la **raíz del repositorio** (al mismo nivel que la carpeta `finanzas_app/`) 
 
 Si usas imagen Docker **sin** proceso en primer plano y **sin** Start Command en el panel, el contenedor termina al instante y Render muestra **`Application exited early`**. El `Dockerfile` del backend define ya un **CMD** con Gunicorn usando `PORT` y `WEB_CONCURRENCY` (Render las inyecta).
 
-**Migraciones en Docker:** el `ENTRYPOINT` ejecuta antes de Gunicorn, en este orden: **`migrate`** → **`ensure_demo_seed`** → **`seed_categorias`** → **`crear_admin`**. Con **`DEMO`** activo, `ensure_demo_seed` solo invoca **`seed_demo_minimal`** (segundos). **No ejecutes `seed_demo` completo en el entrypoint:** Render hace **timeout del deploy** («Port scan timeout», «Timed out») si Gunicorn tarda en abrir el puerto. Si en los logs de arranque sigue apareciendo `ensure_demo_seed: ejecutando seed_demo` (sin `_minimal`), el despliegue es de un **commit antiguo**: haz pull del repo con `seed_demo_minimal.py` y el `ensure_demo_seed` actualizado. Los **15 meses** van en **Release Command** `./release.sh` o `python manage.py seed_demo`. Variables: **`SKIP_MIGRATE_ON_START=1`**, **`SKIP_POST_MIGRATE_SETUP=1`**. El endpoint **`GET /api/usuarios/config/` no usa la base de datos**: puede dar **200** sin tablas; **`demo-login` 404** suele indicar usuarios demo aún no creados.
+**Migraciones en Docker:** el `ENTRYPOINT` ejecuta antes de Gunicorn: **`migrate`** → **`ensure_demo_seed`** → **`seed_categorias`** → **`crear_admin`**. Con **`DEMO`** activo, `ensure_demo_seed` usa **`seed_demo_minimal`** (segundos). **Pre-deploy command** (en la documentación de Render; a veces aparecía como “release” en blueprints) sirve para migraciones/seeds largos **antes** de levantar el web, pero en el **plan gratuito de Web Services no está disponible** (solo en servicios de pago, privados o workers, según [Deploys – Render](https://render.com/docs/deploys#pre-deploy-command)).
+
+Por eso, con **`DEMO`** y Docker, el entrypoint lanza en **segundo plano** **`seed_demo_if_empty`**: si la familia Demo **no tiene movimientos**, ejecuta **`seed_demo`** completo sin bloquear el puerto; si ya hay historial, termina al instante (reinicios y despertares del plan free). Desactivar ese paso: **`SKIP_BACKGROUND_DEMO_SEED=1`**. Alternativa manual: `python manage.py seed_demo` desde tu PC con **`DATABASE_URL`** externa. Variables también: **`SKIP_MIGRATE_ON_START=1`**, **`SKIP_POST_MIGRATE_SETUP=1`**. El endpoint **`GET /api/usuarios/config/` no usa la base de datos**: puede dar **200** sin tablas; **`demo-login` 404** suele indicar usuarios demo aún no creados.
 
 #### `dj_database_url.ParseError` / `DATABASE_URL` inválida
 
@@ -172,8 +174,8 @@ Get-Content .\firebase-service-account.json -Raw | ConvertFrom-Json | ConvertTo-
 - **New → Web Service** → conectar repositorio
 - Root Directory: `finanzas_app/backend`
 - Build Command: `./build.sh`
-- **Release Command** (recomendado si no puedes usar Shell / quieres asegurar BD al desplegar): `./release.sh`  
-  Ejecuta `migrate`, `seed_categorias`, `crear_admin` y, si `DEMO` es truthy, `seed_demo` — la misma secuencia que el final de `build.sh`, pero **contra la `DATABASE_URL` del despliegue** justo antes de levantar la nueva versión. Útil cuando el build no alcanzó a migrar o la BD se creó/vacía después del primer build.
+- **Pre-deploy command** (en el panel de Render; en blueprints a veces `releaseCommand`): `./release.sh`  
+  Solo en **planes de pago** (Web Service gratuito **no** muestra este campo). Ejecuta `migrate`, seeds y `seed_demo` completo si `DEMO`. En **free + Docker**, el repo usa **`seed_demo_if_empty` en segundo plano** en el entrypoint para el histórico demo sin bloquear el puerto.
 - Start Command: `gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60`
 - Plan: **Free**
 

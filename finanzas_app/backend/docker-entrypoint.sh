@@ -1,8 +1,8 @@
 #!/bin/sh
-# Antes de Gunicorn: migraciones + setup rápido. Nunca ejecutar seed_demo completo aquí:
-# Render hace timeout si el puerto no abre a tiempo (varios minutos de seed_demo).
-# Datos demo 15 meses: Release Command ./release.sh o manage.py seed_demo.
-# Desactivar: SKIP_MIGRATE_ON_START=1 y/o SKIP_POST_MIGRATE_SETUP=1
+# Antes de Gunicorn: migraciones + setup rápido. seed_demo completo no va en primer plano
+# (Render hace timeout del puerto). Plan gratuito: no hay Pre-deploy command en Web Services.
+# Con DEMO, seed_demo_if_empty corre en segundo plano si la familia Demo no tiene movimientos.
+# Desactivar: SKIP_MIGRATE_ON_START=1 y/o SKIP_POST_MIGRATE_SETUP=1 y/o SKIP_BACKGROUND_DEMO_SEED=1
 set -e
 if [ "${SKIP_MIGRATE_ON_START:-0}" != "1" ]; then
   echo "==> docker-entrypoint: migrate"
@@ -16,5 +16,13 @@ if [ "${SKIP_POST_MIGRATE_SETUP:-0}" != "1" ]; then
   python manage.py seed_categorias
   echo "==> docker-entrypoint: crear_admin"
   python manage.py crear_admin
+  # Misma regla truthy que settings._env_flag / release.sh
+  _demo_lc=$(printf '%s' "${DEMO:-}" | tr '[:upper:]' '[:lower:]')
+  if [ "${SKIP_BACKGROUND_DEMO_SEED:-0}" != "1" ] && {
+    [ "$_demo_lc" = "true" ] || [ "$_demo_lc" = "1" ] || [ "$_demo_lc" = "yes" ] || [ "$_demo_lc" = "on" ]
+  }; then
+    echo "==> docker-entrypoint: seed_demo_if_empty (segundo plano; histórico completo si falta)"
+    python manage.py seed_demo_if_empty &
+  fi
 fi
 exec "$@"
