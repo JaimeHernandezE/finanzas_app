@@ -1,29 +1,34 @@
 // src/context/ConfigContext.tsx
 // Configuración global de la app: zona horaria, moneda, formato.
-// Se carga una vez al montar la app y está disponible en todos los componentes.
+// Las preferencias del usuario autenticado tienen precedencia sobre los valores globales.
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
+import { useAuth } from './AuthContext'
 
 interface MonedaConfig {
-  codigo:              string   // 'CLP'
-  simbolo:             string   // '$'
-  decimales:           number   // 0
-  separador_miles:     string   // '.'
-  separador_decimales: string   // ','
+  codigo:              string
+  simbolo:             string
+  decimales:           number
+  separador_miles:     string
+  separador_decimales: string
 }
 
-interface Config {
+interface ConfigGlobal {
   zona_horaria: string
   moneda:       MonedaConfig
 }
 
 interface ConfigContextType {
-  config:      Config | null
-  formatMonto: (monto: number) => string
+  config:           ConfigGlobal | null
+  formatMonto:      (monto: number) => string
+  formatFecha:      (iso: string) => string
+  formatFechaHora:  (iso: string) => string
+  zonaHoraria:      string
+  locale:           string
 }
 
-const DEFAULT_CONFIG: Config = {
+const DEFAULT_CONFIG: ConfigGlobal = {
   zona_horaria: 'America/Santiago',
   moneda: {
     codigo:              'CLP',
@@ -35,47 +40,88 @@ const DEFAULT_CONFIG: Config = {
 }
 
 const ConfigContext = createContext<ConfigContextType>({
-  config:      DEFAULT_CONFIG,
-  formatMonto: (m) => `$${m.toLocaleString('es-CL')}`,
+  config:          DEFAULT_CONFIG,
+  formatMonto:     (m) => `$${m.toLocaleString('es-CL')}`,
+  formatFecha:     (iso) => iso,
+  formatFechaHora: (iso) => iso,
+  zonaHoraria:     'America/Santiago',
+  locale:          'es-CL',
 })
 
 export function ConfigProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<Config>(DEFAULT_CONFIG)
+  const { usuario } = useAuth()
+  const [configGlobal, setConfigGlobal] = useState<ConfigGlobal>(DEFAULT_CONFIG)
 
   useEffect(() => {
-    const cargar = async () => {
-      try {
-        const res = await axios.get(
-          `${import.meta.env.VITE_API_URL}/api/usuarios/config/`
-        )
-        setConfig(res.data)
-      } catch {
-        // Usar configuración por defecto si falla
-      }
-    }
-    cargar()
+    axios
+      .get(`${import.meta.env.VITE_API_URL}/api/usuarios/config/`)
+      .then(res => setConfigGlobal(res.data))
+      .catch(() => {})
   }, [])
 
-  /**
-   * Formatea un monto según la configuración de moneda activa.
-   * Ej: 1500000 → "$1.500.000" en CLP
-   *
-   * En el futuro, si se agrega tipo de cambio, esta función
-   * puede convertir entre monedas antes de formatear.
-   */
+  // Preferencias efectivas: usuario tiene precedencia sobre el servidor
+  const zonaHoraria = usuario?.zona_horaria ?? configGlobal.zona_horaria
+  const monedaCodigo = usuario?.moneda_display ?? configGlobal.moneda.codigo
+
+  // Locale BCP-47 derivado del idioma del usuario
+  const locale = useMemo(() => {
+    if (usuario?.idioma_ui === 'en') return 'en-US'
+    return 'es-CL'
+  }, [usuario?.idioma_ui])
+
   function formatMonto(monto: number): string {
-    const { simbolo, decimales } = config.moneda
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: monedaCodigo,
+        minimumFractionDigits: monedaCodigo === 'CLP' ? 0 : 2,
+        maximumFractionDigits: monedaCodigo === 'CLP' ? 0 : 2,
+      }).format(monto)
+    } catch {
+      // Fallback si el código de moneda no es soportado por Intl
+      return `${monedaCodigo} ${monto.toLocaleString(locale)}`
+    }
+  }
 
-    const formatted = new Intl.NumberFormat('es-CL', {
-      minimumFractionDigits: decimales,
-      maximumFractionDigits: decimales,
-    }).format(monto)
+  function formatFecha(iso: string): string {
+    try {
+      // iso puede ser 'YYYY-MM-DD' (sin hora). Añadir T12:00:00 evita desfases de TZ.
+      const dateStr = iso.length === 10 ? `${iso}T12:00:00` : iso
+      return new Intl.DateTimeFormat(locale, {
+        timeZone: zonaHoraria,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }).format(new Date(dateStr))
+    } catch {
+      return iso
+    }
+  }
 
-    return `${simbolo}${formatted}`
+  function formatFechaHora(iso: string): string {
+    try {
+      return new Intl.DateTimeFormat(locale, {
+        timeZone: zonaHoraria,
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(iso))
+    } catch {
+      return iso
+    }
   }
 
   return (
-    <ConfigContext.Provider value={{ config, formatMonto }}>
+    <ConfigContext.Provider value={{
+      config: configGlobal,
+      formatMonto,
+      formatFecha,
+      formatFechaHora,
+      zonaHoraria,
+      locale,
+    }}>
       {children}
     </ConfigContext.Provider>
   )

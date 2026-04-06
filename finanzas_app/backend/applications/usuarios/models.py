@@ -31,6 +31,16 @@ class Usuario(AbstractUser):
         ('LECTURA', 'Solo lectura'),
     ]
 
+    IDIOMA_CHOICES = [
+        ('es', 'Español'),
+        ('en', 'English'),
+    ]
+
+    MONEDA_CHOICES = [
+        ('CLP', 'CLP'), ('USD', 'USD'), ('EUR', 'EUR'),
+        ('ARS', 'ARS'), ('PEN', 'PEN'), ('MXN', 'MXN'), ('COP', 'COP'),
+    ]
+
     firebase_uid = models.CharField(
         max_length=128,
         unique=True,
@@ -49,6 +59,25 @@ class Usuario(AbstractUser):
         default=True,
         help_text='Si es False, la cuenta no puede usar la API y no participa en el prorrateo '
                    'de gastos comunes del mes calendario en curso ni de meses futuros.',
+    )
+    idioma_ui = models.CharField(
+        max_length=10,
+        choices=IDIOMA_CHOICES,
+        default='es',
+        help_text='Idioma preferido de la interfaz del usuario.',
+    )
+    moneda_display = models.CharField(
+        max_length=3,
+        choices=MONEDA_CHOICES,
+        default='CLP',
+        help_text='Código ISO 4217 de la moneda para visualización. '
+                  'Solo afecta el formato; los datos del servidor siempre están en la moneda base.',
+    )
+    zona_horaria = models.CharField(
+        max_length=64,
+        default='America/Santiago',
+        help_text='Zona horaria IANA preferida del usuario (ej: America/Santiago, Europe/Madrid). '
+                  'Usada en el cliente para formatear fechas y horas.',
     )
 
     def cuentas_visibles(self):

@@ -2,17 +2,11 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useViaje } from '@/context/ViajeContext'
 import { useViajes } from '@/hooks/useViajes'
+import { useConfig } from '@/context/ConfigContext'
 import { viajesApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import type { Viaje } from './mockViajes'
 import styles from './ViajesPage.module.scss'
-
-// -----------------------------------------------------------------------------
-// Helpers (API devuelve snake_case; mapeamos a Viaje para la UI)
-// -----------------------------------------------------------------------------
-
-const clp = (n: number) =>
-  n.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' })
 
 function formatRangoFechas(fechaInicio: string, fechaFin: string): string {
   const d1 = new Date(fechaInicio + 'T12:00:00')
@@ -78,7 +72,7 @@ function TarjetaViaje({
             {formatRangoFechas(viaje.fechaInicio, viaje.fechaFin)}
           </div>
           <div className={styles.cardPresupuesto}>
-            {clp(totalPresupuestado)} presupuestado
+            {formatMonto(totalPresupuestado)} presupuestado
           </div>
         </div>
         <div className={styles.cardActions}>
@@ -145,6 +139,7 @@ function TarjetaArchivado({ viaje }: { viaje: Viaje }) {
 
 export default function ViajesPage() {
   const { refetchViajes } = useViaje()
+  const { formatMonto } = useConfig()
   const { data: activosData, loading: loadingActivos, error: errorActivos, refetch: refetchActivos } = useViajes(false)
   const { data: archivadosData, loading: loadingArchivados } = useViajes(true)
   const [expandirArchivados, setExpandirArchivados] = useState(false)
