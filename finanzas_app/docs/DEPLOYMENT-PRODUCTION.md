@@ -172,6 +172,8 @@ Get-Content .\firebase-service-account.json -Raw | ConvertFrom-Json | ConvertTo-
 - **New → Web Service** → conectar repositorio
 - Root Directory: `finanzas_app/backend`
 - Build Command: `./build.sh`
+- **Release Command** (recomendado si no puedes usar Shell / quieres asegurar BD al desplegar): `./release.sh`  
+  Ejecuta `migrate`, `seed_categorias`, `crear_admin` y, si `DEMO` es truthy, `seed_demo` — la misma secuencia que el final de `build.sh`, pero **contra la `DATABASE_URL` del despliegue** justo antes de levantar la nueva versión. Útil cuando el build no alcanzó a migrar o la BD se creó/vacía después del primer build.
 - Start Command: `gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60`
 - Plan: **Free**
 

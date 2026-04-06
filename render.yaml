@@ -6,6 +6,8 @@ services:
     plan: free
     rootDir: finanzas_app/backend
     buildCommand: "./build.sh"
+    # Plan gratuito sin Shell: migraciones y seeds contra la BD actual en cada deploy.
+    releaseCommand: "./release.sh"
     # exec + bash -c: asegura expansión de $PORT. 1 worker: menos RAM en plan free.
     # healthCheckPath: endpoint que responde 200 (Render usa esto además del escaneo de puerto).
     healthCheckPath: /api/usuarios/config/
