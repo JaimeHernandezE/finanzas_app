@@ -4,6 +4,8 @@ interface ImportMetaEnv {
   readonly VITE_API_URL: string
   /** `true` = no inicializar Firebase (solo login demo JWT). */
   readonly VITE_ES_DEMO?: string
+  /** Opcional: ID del sitio en Umami Cloud; si falta, se usa el ID por defecto del demo. */
+  readonly VITE_UMAMI_WEBSITE_ID?: string
   readonly VITE_FIREBASE_API_KEY?: string
   readonly VITE_FIREBASE_AUTH_DOMAIN?: string
   readonly VITE_FIREBASE_PROJECT_ID?: string

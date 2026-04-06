@@ -46,5 +46,7 @@ jobs:
           DEMO: 'true'
           SECRET_KEY: github-actions-demo-nightly-reset
           DEBUG: 'False'
+          # Menos meses = job más corto (~3–5 min con 6 vs ~15 min con 15). Sube a 15 si quieres más historia.
+          SEED_DEMO_MESES: '6'
         working-directory: finanzas_app/backend
         run: python manage.py seed_demo

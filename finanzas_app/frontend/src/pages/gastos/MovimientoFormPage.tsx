@@ -7,6 +7,7 @@ import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
 import { useConfig } from '@/context/ConfigContext'
+import { esViteDemo } from '@/firebase'
 import styles from './MovimientoFormPage.module.scss'
 
 type Tipo   = 'EGRESO' | 'INGRESO'
@@ -147,7 +148,8 @@ export default function MovimientoFormPage() {
       await movimientosApi.createMovimiento(payload)
       const cuentaQ = searchParams.get('cuenta')
       const primeraPropia = cuentasData?.find(c => c.es_propia)
-      let dest = '/configuracion/cuentas'
+      // En build demo /configuracion/cuentas redirige a categorías (App.tsx); evita sensación de «no guardó».
+      let dest = esViteDemo() ? '/dashboard' : '/configuracion/cuentas'
       if (returnTo) dest = returnTo
       else if (ambito === 'COMUN') dest = '/gastos/comunes'
       else if (cuentaQ) dest = `/gastos/cuenta/${encodeURIComponent(cuentaQ)}`

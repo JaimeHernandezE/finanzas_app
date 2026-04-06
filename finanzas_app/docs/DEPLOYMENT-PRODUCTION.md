@@ -210,6 +210,16 @@ Pasos:
 - **Build Command:** `npm install && npm run build`
 - **Publish Directory:** `dist`
 
+**Importante (evitar 404 al refrescar rutas internas):** si usas React Router con `BrowserRouter`, en Render debes agregar una regla de **Rewrite** para SPA:
+
+| Campo | Valor |
+|-------|-------|
+| **Source Path** | `/*` |
+| **Destination Path** | `/index.html` |
+| **Action** | `Rewrite` |
+
+Sin esta regla, al refrescar una ruta como `/dashboard` o `/gastos`, Render busca un archivo físico en esa ruta y responde `404 Not Found`.
+
 Variables de entorno (definir **antes** del build: Vite las incrusta en el JS en tiempo de compilación):
 
 **Producción real (login Firebase en el cliente):**
@@ -264,6 +274,10 @@ Si quieres que **cada noche** la demo vuelva a un estado conocido (y se pierdan 
 3. **Forzar ahora (prueba):** en GitHub, pestaña **Actions** → en la izquierda elige **Reset demo nightly** → botón **Run workflow** → rama `main` (o la que uses) → **Run workflow**. Espera a que el job termine (puede tardar varios minutos por el volumen de `seed_demo`) y recarga la app demo.
 
 `seed_demo` solo borra y recrea la familia cuyo nombre es **«Demo»** y sus datos. Si en esa misma BD hubiera **otras** familias o usuarios ajenos a la demo, **no** los elimina; lo más seguro es un **Postgres dedicado** a la instancia demo.
+
+**Registrar movimientos en la UI demo** exige el seed **completo** (categorías familiares/personales, tarjetas, etc.). Con solo `seed_demo_minimal` el formulario suele quedar **sin categorías** o sin métodos útiles. Espera a que termine `seed_demo` (Actions o segundo plano en Render) o baja `SEED_DEMO_MESES` solo para acortar el job, no para quedarte en mínimo.
+
+El workflow de reset define **`SEED_DEMO_MESES=6`** por defecto para que el job dure unos pocos minutos; cambia a **`15`** en el YAML si quieres la misma profundidad que en local.
 
 Esto **no** sustituye tu respaldo de **producción** a Drive; es independiente y solo afecta la BD que indiques en `DATABASE_URL_DEMO`.
 

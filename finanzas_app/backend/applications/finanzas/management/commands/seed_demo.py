@@ -1,6 +1,8 @@
 """
-Recrea la familia demo (Jaime + Glori), catálogo financiero y 15 meses de datos.
+Recrea la familia demo (Jaime + Glori), catálogo financiero y N meses de datos (por defecto 15).
 Sin viajes ni inversiones. Idempotente: borra la familia «Demo» si existe y vuelve a sembrar.
+
+Variable opcional: SEED_DEMO_MESES (entero 1–120) para acortar el seed en CI; por defecto 15.
 
 Cada mes, por usuario: 60% del sueldo declarado (IngresoComun) en gastos COMÚN operativos,
 30% en gastos PERSONALES (cuenta asignada), 10% en ahorro Fondo Mutuo (COMÚN, cuenta en D).
@@ -10,6 +12,7 @@ Ancla calendario: hoy (TIME_ZONE Django): el mes en curso no tiene fechas poster
 Ejecutar tras migrate en entornos DEMO.
 """
 
+import os
 import random
 from calendar import monthrange
 from datetime import date
@@ -47,7 +50,21 @@ from applications.usuarios.demo_constants import (
 )
 from applications.usuarios.models import Familia, InvitacionPendiente, Usuario
 
-MESES_HISTORIA = 15
+MESES_HISTORIA_DEFAULT = 15
+
+
+def _meses_historia_desde_env() -> int:
+    """SEED_DEMO_MESES en entorno (p. ej. GitHub Actions); clamp 1..120."""
+    raw = (os.environ.get('SEED_DEMO_MESES') or '').strip()
+    if not raw:
+        return MESES_HISTORIA_DEFAULT
+    try:
+        n = int(raw, 10)
+    except ValueError:
+        return MESES_HISTORIA_DEFAULT
+    return max(1, min(n, 120))
+
+
 # Mismo sueldo base para ambos miembros; cada mes se elige al azar en ±10%.
 SUELDO_BASE_MIEMBRO = 2_000_000
 SUELDO_MENSUAL_MIN = int(SUELDO_BASE_MIEMBRO * 0.9)
@@ -234,9 +251,10 @@ def _wipe_familia_demo():
 
 
 class Command(BaseCommand):
-    help = 'Borra y recrea datos de demostración (familia Demo, Jaime y Glori, 15 meses).'
+    help = 'Borra y recrea datos de demostración (familia Demo, Jaime y Glori; meses vía SEED_DEMO_MESES o 15).'
 
     def handle(self, *args, **options):
+        meses_historia = _meses_historia_desde_env()
         random.seed(RNG_SEED)
         ref = timezone.localdate()
         mes_cierre = date(ref.year, ref.month, 1)
@@ -358,7 +376,7 @@ class Command(BaseCommand):
                     cat.save(update_fields=['cuenta_personal'])
                 categorias[f'g_{nombre}'] = cat
 
-            for i in range(MESES_HISTORIA):
+            for i in range(meses_historia):
                 primer_dia = mes_cierre - relativedelta(months=i)
                 anio, mes = primer_dia.year, primer_dia.month
                 es_mes_actual = i == 0
@@ -550,7 +568,7 @@ class Command(BaseCommand):
                         defaults={'monto': monto},
                     )
 
-            mes_inicio = mes_cierre - relativedelta(months=MESES_HISTORIA - 1)
+            mes_inicio = mes_cierre - relativedelta(months=meses_historia - 1)
             services_recalculo.recalcular_familia_desde(familia.id, mes_inicio)
             services_recalculo.backfill_resumen_historico_snapshots(familia.id)
             RecalculoPendiente.objects.filter(familia_id=familia.id).delete()
@@ -563,6 +581,6 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f'Seed demo listo. Familia «{FAMILIA_DEMO_NOMBRE}» (id={familia.id}), '
-                f'referencia hoy={ref.isoformat()}.'
+                f'{meses_historia} mes(es) de historia, referencia hoy={ref.isoformat()}.'
             )
         )
