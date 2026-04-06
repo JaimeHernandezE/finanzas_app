@@ -34,6 +34,7 @@ export interface UsuarioMeApi {
   activo?: boolean
   foto: string | null
   familia: { id: number; nombre: string } | null
+  es_demo?: boolean
 }
 
 export const familiaApi = {

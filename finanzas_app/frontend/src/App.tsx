@@ -37,6 +37,8 @@ import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
 import ImportadorGastosComunesPage from '@/pages/configuracion/ImportadorGastosComunesPage'
 import RespaldoBdPage from '@/pages/configuracion/RespaldoBdPage'
 
+const ES_DEMO = import.meta.env.VITE_ES_DEMO === 'true'
+
 const Placeholder = ({ title }: { title: string }) => (
   <div style={{ padding: '40px 32px', color: '#888' }}>
     <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0f0f0f', marginBottom: 8 }}>{title}</h2>
@@ -99,16 +101,53 @@ function AppRoutes() {
 
         <Route path="configuracion" element={<ConfiguracionLayout />}>
           <Route index element={<ConfiguracionPage />} />
-          <Route path="perfil" element={<PerfilPage />} />
+          <Route
+            path="perfil"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <PerfilPage />}
+          />
           <Route path="categorias" element={<CategoriasPage />} />
-          <Route path="cuentas" element={<CuentasPage />} />
-          <Route path="miembros" element={<MiembrosPage />} />
-          <Route path="invitaciones" element={<InvitacionesRecibidasPage />} />
-          <Route path="importar-cuenta-personal" element={<ImportadorCuentaPersonalPage />} />
-          <Route path="importar-honorarios" element={<ImportadorHonorariosPage />} />
-          <Route path="importar-sueldos" element={<ImportadorSueldosPage />} />
-          <Route path="importar-gastos-comunes" element={<ImportadorGastosComunesPage />} />
-          <Route path="respaldo-bd" element={<RespaldoBdPage />} />
+          <Route
+            path="cuentas"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <CuentasPage />}
+          />
+          <Route
+            path="miembros"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <MiembrosPage />}
+          />
+          <Route
+            path="invitaciones"
+            element={
+              ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <InvitacionesRecibidasPage />
+            }
+          />
+          <Route
+            path="importar-cuenta-personal"
+            element={
+              ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <ImportadorCuentaPersonalPage />
+            }
+          />
+          <Route
+            path="importar-honorarios"
+            element={
+              ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <ImportadorHonorariosPage />
+            }
+          />
+          <Route
+            path="importar-sueldos"
+            element={
+              ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <ImportadorSueldosPage />
+            }
+          />
+          <Route
+            path="importar-gastos-comunes"
+            element={
+              ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <ImportadorGastosComunesPage />
+            }
+          />
+          <Route
+            path="respaldo-bd"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <RespaldoBdPage />}
+          />
         </Route>
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

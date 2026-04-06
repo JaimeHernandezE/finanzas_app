@@ -20,7 +20,9 @@ Regla práctica:
 
 | Documento | Descripción |
 |-----------|-------------|
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Despliegue del backend con Docker y comandos rápidos de docker-compose. |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Índice: enlaces a despliegue local y producción. |
+| [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md) | Docker Compose en tu máquina: servicios, comandos, migraciones, hot reload, URLs locales. |
+| [DEPLOYMENT-PRODUCTION.md](DEPLOYMENT-PRODUCTION.md) | Producción (Render), secretos, Firebase; roadmap Google Cloud, Supabase, Expo. |
 | [backend/README.md](backend/README.md) | Resumen del backend, estructura de apps y enlaces al resto de docs del backend. |
 | [backend/TESTING.md](backend/TESTING.md) | Pruebas del backend (pytest): fixtures, tests de catálogos, comandos y cobertura. |
 | [frontend/README.md](frontend/README.md) | App Expo (RN): comandos rápidos de variables EAS y builds. |

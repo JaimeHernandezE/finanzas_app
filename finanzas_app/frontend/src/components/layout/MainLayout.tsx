@@ -108,7 +108,8 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, loading, logout } = useAuth()
+  const { user, loading, logout, cambiarUsuarioDemo } = useAuth()
+  const esDemoUi = import.meta.env.VITE_ES_DEMO === 'true' || Boolean(user?.esDemo)
   const { viajeActivo } = useViaje()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
 
@@ -122,9 +123,10 @@ export default function MainLayout() {
 
   useEffect(() => {
     if (loading || !user || user.familia) return
+    if (esDemoUi) return
     if (location.pathname.startsWith('/configuracion')) return
     navigate('/configuracion/invitaciones', { replace: true })
-  }, [loading, user, location.pathname, navigate])
+  }, [loading, user, location.pathname, navigate, esDemoUi])
 
   const { propias, tuteladas } = useMemo(() => {
     const list = (cuentasApi ?? []).map(
@@ -190,7 +192,7 @@ export default function MainLayout() {
 
           {/* Personal */}
           <GroupLabel label="Personal" />
-          {user && propias.length === 0 && (
+          {user && propias.length === 0 && !esDemoUi && (
             <li className={styles.navHint}>
               <Link to="/configuracion/cuentas" className={styles.navHintLink}>
                 + Crear cuenta personal
@@ -217,6 +219,22 @@ export default function MainLayout() {
           {MAS_ITEMS.map(item => (
             <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
           ))}
+
+          {esDemoUi && user && (
+            <li className={styles.demoBar}>
+              <span className={styles.demoBadge}>DEMO</span>
+              <button
+                type="button"
+                className={styles.demoSwitch}
+                onClick={() => {
+                  const esJaime = user.email.toLowerCase().includes('jaime')
+                  void cambiarUsuarioDemo(esJaime ? 'glori' : 'jaime')
+                }}
+              >
+                Ver como {user.email.toLowerCase().includes('jaime') ? 'Glori' : 'Jaime'} →
+              </button>
+            </li>
+          )}
 
         </ul>
       </nav>

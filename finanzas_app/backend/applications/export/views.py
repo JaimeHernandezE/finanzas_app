@@ -4,12 +4,14 @@
 
 import os
 
+from django.conf import settings
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from applications import utils as utils_auth
+from applications.demo_guard import respuesta_demo_no_disponible
 from applications.usuarios.models import Familia
 
 from .exporters import (
@@ -143,6 +145,8 @@ def exportar_sheets_autenticado(request):
     Misma exportación que /sheets/, pero con token Firebase en Authorization.
     Solo usuarios con rol ADMIN (misma capacidad que automatizar el respaldo).
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err is not None:
         return err

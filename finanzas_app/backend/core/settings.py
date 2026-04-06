@@ -3,6 +3,7 @@ Django settings for core project.
 """
 
 import os
+from datetime import timedelta
 import dj_database_url
 from pathlib import Path
 
@@ -13,6 +14,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production'))
 
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+
+# Modo demo: sin Firebase Admin en runtime; login vía JWT (demo-login) y datos ficticios.
+DEMO = os.environ.get('DEMO', 'False') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -138,6 +142,12 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+}
+
+# Tokens largos en demo (sin refresh automático desde Firebase).
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
 }
 
 # ── SEGURIDAD EN PRODUCCIÓN ────────────────────────────────────────────────────

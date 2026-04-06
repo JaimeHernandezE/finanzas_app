@@ -22,7 +22,9 @@ backend/
 
 | Tema | Dónde |
 |------|--------|
-| **Despliegue y Docker** | [docs/DEPLOYMENT.md](../DEPLOYMENT.md) |
+| **Despliegue local (Docker)** | [docs/DEPLOYMENT-LOCAL.md](../DEPLOYMENT-LOCAL.md) |
+| **Despliegue producción** | [docs/DEPLOYMENT-PRODUCTION.md](../DEPLOYMENT-PRODUCTION.md) |
+| **Índice despliegue** | [docs/DEPLOYMENT.md](../DEPLOYMENT.md) |
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
 | **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
@@ -37,7 +39,7 @@ docker-compose exec web python manage.py <comando>
 
 Ejemplos: `check`, `makemigrations`, `migrate`, `createsuperuser`, `runserver` (ya usado por defecto en el `command` del servicio).
 
-Más comandos y contexto: [docs/DEPLOYMENT.md — Comandos rápidos](../DEPLOYMENT.md#comandos-rápidos--docker-compose).
+Más comandos y contexto: [docs/DEPLOYMENT-LOCAL.md — Comandos rápidos](../DEPLOYMENT-LOCAL.md#comandos-rápidos--docker-compose).
 
 ## API — Cuentas personales
 

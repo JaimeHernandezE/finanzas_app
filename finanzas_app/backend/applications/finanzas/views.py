@@ -21,6 +21,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 import applications.utils as utils_auth
+from applications.demo_guard import respuesta_demo_no_disponible
 from .models import (
     Categoria,
     CuentaPersonal,
@@ -310,6 +311,8 @@ def tarjetas(request):
         return Response(TarjetaSerializer(qs, many=True).data)
 
     if request.method == 'POST':
+        if settings.DEMO:
+            return respuesta_demo_no_disponible()
         serializer = TarjetaSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(usuario=usuario)
@@ -336,6 +339,9 @@ def tarjeta_detalle(request, pk):
             {'error': 'Tarjeta no encontrada.'},
             status=status.HTTP_404_NOT_FOUND
         )
+
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
 
     if request.method == 'DELETE':
         tarjeta.delete()
@@ -374,6 +380,9 @@ def cuentas_personales(request):
         return Response(
             CuentaPersonalSerializer(ordered, many=True, context=ctx).data
         )
+
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
 
     serializer = CuentaPersonalWriteSerializer(data=request.data)
     if not serializer.is_valid():
@@ -424,6 +433,9 @@ def cuenta_personal_detalle(request, pk):
 
     if request.method == 'GET':
         return Response(CuentaPersonalSerializer(cuenta, context=ctx).data)
+
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
 
     if cuenta.usuario_id != usuario.id:
         return Response(
@@ -1909,6 +1921,9 @@ def importar_cuenta_personal_planilla(request):
     if error:
         return error
 
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
     debug_id = _nuevo_import_debug_id()
 
     try:
@@ -2177,6 +2192,9 @@ def importar_honorarios_planilla(request):
     if error:
         return error
 
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
     debug_id = _nuevo_import_debug_id()
 
     try:
@@ -2438,6 +2456,8 @@ def importar_sueldos_planilla(request):
     usuario_auth, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
     if not usuario_auth.familia_id:
         return Response(
             {'error': 'Usuario sin familia asociada.'},
@@ -2574,6 +2594,9 @@ def importar_gastos_comunes_planilla(request):
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
+
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
 
     debug_id = _nuevo_import_debug_id()
 

@@ -11,6 +11,7 @@ export default function LoginPage() {
     clearError,
     login,
     loginWithEmail,
+    loginDemo,
     checkEmailForRegister,
     registerWithEmail,
     linkEmailToGoogleAccount,
@@ -39,7 +40,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && usuario) {
-      navigate('/', { replace: true })
+      navigate('/dashboard', { replace: true })
     }
   }, [loading, usuario, navigate])
 
@@ -278,6 +279,59 @@ export default function LoginPage() {
       >
         Continuar con Google
       </button>
+
+      {import.meta.env.VITE_ES_DEMO === 'true' && (
+        <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid #e5e7eb' }}>
+          <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem', textAlign: 'center' }}>
+            o explorar sin cuenta real
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                clearError()
+                setLocalError(null)
+                void loginDemo('jaime')
+              }}
+              style={{
+                padding: '0.65rem 0.5rem',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                borderRadius: 8,
+                border: '1px solid rgba(22, 163, 74, 0.35)',
+                backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                color: '#15803d',
+                cursor: 'pointer',
+              }}
+            >
+              Entrar como Jaime
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearError()
+                setLocalError(null)
+                void loginDemo('glori')
+              }}
+              style={{
+                padding: '0.65rem 0.5rem',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                borderRadius: 8,
+                border: '1px solid rgba(22, 163, 74, 0.35)',
+                backgroundColor: 'rgba(22, 163, 74, 0.08)',
+                color: '#15803d',
+                cursor: 'pointer',
+              }}
+            >
+              Entrar como Glori
+            </button>
+          </div>
+          <p style={{ fontSize: '0.7rem', color: '#9ca3af', textAlign: 'center', marginTop: '0.5rem' }}>
+            Datos ficticios · 15 meses de historial
+          </p>
+        </div>
+      )}
     </div>
   )
 }

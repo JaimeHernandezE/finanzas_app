@@ -57,7 +57,9 @@ finanzas_app/
 │   └── .gitkeep
 ├── docs/                       # Project documentation
 │   ├── README.md
-│   ├── DEPLOYMENT.md
+│   ├── DEPLOYMENT.md            # Índice despliegue
+│   ├── DEPLOYMENT-LOCAL.md     # Docker local
+│   ├── DEPLOYMENT-PRODUCTION.md
 │   └── backend/README.md
 ├── .cursor/rules/              # Cursor IDE rules (see Migration rules section)
 └── README.md
@@ -227,7 +229,9 @@ Do not create any frontend files until the user explicitly requests it.
 
 Project docs live in `docs/`:
 - `docs/README.md` — Documentation index
-- `docs/DEPLOYMENT.md` — Docker deployment instructions
+- `docs/DEPLOYMENT.md` — Deployment index (links local + production)
+- `docs/DEPLOYMENT-LOCAL.md` — Docker Compose local development
+- `docs/DEPLOYMENT-PRODUCTION.md` — Production deployment (e.g. Render)
 - `docs/backend/README.md` — Backend structure and commands
 
 Keep documentation in sync with code changes. Document new apps, endpoints, and models in `docs/backend/README.md`.

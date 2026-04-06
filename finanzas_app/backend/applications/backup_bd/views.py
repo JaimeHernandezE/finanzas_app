@@ -10,6 +10,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from applications.demo_guard import respuesta_demo_no_disponible
 from applications.usuarios.models import Usuario
 from applications.usuarios.views import obtener_usuario_desde_token
 
@@ -66,6 +67,8 @@ def descargar_dump(request):
     """
     Descarga finanzas_pg_YYYY-MM-DD_HHMM.sql.gz (pg_dump texto + gzip).
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = _usuario_y_error_firebase(request)
     if err is not None:
         return err
@@ -95,6 +98,8 @@ def subir_dump_a_drive(request):
     """
     Genera el mismo dump que el cron y lo sube a Drive; mantiene solo 2 respaldos recientes.
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = _usuario_y_error_firebase(request)
     if err is not None:
         return err
@@ -124,6 +129,8 @@ def importar_dump(request):
     Restaura desde un .sql.gz generado por esta app (pg_dump -Fp | gzip).
     Requiere confirmacion=RESTAURAR_BD en el formulario.
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = _usuario_y_error_firebase(request)
     if err is not None:
         return err

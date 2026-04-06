@@ -61,6 +61,15 @@ function textoCuentas(loading: boolean, error: string | null, n: number | undefi
 // Página
 // -----------------------------------------------------------------------------
 
+const ES_DEMO = import.meta.env.VITE_ES_DEMO === 'true'
+
+const GRUPOS_SOLO_DEMO = [
+  {
+    grupo: 'FINANZAS',
+    items: [{ icon: '▤', label: 'Categorías', to: '/configuracion/categorias' as const }],
+  },
+] as const
+
 export default function ConfiguracionPage() {
   const { user } = useAuth()
   const perfilResumen = user?.nombre ?? ''
@@ -158,11 +167,18 @@ export default function ConfiguracionPage() {
     [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC, user?.familia]
   )
 
+  const gruposIndice = ES_DEMO ? GRUPOS_SOLO_DEMO : GRUPOS
+
   return (
     <div className={`${styles.page} ${styles.fadeUp}`}>
       <h1 className={styles.titulo}>Configuración</h1>
+      {ES_DEMO ? (
+        <p className={styles.demoAviso}>
+          En el entorno demo solo está disponible la sección de categorías.
+        </p>
+      ) : null}
 
-      {GRUPOS.map((g) => (
+      {gruposIndice.map((g) => (
         <section key={g.grupo} className={styles.section}>
           <h2 className={styles.groupHeader}>{g.grupo}</h2>
           <ul className={styles.list}>
@@ -188,6 +204,7 @@ export default function ConfiguracionPage() {
         </section>
       ))}
 
+      {ES_DEMO ? null : (
       <section className={styles.section}>
         <h2 className={styles.groupHeader}>MANTENIMIENTO</h2>
         {esAdmin ? (
@@ -250,6 +267,7 @@ export default function ConfiguracionPage() {
           </>
         ) : null}
       </section>
+      )}
     </div>
   )
 }

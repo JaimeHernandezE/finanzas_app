@@ -32,6 +32,13 @@
   margin-bottom: $space-6;
 }
 
+.demoAviso {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  margin: (-$space-4) 0 $space-5;
+  line-height: 1.45;
+}
+
 .section {
   margin-bottom: $space-8;
 }

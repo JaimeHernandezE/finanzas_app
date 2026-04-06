@@ -15,6 +15,9 @@ def init_firebase():
     Se llama una sola vez al arrancar Django (desde apps.py o settings.py).
     Si no hay credenciales configuradas, no se inicializa (p. ej. al correr migraciones).
     """
+    if os.environ.get('DEMO', 'False') == 'True':
+        print('[Firebase] Modo DEMO — Firebase Admin omitido.')
+        return
     if firebase_admin._apps:
         return
     service_account_path = os.getenv(

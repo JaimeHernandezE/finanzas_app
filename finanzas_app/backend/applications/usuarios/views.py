@@ -1,14 +1,18 @@
 import logging
 
+from django.conf import settings
+from firebase_admin import auth as firebase_auth
+from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework import status
-from firebase_admin import auth as firebase_auth
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from applications import utils as utils_auth
+from applications.demo_guard import respuesta_demo_no_disponible
+from .demo_constants import DEMO_EMAIL_GLORI, DEMO_EMAIL_JAIME
 from .miembro_salida import puede_quitar_miembro_familia
-from .models import Usuario, Familia, InvitacionPendiente
+from .models import Familia, InvitacionPendiente, Usuario
 
 logger = logging.getLogger(__name__)
 FIREBASE_CLOCK_SKEW_SECONDS = 60
@@ -48,18 +52,27 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
             'id': usuario.familia.id,
             'nombre': usuario.familia.nombre,
         } if usuario.familia else None,
+        'es_demo': getattr(settings, 'DEMO', False),
     }
 
 
 @api_view(['GET', 'PATCH'])
-@authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
+@authentication_classes([])  # Firebase ID token o JWT SimpleJWT si DEMO=True
 @permission_classes([AllowAny])
 def me(request):
     """
-    Verifica el token Firebase y retorna el usuario registrado.
+    Verifica el token (Firebase o JWT en DEMO) y retorna el usuario registrado.
     Si el email no está registrado en ninguna familia → 404.
     Si el email existe → 200 con datos del usuario.
     """
+    if getattr(settings, 'DEMO', False):
+        usuario, err = utils_auth.get_usuario_autenticado(request)
+        if err:
+            return err
+        if request.method == 'PATCH':
+            return respuesta_demo_no_disponible()
+        return Response(_payload_me(usuario, None))
+
     decoded, error = obtener_usuario_desde_token(request)
     if error:
         print(f'[Firebase] /me/ 401: {error}')
@@ -114,12 +127,51 @@ def me(request):
 @api_view(['POST'])
 @authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
 @permission_classes([AllowAny])
+def demo_login(request):
+    """
+    Login sin Firebase cuando DEMO=True. Body: { "usuario": "jaime" | "glori" }.
+    """
+    if not getattr(settings, 'DEMO', False):
+        return Response(
+            {'error': 'Solo disponible en modo demo.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    slug = (request.data.get('usuario') or '').strip().lower()
+    if slug == 'jaime':
+        email = DEMO_EMAIL_JAIME
+    elif slug in ('glori', 'gloria'):
+        email = DEMO_EMAIL_GLORI
+    else:
+        return Response(
+            {'error': 'Usuario demo inválido. Usa "jaime" o "glori".'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        usuario = Usuario.objects.select_related('familia').get(email__iexact=email)
+    except Usuario.DoesNotExist:
+        return Response(
+            {'error': 'Demo no disponible. Ejecuta python manage.py seed_demo.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    refresh = RefreshToken.for_user(usuario)
+    return Response({
+        'access': str(refresh.access_token),
+        'refresh': str(refresh),
+        'usuario': _payload_me(usuario, None),
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
+@permission_classes([AllowAny])
 def registrar_usuario(request):
     """
     Crea un usuario nuevo con token Firebase válido.
     Primer usuario del sistema: crea familia y queda como ADMIN.
     Con invitación pendiente: crea el usuario sin familia hasta que acepte en la app.
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     decoded, error = obtener_usuario_desde_token(request)
     if error:
         return Response({'error': error}, status=status.HTTP_401_UNAUTHORIZED)
@@ -188,6 +240,14 @@ def auth_check_email(request):
     if not email or '@' not in email:
         return Response({'error': 'Email inválido.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    if getattr(settings, 'DEMO', False):
+        return Response({
+            'exists': False,
+            'has_password': False,
+            'requires_linking': False,
+            'providers': [],
+        })
+
     try:
         user_record = firebase_auth.get_user_by_email(email)
         provider_ids = sorted(
@@ -247,6 +307,8 @@ def familia_miembros(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def miembro_actualizar_rol(request, pk):
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
@@ -292,6 +354,8 @@ def miembro_actualizar_activo(request, pk):
     Habilita o deshabilita un miembro (solo ADMIN, no sobre uno mismo).
     Los deshabilitados no usan la API y no entran en el prorrateo del mes actual ni futuros.
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
@@ -366,6 +430,8 @@ def miembro_eliminar(request, pk):
     Quita un usuario de la familia (familia=None). Solo sin datos asociados
     ni violar regla de administradores; solo ADMIN.
     """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
@@ -412,6 +478,9 @@ def familia_invitaciones(request):
             for i in qs
         ])
 
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+
     if usuario.rol != 'ADMIN':
         return Response(
             {'error': 'Solo un administrador puede invitar miembros.'},
@@ -456,6 +525,7 @@ def configuracion_global(request):
 
     return Response({
         'zona_horaria': settings.TIME_ZONE,
+        'es_demo': getattr(settings, 'DEMO', False),
         'moneda': {
             'codigo':              settings.MONEDA_BASE,
             'simbolo':             settings.MONEDA_SIMBOLO,
@@ -470,6 +540,8 @@ def configuracion_global(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def familia_invitacion_eliminar(request, pk):
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
@@ -519,6 +591,8 @@ def invitaciones_recibidas_list(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def invitacion_recibida_aceptar(request, pk):
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
@@ -547,6 +621,8 @@ def invitacion_recibida_aceptar(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def invitacion_recibida_rechazar(request, pk):
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err

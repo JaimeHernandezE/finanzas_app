@@ -28,6 +28,8 @@ export interface Usuario {
   /** Cuenta habilitada en la app (false = deshabilitada por un administrador). */
   activo?:  boolean
   familia:  { id: number; nombre: string } | null
+  /** Sesión del entorno demo (JWT, sin Firebase). */
+  esDemo?:  boolean
 }
 
 interface AuthContextType {
@@ -52,11 +54,29 @@ interface AuthContextType {
   updateNombre: (nombre: string) => Promise<void>
   /** Vuelve a cargar perfil desde GET /api/usuarios/me/ (p. ej. tras aceptar invitación). */
   refreshUsuario: () => Promise<void>
+  loginDemo: (usuarioDemo: 'jaime' | 'glori') => Promise<void>
+  cambiarUsuarioDemo: (usuarioDemo: 'jaime' | 'glori') => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 const GOOGLE_PROVIDER_ID = GoogleAuthProvider.PROVIDER_ID
 const PASSWORD_PROVIDER_ID = EmailAuthProvider.PROVIDER_ID
+
+const ES_DEMO_BUILD = import.meta.env.VITE_ES_DEMO === 'true'
+
+function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
+  const fam = data.familia as { id: number; nombre: string } | null | undefined
+  return {
+    id: data.id as number,
+    email: String(data.email ?? ''),
+    nombre: String(data.nombre ?? ''),
+    foto: (data.foto as string | null) ?? null,
+    rol: String(data.rol ?? ''),
+    activo: data.activo as boolean | undefined,
+    familia: fam ?? null,
+    esDemo: Boolean(data.es_demo),
+  }
+}
 
 function mapFirebaseError(code: string): string {
   switch (code) {
@@ -100,18 +120,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function refreshUsuario() {
+    const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+    if (ES_DEMO_BUILD) {
+      const token = localStorage.getItem('auth_token')
+      if (!token) return
+      try {
+        const res = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
+        if (res.ok) {
+          const raw = await res.json() as Record<string, unknown>
+          setUsuario((prev) => ({
+            ...mapUsuarioFromMeApi(raw),
+            foto: (raw.foto as string | null) ?? prev?.foto ?? null,
+          }))
+          setError(null)
+        }
+      } catch {
+        // Mantener perfil actual
+      }
+      return
+    }
     const firebaseUser = auth.currentUser
     if (!firebaseUser) return
     try {
       const token = await firebaseUser.getIdToken()
-      const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
       const res = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json() as Record<string, unknown>
         localStorage.setItem('auth_token', token)
         setUsuario((prev) => ({
-          ...data,
-          foto: data?.foto ?? prev?.foto ?? null,
+          ...mapUsuarioFromMeApi(raw),
+          foto: (raw.foto as string | null) ?? prev?.foto ?? null,
         }))
         setError(null)
       }
@@ -130,9 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(meUrl, { headers })
 
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json() as Record<string, unknown>
         localStorage.setItem('auth_token', token)
-        setUsuario(data)
+        setUsuario(mapUsuarioFromMeApi(raw))
         setError(null)
       } else if (res.status === 404) {
         // Si existe invitación pendiente (o es primer usuario), el backend registra aquí; con invitación puede quedar sin familia hasta aceptar.
@@ -141,9 +179,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers,
         })
         if (regRes.ok) {
-          const data = await regRes.json()
+          const raw = await regRes.json() as Record<string, unknown>
           localStorage.setItem('auth_token', token)
-          setUsuario(data)
+          setUsuario(mapUsuarioFromMeApi(raw))
           setError(null)
           return
         }
@@ -181,12 +219,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function loginDemo(usuarioDemo: 'jaime' | 'glori') {
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/usuarios/demo-login/`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usuario: usuarioDemo }),
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError((data as { error?: string }).error ?? 'No se pudo entrar al demo.')
+        setLoading(false)
+        return
+      }
+      const access = (data as { access?: string }).access
+      if (!access) {
+        setError('Respuesta del servidor incompleta.')
+        setLoading(false)
+        return
+      }
+      localStorage.setItem('auth_token', access)
+      const u = (data as { usuario?: Record<string, unknown> }).usuario
+      if (u) {
+        setUsuario({ ...mapUsuarioFromMeApi(u), esDemo: true })
+      }
+      setError(null)
+    } catch {
+      setError('Error conectando con el servidor.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function cambiarUsuarioDemo(usuarioDemo: 'jaime' | 'glori') {
+    localStorage.removeItem('auth_token')
+    setUsuario(null)
+    await loginDemo(usuarioDemo)
+  }
+
   const unsubRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     let cancelled = false
 
     async function initAuth() {
+      if (ES_DEMO_BUILD) {
+        const token = localStorage.getItem('auth_token')
+        const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+        if (token) {
+          try {
+            const res = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
+            if (!cancelled && res.ok) {
+              const raw = await res.json() as Record<string, unknown>
+              setUsuario({ ...mapUsuarioFromMeApi(raw), esDemo: true })
+              setError(null)
+            } else if (!cancelled) {
+              localStorage.removeItem('auth_token')
+            }
+          } catch {
+            if (!cancelled) localStorage.removeItem('auth_token')
+          }
+        }
+        if (!cancelled) setLoading(false)
+        return
+      }
+
       try {
         const result = await getRedirectResult(auth)
         if (cancelled) return
@@ -214,7 +316,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
     }
 
-    initAuth()
+    void initAuth()
     return () => {
       cancelled = true
       if (unsubRef.current) unsubRef.current()
@@ -469,13 +571,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error(body?.error || 'No se pudo actualizar el nombre')
     }
 
-    const data = await res.json()
+    const raw = await res.json() as Record<string, unknown>
+    const mapped = mapUsuarioFromMeApi(raw)
     setUsuario(prev => {
-      if (!prev) return data
+      if (!prev) return mapped
       return {
-        ...data,
-        // Si backend no envía foto por algún motivo, conservar la local.
-        foto: data?.foto ?? prev.foto ?? null,
+        ...mapped,
+        foto: mapped.foto ?? prev.foto ?? null,
       }
     })
   }
@@ -523,6 +625,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logout,
         updateNombre,
         refreshUsuario,
+        loginDemo,
+        cambiarUsuarioDemo,
       }}
     >
       {children}
