@@ -32,6 +32,8 @@ export interface Usuario {
   idioma_ui:       'es' | 'en'
   moneda_display:  string
   zona_horaria:    string
+  /** Solo en build demo o respuestas que lo incluyan. */
+  esDemo?:         boolean
 }
 
 interface AuthContextType {
@@ -69,6 +71,7 @@ const ES_DEMO_BUILD = import.meta.env.VITE_ES_DEMO === 'true'
 
 function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
   const fam = data.familia as { id: number; nombre: string } | null | undefined
+  const idioma = data.idioma_ui === 'en' ? 'en' : 'es'
   return {
     id: data.id as number,
     email: String(data.email ?? ''),
@@ -77,6 +80,9 @@ function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
     rol: String(data.rol ?? ''),
     activo: data.activo as boolean | undefined,
     familia: fam ?? null,
+    idioma_ui: idioma,
+    moneda_display: String(data.moneda_display ?? 'CLP'),
+    zona_horaria: String(data.zona_horaria ?? 'America/Santiago'),
     esDemo: Boolean(data.es_demo),
   }
 }
@@ -154,7 +160,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ...mapUsuarioFromMeApi(raw),
           foto: (raw.foto as string | null) ?? prev?.foto ?? null,
         }))
-        if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
+        const lang = raw.idioma_ui
+        if (lang === 'es' || lang === 'en') i18n.changeLanguage(lang)
         setError(null)
       }
     } catch {
@@ -174,8 +181,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const raw = await res.json() as Record<string, unknown>
         localStorage.setItem('auth_token', token)
-        setUsuario(data)
-        if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
+        setUsuario((prev) => ({
+          ...mapUsuarioFromMeApi(raw),
+          foto: (raw.foto as string | null) ?? prev?.foto ?? null,
+        }))
+        const lang = raw.idioma_ui
+        if (lang === 'es' || lang === 'en') i18n.changeLanguage(lang)
         setError(null)
       } else if (res.status === 404) {
         // Si existe invitación pendiente (o es primer usuario), el backend registra aquí; con invitación puede quedar sin familia hasta aceptar.

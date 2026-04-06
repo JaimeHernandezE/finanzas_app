@@ -1,8 +1,8 @@
 # Despliegue en producción
 
-Guía para publicar Finanzas App en internet (no para tu PC de desarrollo). Si solo quieres correr el proyecto en local con Docker, usa **[DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md)**.
+Guía para publicar Finanzas App en internet para uso personal, tanto la versión web como la móvil. Si solo quieres correr el proyecto en local con Docker, usa **[DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md)**.
 
-Esta documentación se ampliará paso a paso para que alguien con poca experiencia en despliegues pueda seguir checklists concretos (consolas, nombres de campos y variables). Mientras tanto, la sección **Render** es la referencia operativa principal.
+Esta documentación se ampliará paso a paso para que alguien con poca experiencia en despliegues pueda seguir checklists concretos (consolas, nombres de campos y variables).
 
 **Índice general:** [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -10,7 +10,7 @@ Esta documentación se ampliará paso a paso para que alguien con poca experienc
 
 | Pieza | Para qué sirve |
 |-------|----------------|
-| **Base de datos PostgreSQL** | Donde Django guarda usuarios, movimientos, etc. (p. ej. Render PostgreSQL, Supabase, u otro proveedor). |
+| **Base de datos PostgreSQL** | Donde Django guarda usuarios, movimientos, tarjetas, etc. (p. ej. Render PostgreSQL, Supabase, u otro proveedor). |
 | **Backend Django** | API REST; suele ejecutarse con **Gunicorn** detrás del proveedor (p. ej. Render Web Service). |
 | **Frontend web** | Build estático de Vite (`npm run build`); suele publicarse como *static site* o detrás de CDN. |
 | **Firebase** | Autenticación; el backend valida el token y emite JWT. Requiere proyecto Firebase y, en servidor, credenciales de cuenta de servicio. |
@@ -26,6 +26,32 @@ Localmente sigues usando [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md); en producci
 
 - Cuenta en [render.com](https://render.com) conectada a GitHub
 - Firebase Service Account JSON (de Firebase Console)
+
+### Monorepo: Root Directory en Render (importante)
+
+En la **raíz del repositorio** (lo que Render clona) **no** existe una carpeta llamada solo `backend/`. El proyecto Django está dentro de **`finanzas_app/backend/`** (Dockerfile, `requirements.txt`, `build.sh`, `manage.py`). El frontend web está en **`finanzas_app/frontend/`**.
+
+| Campo en Render | Valor correcto | Si pones solo `backend` o `frontend` |
+|-----------------|----------------|--------------------------------------|
+| Web Service → **Root Directory** | `finanzas_app/backend` | Error: `Root directory "backend" does not exist` |
+| Static Site → **Root Directory** | `finanzas_app/frontend` | Equivalente: la carpeta no existe en la raíz del repo |
+
+Ese directorio es también el **contexto de build de Docker**: ahí es donde deben estar `requirements.txt` y el `Dockerfile`. Si el Root Directory apunta mal, verás errores como `Dockerfile: no such file` o `COPY requirements.txt: not found`.
+
+En la **raíz del repositorio** (al mismo nivel que la carpeta `finanzas_app/`) suele estar `render.yaml`; ahí verás `rootDir: finanzas_app/backend`, alineado con lo anterior.
+
+> **Excepción:** si alguien publicó una copia del repo donde `backend/` está en la raíz (sin carpeta `finanzas_app/`), entonces Root Directory sería `backend`. Ese no es el layout de este monorepo.
+
+### Python nativo vs Docker en Render
+
+| Modo | Cómo se construye | Cómo arranca |
+|------|-------------------|--------------|
+| **Python** (`env: python` en `render.yaml`) | `./build.sh` (dependencias, `collectstatic`, `migrate`, seeds, etc.) | `startCommand` con Gunicorn en el YAML o en el panel |
+| **Docker** (build desde `Dockerfile`) | Solo lo definido en el Dockerfile (por defecto **no** corre `build.sh`) | Hace falta un **CMD** en la imagen **o** un **Start Command** en Render |
+
+Si usas imagen Docker **sin** proceso en primer plano y **sin** Start Command en el panel, el contenedor termina al instante y Render muestra **`Application exited early`**. El `Dockerfile` del backend define ya un **CMD** con Gunicorn usando `PORT` y `WEB_CONCURRENCY` (Render las inyecta).
+
+**Migraciones en Docker:** al no ejecutarse `build.sh` dentro de la imagen, aplica migraciones con un **Release Command** en Render (`python manage.py migrate`), un job manual, o incorpora ese paso al flujo que uses. El servicio **Python** del blueprint sí corre migraciones en cada deploy vía `build.sh`.
 
 ### Generar SECRET_KEY
 
