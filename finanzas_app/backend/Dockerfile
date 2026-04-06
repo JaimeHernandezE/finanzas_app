@@ -17,6 +17,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . /app/
 
+RUN chmod +x /app/docker-entrypoint.sh /app/release.sh
+
 # WhiteNoise espera STATIC_ROOT en runtime; sin este paso /app/staticfiles/ no existe en imagen Docker.
 ENV DJANGO_SETTINGS_MODULE=core.settings
 RUN SECRET_KEY=docker-collectstatic-only DEBUG=False FIREBASE_SERVICE_ACCOUNT_JSON='{}' \
@@ -25,4 +27,5 @@ RUN SECRET_KEY=docker-collectstatic-only DEBUG=False FIREBASE_SERVICE_ACCOUNT_JS
 # Render (imagen Docker): sin proceso en primer plano el contenedor sale y el deploy falla.
 # En local, docker-compose sobrescribe con `command: python manage.py runserver ...`.
 ENV PORT=8000
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["sh", "-c", "exec gunicorn core.wsgi:application --bind 0.0.0.0:${PORT} --workers ${WEB_CONCURRENCY:-1} --timeout 120 --graceful-timeout 30 --access-logfile - --error-logfile -"]

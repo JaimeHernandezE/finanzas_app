@@ -51,7 +51,7 @@ En la **raíz del repositorio** (al mismo nivel que la carpeta `finanzas_app/`) 
 
 Si usas imagen Docker **sin** proceso en primer plano y **sin** Start Command en el panel, el contenedor termina al instante y Render muestra **`Application exited early`**. El `Dockerfile` del backend define ya un **CMD** con Gunicorn usando `PORT` y `WEB_CONCURRENCY` (Render las inyecta).
 
-**Migraciones en Docker:** al no ejecutarse `build.sh` dentro de la imagen, aplica migraciones con un **Release Command** en Render (`python manage.py migrate`), un job manual, o incorpora ese paso al flujo que uses. El servicio **Python** del blueprint sí corre migraciones en cada deploy vía `build.sh`.
+**Migraciones en Docker:** la imagen del repo ejecuta **`python manage.py migrate --noinput` en el `ENTRYPOINT`** antes de Gunicorn (`docker-entrypoint.sh`), para que la BD enlazada tenga tablas aunque no configures Release Command. Sigue siendo recomendable **Release Command** `./release.sh` para `seed_categorias`, `crear_admin` y `seed_demo` (si `DEMO`). El endpoint **`GET /api/usuarios/config/` no usa la base de datos** (solo lee `settings`): puede devolver **200** aunque falten tablas; un **500** en `demo-login` con `relation "usuarios_usuario" does not exist` indica migraciones no aplicadas en esa BD hasta ese momento.
 
 #### `dj_database_url.ParseError` / `DATABASE_URL` inválida
 
