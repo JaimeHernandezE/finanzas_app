@@ -207,18 +207,38 @@ def demo_login(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        usuario = Usuario.objects.select_related('familia').get(email__iexact=email)
-    except Usuario.DoesNotExist:
-        return Response(
-            {'error': 'Demo no disponible. Ejecuta python manage.py seed_demo.'},
-            status=status.HTTP_404_NOT_FOUND,
+        candidatos = list(
+            Usuario.objects.select_related('familia').filter(email__iexact=email)[:2]
         )
-    refresh = RefreshToken.for_user(usuario)
-    return Response({
-        'access': str(refresh.access_token),
-        'refresh': str(refresh),
-        'usuario': _payload_me(usuario, None),
-    })
+        if len(candidatos) > 1:
+            logger.error(
+                'demo_login: varios usuarios con email %r (esperado 1). Revisa datos o vuelve a seed_demo.',
+                email,
+            )
+            return Response(
+                {'error': 'Datos demo inconsistentes (correo duplicado). Contacta al administrador.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        usuario = candidatos[0] if candidatos else None
+        if usuario is None:
+            return Response(
+                {'error': 'Demo no disponible. Ejecuta python manage.py seed_demo.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        refresh = RefreshToken.for_user(usuario)
+        usuario_payload = _payload_me(usuario, None)
+        usuario_payload['es_demo'] = True
+        return Response({
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+            'usuario': usuario_payload,
+        })
+    except Exception:
+        logger.exception('demo_login: error al emitir JWT o construir respuesta (email=%r)', email)
+        return Response(
+            {'error': 'Error interno al iniciar sesión demo. Revisa los logs del servidor.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(['POST'])

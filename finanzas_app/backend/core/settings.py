@@ -31,7 +31,16 @@ def _env_flag(name: str, default: str = 'false') -> bool:
     return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production'))
+def _secret_key_desde_env() -> str:
+    """Evita SECRET_KEY vacío: os.getenv('SECRET_KEY','') no cae al default y rompe JWT (p. ej. demo-login → 500)."""
+    for nombre in ('SECRET_KEY', 'DJANGO_SECRET_KEY'):
+        raw = os.environ.get(nombre)
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    return 'django-insecure-change-me-in-production'
+
+
+SECRET_KEY = _secret_key_desde_env()
 
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
@@ -187,6 +196,40 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+
+# Logs en stderr (Gunicorn/Render): tracebacks de 500 visibles en la pestaña Logs del servicio.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'applications.usuarios': {
+            'handlers': ['console'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 # Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
 from firebase_admin_init import init_firebase
