@@ -36,8 +36,9 @@ import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorarios
 import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
 import ImportadorGastosComunesPage from '@/pages/configuracion/ImportadorGastosComunesPage'
 import RespaldoBdPage from '@/pages/configuracion/RespaldoBdPage'
+import { esViteDemo } from '@/firebase'
 
-const ES_DEMO = import.meta.env.VITE_ES_DEMO === 'true'
+const ES_DEMO = esViteDemo()
 
 const Placeholder = ({ title }: { title: string }) => (
   <div style={{ padding: '40px 32px', color: '#888' }}>

@@ -32,6 +32,8 @@ services:
       - DB_NAME=finanzas_db
       - DB_USER=admin
       - DB_PASSWORD=password123
+      # Debe coincidir con VITE_ES_DEMO en el frontend si usas login demo. En backend/.env: DEMO=true
+      - DEMO=${DEMO:-false}
 
   # UI React (Vite): abre http://localhost:5173 en el navegador. :8000 es solo la API Django.
   # Si no ves cambios al guardar: recarga forzada (Ctrl+Shift+R); en Windows + Docker suele ayudar CHOKIDAR_USEPOLLING.

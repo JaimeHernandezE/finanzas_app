@@ -152,6 +152,7 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
             oculto=False,
         )
         .exclude(metodo_pago__tipo='CREDITO')
+        .exclude(categoria__es_inversion=True)
         .values('usuario_id')
         .annotate(total=Sum('monto'), cnt=Count('id'))
     )
@@ -473,6 +474,7 @@ def _ingreso_comun_usuario_mes(familia_id: int, usuario_id: int, mes_pd: date) -
 def _total_comun_neto_familia_mes(familia_id: int, mes_pd: date) -> Decimal:
     """
     Neto familia en ámbito COMÚN (efectivo/débito): suma ingresos − suma egresos del mes.
+    Egresos en categoría de inversión/patrimonio (es_inversion) no cuentan en liquidación/prorrateo.
     """
     qs = Movimiento.objects.filter(
         familia_id=familia_id,
@@ -482,7 +484,11 @@ def _total_comun_neto_familia_mes(familia_id: int, mes_pd: date) -> Decimal:
         fecha__month=mes_pd.month,
     ).exclude(metodo_pago__tipo='CREDITO')
     ing = qs.filter(tipo='INGRESO').aggregate(t=Sum('monto'))['t']
-    egr = qs.filter(tipo='EGRESO').aggregate(t=Sum('monto'))['t']
+    egr = (
+        qs.filter(tipo='EGRESO')
+        .exclude(categoria__es_inversion=True)
+        .aggregate(t=Sum('monto'))['t']
+    )
     ing = ing if ing is not None else Decimal('0')
     egr = egr if egr is not None else Decimal('0')
     return ing - egr
@@ -503,7 +509,11 @@ def _efectivo_comun_neto_usuario_mes(usuario_id: int, familia_id: int, mes_pd: d
     ).exclude(metodo_pago__tipo='CREDITO')
 
     ing = qs.filter(tipo='INGRESO').aggregate(t=Sum('monto'))['t']
-    egr = qs.filter(tipo='EGRESO').aggregate(t=Sum('monto'))['t']
+    egr = (
+        qs.filter(tipo='EGRESO')
+        .exclude(categoria__es_inversion=True)
+        .aggregate(t=Sum('monto'))['t']
+    )
     ing = ing if ing is not None else Decimal('0')
     egr = egr if egr is not None else Decimal('0')
     return ing - egr

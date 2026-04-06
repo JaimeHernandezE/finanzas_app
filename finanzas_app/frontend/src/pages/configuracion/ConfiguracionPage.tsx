@@ -5,6 +5,7 @@ import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
 import { exportApi, familiaApi, finanzasApi } from '@/api'
 import { apiErrorMessage } from '@/utils/apiErrorMessage'
+import { esViteDemo } from '@/firebase'
 import styles from './ConfiguracionPage.module.scss'
 
 // -----------------------------------------------------------------------------
@@ -61,7 +62,7 @@ function textoCuentas(loading: boolean, error: string | null, n: number | undefi
 // Página
 // -----------------------------------------------------------------------------
 
-const ES_DEMO = import.meta.env.VITE_ES_DEMO === 'true'
+const ES_DEMO = esViteDemo()
 
 const GRUPOS_SOLO_DEMO = [
   {

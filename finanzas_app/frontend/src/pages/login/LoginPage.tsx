@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { esViteDemo } from '@/firebase'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -135,6 +136,93 @@ export default function LoginPage() {
     return (
       <div style={{ padding: '2rem', maxWidth: 400, margin: '2rem auto', textAlign: 'center' }}>
         <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Cargando…</p>
+      </div>
+    )
+  }
+
+  if (esViteDemo()) {
+    return (
+      <div style={{ padding: '2rem', maxWidth: 420, margin: '2rem auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              color: '#0f0f0f',
+              background: '#c8f060',
+              padding: '6px 12px',
+              borderRadius: 8,
+            }}
+          >
+            VERSIÓN DEMO
+          </span>
+        </div>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem', textAlign: 'center' }}>
+          Acceso demostración
+        </h1>
+        <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1.25rem', textAlign: 'center' }}>
+          Sin Google ni correo: elige un perfil de prueba.
+        </p>
+        {shownError && (
+          <p style={{ color: '#dc2626', fontSize: '0.875rem', marginBottom: '1rem', textAlign: 'center' }}>
+            {shownError}
+          </p>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1.25rem' }}>
+          <button
+            type="button"
+            onClick={() => {
+              clearError()
+              setLocalError(null)
+              void loginDemo('jaime')
+            }}
+            style={{
+              padding: '0.75rem 0.5rem',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              borderRadius: 8,
+              border: '1px solid rgba(22, 163, 74, 0.35)',
+              backgroundColor: 'rgba(22, 163, 74, 0.08)',
+              color: '#15803d',
+              cursor: 'pointer',
+            }}
+          >
+            Entrar como Jaime
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              clearError()
+              setLocalError(null)
+              void loginDemo('glori')
+            }}
+            style={{
+              padding: '0.75rem 0.5rem',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              borderRadius: 8,
+              border: '1px solid rgba(22, 163, 74, 0.35)',
+              backgroundColor: 'rgba(22, 163, 74, 0.08)',
+              color: '#15803d',
+              cursor: 'pointer',
+            }}
+          >
+            Entrar como Glori
+          </button>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: '#9ca3af', textAlign: 'center', marginBottom: '1rem' }}>
+          Build demo — datos ficticios, no uses información real.
+        </p>
+        <div style={{ textAlign: 'center' }}>
+          <Link
+            to="/"
+            style={{ fontSize: '0.9rem', fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}
+          >
+            ← Volver al inicio
+          </Link>
+        </div>
       </div>
     )
   }
@@ -279,59 +367,6 @@ export default function LoginPage() {
       >
         Continuar con Google
       </button>
-
-      {import.meta.env.VITE_ES_DEMO === 'true' && (
-        <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid #e5e7eb' }}>
-          <p style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem', textAlign: 'center' }}>
-            o explorar sin cuenta real
-          </p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-            <button
-              type="button"
-              onClick={() => {
-                clearError()
-                setLocalError(null)
-                void loginDemo('jaime')
-              }}
-              style={{
-                padding: '0.65rem 0.5rem',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                borderRadius: 8,
-                border: '1px solid rgba(22, 163, 74, 0.35)',
-                backgroundColor: 'rgba(22, 163, 74, 0.08)',
-                color: '#15803d',
-                cursor: 'pointer',
-              }}
-            >
-              Entrar como Jaime
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                clearError()
-                setLocalError(null)
-                void loginDemo('glori')
-              }}
-              style={{
-                padding: '0.65rem 0.5rem',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                borderRadius: 8,
-                border: '1px solid rgba(22, 163, 74, 0.35)',
-                backgroundColor: 'rgba(22, 163, 74, 0.08)',
-                color: '#15803d',
-                cursor: 'pointer',
-              }}
-            >
-              Entrar como Glori
-            </button>
-          </div>
-          <p style={{ fontSize: '0.7rem', color: '#9ca3af', textAlign: 'center', marginTop: '0.5rem' }}>
-            Datos ficticios · 15 meses de historial
-          </p>
-        </div>
-      )}
     </div>
   )
 }

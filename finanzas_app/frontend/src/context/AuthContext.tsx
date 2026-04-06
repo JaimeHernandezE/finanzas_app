@@ -17,7 +17,7 @@ import {
   reload,
   type User as FirebaseUser
 } from 'firebase/auth'
-import { auth, provider } from '../firebase'
+import { auth, provider, esViteDemo } from '../firebase'
 
 export interface Usuario {
   id:              number
@@ -67,7 +67,7 @@ const AuthContext = createContext<AuthContextType | null>(null)
 const GOOGLE_PROVIDER_ID = GoogleAuthProvider.PROVIDER_ID
 const PASSWORD_PROVIDER_ID = EmailAuthProvider.PROVIDER_ID
 
-const ES_DEMO_BUILD = import.meta.env.VITE_ES_DEMO === 'true'
+const ES_DEMO_BUILD = esViteDemo()
 
 function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
   const fam = data.familia as { id: number; nombre: string } | null | undefined

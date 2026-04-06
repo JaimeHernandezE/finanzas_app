@@ -10,6 +10,11 @@ function envTruthy(v: string | undefined): boolean {
   return s === '1' || s === 'true' || s === 'yes' || s === 'on'
 }
 
+/** Build demo (VITE_ES_DEMO): acepta true, True, 1, on, etc. */
+export function esViteDemo(): boolean {
+  return envTruthy(import.meta.env.VITE_ES_DEMO)
+}
+
 const apiKey = String(import.meta.env.VITE_FIREBASE_API_KEY ?? '').trim()
 
 /**
@@ -17,8 +22,7 @@ const apiKey = String(import.meta.env.VITE_FIREBASE_API_KEY ?? '').trim()
  * - Sin API key: no llamar a initializeApp (evita auth/invalid-api-key en static demo sin Firebase).
  * En producción real debes definir VITE_FIREBASE_API_KEY en el build.
  */
-const omitirFirebase =
-  envTruthy(import.meta.env.VITE_ES_DEMO) || apiKey.length === 0
+const omitirFirebase = esViteDemo() || apiKey.length === 0
 
 const firebaseConfig = {
   apiKey,
@@ -44,7 +48,7 @@ if (!omitirFirebase) {
       e
     )
   }
-} else if (import.meta.env.DEV && apiKey.length === 0 && !envTruthy(import.meta.env.VITE_ES_DEMO)) {
+} else if (import.meta.env.DEV && apiKey.length === 0 && !esViteDemo()) {
   console.info(
     '[Firebase] Omitido: sin VITE_FIREBASE_API_KEY. Añade claves o VITE_ES_DEMO=true para demo.'
   )

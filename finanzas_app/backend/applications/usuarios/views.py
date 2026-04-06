@@ -61,6 +61,74 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
     }
 
 
+def _patch_me_perfil(usuario: Usuario, request, decoded: dict | None, *, es_demo: bool) -> Response:
+    """Actualiza nombre y/o preferencias de UI. En demo, el nombre está bloqueado."""
+    update_fields = []
+
+    if 'nombre' in request.data:
+        if es_demo:
+            return Response(
+                {'error': 'En modo demo no se puede cambiar el nombre.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        nombre_raw = (request.data.get('nombre') or '').strip()
+        if not nombre_raw:
+            return Response(
+                {'error': 'El nombre no puede estar vacío.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        partes = nombre_raw.split(maxsplit=1)
+        usuario.first_name = partes[0][:150]
+        usuario.last_name = (partes[1] if len(partes) > 1 else '')[:150]
+        update_fields += ['first_name', 'last_name']
+
+    if 'idioma_ui' in request.data:
+        idioma = request.data['idioma_ui']
+        codigos_validos = dict(Usuario.IDIOMA_CHOICES)
+        if idioma not in codigos_validos:
+            return Response(
+                {'error': f'Idioma inválido. Opciones: {list(codigos_validos.keys())}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        usuario.idioma_ui = idioma
+        update_fields.append('idioma_ui')
+
+    if 'moneda_display' in request.data:
+        moneda = request.data['moneda_display']
+        codigos_validos = dict(Usuario.MONEDA_CHOICES)
+        if moneda not in codigos_validos:
+            return Response(
+                {'error': f'Moneda inválida. Opciones: {list(codigos_validos.keys())}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        usuario.moneda_display = moneda
+        update_fields.append('moneda_display')
+
+    if 'zona_horaria' in request.data:
+        zona = request.data['zona_horaria']
+        if zona not in _ZONAS_VALIDAS:
+            return Response(
+                {
+                    'error': (
+                        'Zona horaria inválida. Debe ser un identificador IANA válido '
+                        '(ej: America/Santiago).'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        usuario.zona_horaria = zona
+        update_fields.append('zona_horaria')
+
+    if not update_fields:
+        return Response(
+            {'error': 'No se proporcionó ningún campo para actualizar.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    usuario.save(update_fields=update_fields)
+    return Response(_payload_me(usuario, decoded))
+
+
 @api_view(['GET', 'PATCH'])
 @authentication_classes([])  # Firebase ID token o JWT SimpleJWT si DEMO=True
 @permission_classes([AllowAny])
@@ -75,7 +143,7 @@ def me(request):
         if err:
             return err
         if request.method == 'PATCH':
-            return respuesta_demo_no_disponible()
+            return _patch_me_perfil(usuario, request, None, es_demo=True)
         return Response(_payload_me(usuario, None))
 
     decoded, error = obtener_usuario_desde_token(request)
@@ -105,70 +173,7 @@ def me(request):
             usuario.save(update_fields=['firebase_uid'])
 
         if request.method == 'PATCH':
-            from django.conf import settings as django_settings
-            es_demo = getattr(django_settings, 'DEMO', False)
-            update_fields = []
-
-            # Nombre: bloqueado en modo DEMO
-            if 'nombre' in request.data:
-                if es_demo:
-                    return Response(
-                        {'error': 'En modo demo no se puede cambiar el nombre.'},
-                        status=status.HTTP_403_FORBIDDEN,
-                    )
-                nombre_raw = (request.data.get('nombre') or '').strip()
-                if not nombre_raw:
-                    return Response(
-                        {'error': 'El nombre no puede estar vacío.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                partes = nombre_raw.split(maxsplit=1)
-                usuario.first_name = partes[0][:150]
-                usuario.last_name = (partes[1] if len(partes) > 1 else '')[:150]
-                update_fields += ['first_name', 'last_name']
-
-            # Idioma de la UI
-            if 'idioma_ui' in request.data:
-                idioma = request.data['idioma_ui']
-                codigos_validos = dict(Usuario.IDIOMA_CHOICES)
-                if idioma not in codigos_validos:
-                    return Response(
-                        {'error': f'Idioma inválido. Opciones: {list(codigos_validos.keys())}'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                usuario.idioma_ui = idioma
-                update_fields.append('idioma_ui')
-
-            # Moneda de visualización
-            if 'moneda_display' in request.data:
-                moneda = request.data['moneda_display']
-                codigos_validos = dict(Usuario.MONEDA_CHOICES)
-                if moneda not in codigos_validos:
-                    return Response(
-                        {'error': f'Moneda inválida. Opciones: {list(codigos_validos.keys())}'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                usuario.moneda_display = moneda
-                update_fields.append('moneda_display')
-
-            # Zona horaria IANA
-            if 'zona_horaria' in request.data:
-                zona = request.data['zona_horaria']
-                if zona not in _ZONAS_VALIDAS:
-                    return Response(
-                        {'error': 'Zona horaria inválida. Debe ser un identificador IANA válido (ej: America/Santiago).'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                usuario.zona_horaria = zona
-                update_fields.append('zona_horaria')
-
-            if not update_fields:
-                return Response(
-                    {'error': 'No se proporcionó ningún campo para actualizar.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            usuario.save(update_fields=update_fields)
+            return _patch_me_perfil(usuario, request, decoded, es_demo=False)
 
         return Response(_payload_me(usuario, decoded))
 

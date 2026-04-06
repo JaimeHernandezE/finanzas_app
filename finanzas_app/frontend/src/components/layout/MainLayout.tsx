@@ -5,6 +5,7 @@ import { useConfig } from '@/context/ConfigContext'
 import { useEffect, useMemo } from 'react'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
+import { esViteDemo } from '@/firebase'
 import styles from './MainLayout.module.scss'
 
 interface CuentaNav {
@@ -107,7 +108,7 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, loading, logout, cambiarUsuarioDemo } = useAuth()
-  const esDemoUi = import.meta.env.VITE_ES_DEMO === 'true' || Boolean(user?.esDemo)
+  const esDemoUi = esViteDemo() || Boolean(user?.esDemo)
   const { viajeActivo } = useViaje()
   const { formatMonto } = useConfig()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()

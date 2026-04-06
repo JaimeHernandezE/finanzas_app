@@ -5,6 +5,7 @@ en el endpoint GET/PATCH /api/usuarios/me/.
 import pytest
 from unittest.mock import patch
 from django.test import Client
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from applications.usuarios.models import Usuario
 
@@ -36,6 +37,11 @@ def _make_decoded(usuario):
         'email': usuario.email,
         'picture': None,
     }
+
+
+def _jwt_access_demo(usuario):
+    """En DEMO el endpoint /me/ valida SimpleJWT, no Firebase."""
+    return str(RefreshToken.for_user(usuario).access_token)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -165,9 +171,8 @@ def test_me_patch_sin_campos(usuario):
 def test_me_patch_nombre_bloqueado_en_demo(usuario, settings):
     settings.DEMO = True
     client = Client()
-    decoded = _make_decoded(usuario)
-    with patch('applications.usuarios.views.obtener_usuario_desde_token', return_value=(decoded, None)):
-        res = _me_patch(client, 'tok', {'nombre': 'Nombre Nuevo'})
+    token = _jwt_access_demo(usuario)
+    res = _me_patch(client, token, {'nombre': 'Nombre Nuevo'})
     assert res.status_code == 403
 
 
@@ -175,9 +180,8 @@ def test_me_patch_nombre_bloqueado_en_demo(usuario, settings):
 def test_me_patch_preferencias_permitidas_en_demo(usuario, settings):
     settings.DEMO = True
     client = Client()
-    decoded = _make_decoded(usuario)
-    with patch('applications.usuarios.views.obtener_usuario_desde_token', return_value=(decoded, None)):
-        res = _me_patch(client, 'tok', {'idioma_ui': 'en', 'moneda_display': 'USD'})
+    token = _jwt_access_demo(usuario)
+    res = _me_patch(client, token, {'idioma_ui': 'en', 'moneda_display': 'USD'})
     assert res.status_code == 200
     usuario.refresh_from_db()
     assert usuario.idioma_ui == 'en'
