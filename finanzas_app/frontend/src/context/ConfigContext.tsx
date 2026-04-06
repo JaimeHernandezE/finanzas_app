@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
+import { getApiBaseUrl } from '@/api/apiBaseUrl'
 import { useAuth } from './AuthContext'
 
 interface MonedaConfig {
@@ -54,7 +55,7 @@ export function ConfigProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     axios
-      .get(`${import.meta.env.VITE_API_URL}/api/usuarios/config/`)
+      .get(`${getApiBaseUrl()}/api/usuarios/config/`)
       .then(res => setConfigGlobal(res.data))
       .catch(() => {})
   }, [])

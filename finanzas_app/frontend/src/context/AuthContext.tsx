@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getApiBaseUrl } from '@/api/apiBaseUrl'
 import i18n from '../i18n'
 import {
   createUserWithEmailAndPassword,
@@ -129,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function refreshUsuario() {
-    const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+    const meUrl = `${getApiBaseUrl()}/api/usuarios/me/`
     if (ES_DEMO_BUILD) {
       const token = localStorage.getItem('auth_token')
       if (!token) return
@@ -174,8 +175,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = await firebaseUser.getIdToken()
       const headers = { Authorization: `Bearer ${token}` }
-      const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
-      const registroUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/registro/`
+      const meUrl = `${getApiBaseUrl()}/api/usuarios/me/`
+      const registroUrl = `${getApiBaseUrl()}/api/usuarios/registro/`
 
       const res = await fetch(meUrl, { headers })
 
@@ -241,7 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true)
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/usuarios/demo-login/`,
+        `${getApiBaseUrl()}/api/usuarios/demo-login/`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -287,7 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async function initAuth() {
       if (ES_DEMO_BUILD) {
         const token = localStorage.getItem('auth_token')
-        const meUrl = `${import.meta.env.VITE_API_URL}/api/usuarios/me/`
+        const meUrl = `${getApiBaseUrl()}/api/usuarios/me/`
         if (token) {
           try {
             const res = await fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
@@ -390,7 +391,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function checkEmailForRegister(email: string) {
     const emailNormalizado = email.trim().toLowerCase()
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/auth/check-email/`, {
+      const res = await fetch(`${getApiBaseUrl()}/api/usuarios/auth/check-email/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailNormalizado }),
@@ -603,7 +604,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const token = localStorage.getItem('auth_token')
     if (!token) throw new Error('Sesión no disponible')
 
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/me/`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/usuarios/me/`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -638,7 +639,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const token = localStorage.getItem('auth_token')
     if (!token) throw new Error('Sesión no disponible')
 
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/usuarios/me/`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/usuarios/me/`, {
       method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
