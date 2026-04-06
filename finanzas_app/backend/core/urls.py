@@ -1,7 +1,10 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
+
+from core import views
 
 urlpatterns = [
+    path('', views.raiz_api, name='raiz-api'),
     path('admin/', admin.site.urls),
     path('api/usuarios/',   include('applications.usuarios.urls')),
     path('api/finanzas/',   include('applications.finanzas.urls')),

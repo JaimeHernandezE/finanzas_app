@@ -31,12 +31,12 @@ Localmente sigues usando [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md); en producci
 
 En la **raíz del repositorio** (lo que Render clona) **no** existe una carpeta llamada solo `backend/`. El proyecto Django está dentro de **`finanzas_app/backend/`** (Dockerfile, `requirements.txt`, `build.sh`, `manage.py`). El frontend web está en **`finanzas_app/frontend/`**.
 
-| Campo en Render | Valor correcto | Si pones solo `backend` o `frontend` |
-|-----------------|----------------|--------------------------------------|
-| Web Service → **Root Directory** | `finanzas_app/backend` | Error: `Root directory "backend" does not exist` |
-| Static Site → **Root Directory** | `finanzas_app/frontend` | Equivalente: la carpeta no existe en la raíz del repo |
+| Campo en Render | Valor correcto | Si lo omites o es incorrecto |
+|-----------------|----------------|------------------------------|
+| Web Service → **Root Directory** | `finanzas_app/backend` | Error: `Root directory "backend" does not exist` si pones solo `backend`; Docker sin contexto correcto. |
+| Static Site → **Root Directory** | `finanzas_app/frontend` (**obligatorio**) | Sin esta ruta, no hay `package.json` del Vite en el directorio de build → fallo de `npm install` / build. No basta con `frontend` en la raíz (no existe). |
 
-Ese directorio es también el **contexto de build de Docker**: ahí es donde deben estar `requirements.txt` y el `Dockerfile`. Si el Root Directory apunta mal, verás errores como `Dockerfile: no such file` o `COPY requirements.txt: not found`.
+El Root Directory del **Web Service** es también el **contexto de build de Docker**: ahí deben estar `requirements.txt` y el `Dockerfile`. Si apunta mal, verás errores como `Dockerfile: no such file` o `COPY requirements.txt: not found`.
 
 En la **raíz del repositorio** (al mismo nivel que la carpeta `finanzas_app/`) suele estar `render.yaml`; ahí verás `rootDir: finanzas_app/backend`, alineado con lo anterior.
 
@@ -66,37 +66,56 @@ Si Gunicorn cae al arrancar con error de parseo de URL:
 
 Supabase es totalmente válido como `DATABASE_URL`; no hace falta crear otra BD en Render.
 
-1. En [Supabase](https://supabase.com) → tu proyecto → **Project Settings** (engranaje) → **Database** → **Connect** (arriba).
-2. En **Connection string**, elige el modo **URI** (a veces aparece bajo “PostgreSQL” / “ORMs”). Sustituye `[YOUR-PASSWORD]` por la contraseña real del proyecto **solo si el asistente lo pide**; muchas veces el botón de copiar ya deja la URL lista.
-3. Pega ese valor en Render (u otro host) como variable **`DATABASE_URL`**, sin comillas. La plantilla de Supabase suele incluir **`?sslmode=require`** al final; **déjalo**: Django/psycopg2 lo usan para TLS.
+###### Render y «Network is unreachable» (IPv6)
 
-**Ejemplo de variable de entorno (conexión directa, puerto 5432)**
+Si en los logs aparece algo como:
+
+`connection to server at "db.<ref>.supabase.co" (2600:…), port 5432 failed: **Network is unreachable**`
+
+significa que el host **directo** `db.*.supabase.co` se resolvió a una dirección **IPv6** y el entorno de **Render** (build y runtime) **no puede enrutar IPv6** hasta ese destino. No es un fallo de Django ni de la contraseña.
+
+**Qué hacer (elige una):**
+
+1. **Recomendado:** en Supabase → **Project Settings → Database → Connect**, copia la URI del **Connection Pooling** en modo **Session** (a veces etiquetado “Session pooler” / puerto **5432** hacia el host del pooler, no `db.<ref>.supabase.co`). Esa ruta suele exponer **IPv4** compatible con Render. Pega esa cadena completa en **`DATABASE_URL`** y vuelve a desplegar.
+2. Alternativa de Supabase: activar el add-on **IPv4** para la conexión directa (de pago en muchos planes), si quieres seguir usando `db.<ref>.supabase.co:5432`.
+3. Revisa **Database → Network restrictions** en Supabase: no debe bloquear el tráfico desde internet si Render se conecta desde IPs públicas variables.
+
+El **pooler en modo transacción** (puerto **6543**) a veces molesta con migraciones o sentencias preparadas en Django; por eso, desde Render, suele ir mejor **Session pooler** antes que Transaction; si algo falla solo en `migrate`, consulta la doc actual de Supabase para tu tipo de pooler.
+
+---
+
+1. En [Supabase](https://supabase.com) → tu proyecto → **Project Settings** (engranaje) → **Database** → **Connect** (arriba).
+2. En **Connection string**, elige el modo **URI** (a veces bajo “PostgreSQL” / “ORMs”). **Desde Render, prioriza la sección de pooler (Session)** como arriba, no solo “Direct connection”.
+3. Sustituye `[YOUR-PASSWORD]` solo si el asistente lo indica; el botón **Copy** suele dejar la URL lista.
+4. Pega el valor en Render como **`DATABASE_URL`**, sin comillas. Mantén **`?sslmode=require`** si viene en la plantilla.
+
+**Ejemplo de forma de la URI (conexión directa — solo si tu cliente tiene IPv6 o add-on IPv4)**
 
 | Dónde | Qué poner |
 |-------|-----------|
 | **Nombre** (Render, etc.) | `DATABASE_URL` |
 | **Valor** | Una sola línea, **sin** comillas. La contraseña va **entre** el segundo `:` y la `@` (ver abajo). |
 
-Formato típico (el host `db.<ref>.supabase.co` lo copias de tu proyecto; el `<ref>` es distinto en cada uno):
+Formato típico **directo** (host `db.<ref>.supabase.co`):
 
 ```text
 postgresql://postgres:<CONTRASEÑA>@db.<ref>.supabase.co:5432/postgres?sslmode=require
 ```
 
-- **`postgres`** (después del primer `//`): usuario por defecto de la base.
-- **`<CONTRASEÑA>`**: aquí va la **contraseña de la base de datos** del proyecto Supabase (**Project Settings → Database**; es la que elegiste al crear el proyecto o la que reseteaste con “Reset database password”). Sustituye **solo** ese fragmento; no pongas espacios ni comillas alrededor de la URL completa.
-- **`db.<ref>.supabase.co`**: host de **conexión directa** que muestra Supabase en la misma pantalla (no lo inventes: cópialo del panel).
-- **`?sslmode=require`**: conviene dejarlo; si tu plantilla de Supabase no lo trae, añádelo al final.
+- **`postgres`** (tras `//`): usuario por defecto (en pooler a veces es `postgres.<ref>`; usa exactamente lo que muestre Supabase).
+- **`<CONTRASEÑA>`**: **Database password** del proyecto (**Settings → Database**).
+- **`db.<ref>.supabase.co`**: host de conexión directa (cópialo del panel).
+- **`?sslmode=require`**: déjalo si viene en la URI.
 
-Ejemplo **no válido** (solo ilustrativo; no uses estos datos reales):
+Ejemplo ilustrativo (datos ficticios):
 
 ```text
 postgresql://postgres:miClaveSecreta123@db.abcdefghijklmnop.supabase.co:5432/postgres?sslmode=require
 ```
 
-Si la contraseña contiene caracteres reservados en URLs (`@`, `:`, `/`, `#`, `%`, etc.), deben ir **codificados** en ese segmento, o usa la URI que Supabase genera al **copiar** desde el asistente (así evitas errores y `ParseError`).
-4. **Conexión directa vs pooler:** para una app Django con Gunicorn (proceso largo) suele ir bien la conexión **directa** (`db.<ref>.supabase.co`, puerto **5432**). El **pooler en modo transacción** (puerto **6543**) a veces da problemas con migraciones o sentencias preparadas; si notas errores raros al migrar, prueba la URI de **sesión** o la directa según la documentación actual de Supabase.
-5. Si el backend **no llega a conectar** (timeout / refused) pero la URL es válida: revisa en Supabase **Database → Network restrictions** (si restringiste IPs) y, en planes que solo exponían IPv6 en el host directo, el **pooler** o el add-on **IPv4** que ofrece Supabase para clientes solo IPv4 (p. ej. algunos PaaS).
+Si la contraseña tiene caracteres reservados en URLs (`@`, `:`, `/`, `#`, `%`, etc.), deben ir **codificados**, o pega la URI generada por Supabase con **Copy**.
+
+5. Si el backend **no conecta** pese a URL válida: además de lo IPv6 anterior, revisa **Network restrictions** en Supabase.
 
 ### Generar SECRET_KEY
 
@@ -169,10 +188,21 @@ FIREBASE_SERVICE_ACCOUNT_JSON = <JSON en una línea>
 
 #### 3. Static Site (frontend)
 
+En Render hay **dos rutas distintas**; no mezcles el monorepo con la carpeta de publicación:
+
+| Campo en el formulario | Qué poner | Comentario |
+|------------------------|-----------|------------|
+| **Root Directory** (opcional en el formulario, pero **obligatorio** para nosotros) | `finanzas_app/frontend` | Desde aquí Render ejecuta `npm install` / `build`. Ahí vive el `package.json` de Vite. |
+| **Publish Directory** | `dist` | Ruta **relativa al Root Directory**, no al repo. Tras `npm run build`, Vite deja los archivos en `finanzas_app/frontend/dist/`; en este campo solo escribes **`dist`** (o `./dist`). |
+
+**Error frecuente:** poner `finanzas_app/frontend` en **Publish Directory**. Ese campo no es la raíz del proyecto: si ya definiste **Root Directory** = `finanzas_app/frontend`, el directorio a publicar es la subcarpeta **`dist`**, no repetir toda la ruta del monorepo.
+
+Pasos:
+
 - **New → Static Site** → mismo repositorio
-- Root Directory: `finanzas_app/frontend`
-- Build Command: `npm install && npm run build`
-- Publish Directory: `dist`
+- **Root Directory:** `finanzas_app/frontend`
+- **Build Command:** `npm install && npm run build`
+- **Publish Directory:** `dist`
 
 Variables de entorno:
 
@@ -188,6 +218,14 @@ VITE_FIREBASE_PROJECT_ID   = <de Firebase Console>
 En Firebase Console → Authentication → Settings → Dominios autorizados:
 
 - Agregar el dominio del Static Site de Render
+
+#### Demo (backend + frontend en URLs distintas)
+
+- **Si aún no desplegaste el frontend en Render**, no tendrás la app web en ninguna URL pública: solo existe la **API** en el Web Service. Es normal que en `https://<backend>.onrender.com/` veas JSON (o antes un 404) y **no** la interfaz React. La UI aparece cuando crees el **Static Site** del paso **«3. Static Site (frontend)»** más arriba (Root Directory `finanzas_app/frontend`, `VITE_API_URL` apuntando a tu backend demo).
+- Mientras tanto puedes probar el API con **Django Admin** (`/admin/`) si tienes superusuario, con **Postman/curl**, o correr el front **en local**: `cd finanzas_app/frontend && npm run dev` y en `.env` o `.env.local` poner `VITE_API_URL=https://<tu-backend-demo>.onrender.com`.
+- **`ALLOWED_HOSTS`** en el Web Service debe incluir el host del API (p. ej. `finanzas-app-demo.onrender.com`). Si no está, Django responde **400** a `GET /` (cabecera `Host` rechazada).
+- La ruta **`/`** del backend devuelve un **JSON** con enlaces a `/admin/` y prefijos `/api/…`; **no** es la aplicación React. En el Static Site define `VITE_API_URL=https://<tu-backend-demo>.onrender.com` (sin barra final, salvo que tu front lo exija).
+- Si ves “Not Found” en `/` en un despliegue antiguo sin la vista raíz, actualiza el backend; **para usar la app como en producción** abre la URL del **frontend** desplegado, no solo la del API.
 
 ### Evitar el sleep del plan gratuito (UptimeRobot)
 
@@ -211,7 +249,7 @@ Ese mensaje solo indica que **algo falló durante el Build Command** (p. ej. `./
 2. El script `build.sh` imprime líneas `==> build.sh: …` para cada paso. **La última línea `==>` que aparezca antes del error** te dice el paso concreto:
    - **`pip install`** — conflicto de dependencias o error de red.
    - **`collectstatic`** — a veces falla `CompressedManifestStaticFilesStorage` si falta un estático referenciado; el log suele mencionar `Missing staticfiles` o `ValueError`.
-   - **`migrate`** — `DATABASE_URL` incorrecta, BD inalcanzable, permisos en Supabase, migración inconsistente.
+   - **`migrate`** — `DATABASE_URL` incorrecta, BD inalcanzable, migración inconsistente. Con **Supabase + Render**, un error `Network is unreachable` con una IP `2600:…` (IPv6) en el log indica que debes usar la URI del **pooler (Session)**, no la conexión directa `db.*.supabase.co` (ver sección Supabase más arriba).
    - **`seed_demo`** — solo si `DEMO=True`; revisa el traceback (datos previos, métodos de pago, etc.).
 
 **Nota sobre el commit del Dockerfile:** si el servicio está en **entorno Python** (Build Command `./build.sh`), los cambios del **Dockerfile no forman parte de ese build**. Un rollback del Dockerfile **no arregla** un fallo de `build.sh`; hace falta el log del paso que rompió.

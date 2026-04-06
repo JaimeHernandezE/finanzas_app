@@ -9,7 +9,9 @@ import styles from './PerfilPage.module.scss'
 // Constantes
 // -----------------------------------------------------------------------------
 
-const IDIOMAS = [
+type IdiomaUi = 'es' | 'en'
+
+const IDIOMAS: { value: IdiomaUi; label: string }[] = [
   { value: 'es', label: 'Español' },
   { value: 'en', label: 'English' },
 ]
@@ -75,7 +77,9 @@ export default function PerfilPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordOk, setPasswordOk] = useState<string | null>(null)
 
-  const [idiomaEdit, setIdiomaEdit] = useState(user?.idioma_ui ?? 'es')
+  const [idiomaEdit, setIdiomaEdit] = useState<IdiomaUi>(
+    user?.idioma_ui === 'en' ? 'en' : 'es'
+  )
   const [monedaEdit, setMonedaEdit] = useState(user?.moneda_display ?? 'CLP')
   const [zonaEdit, setZonaEdit] = useState(user?.zona_horaria ?? 'America/Santiago')
   const [guardandoPrefs, setGuardandoPrefs] = useState(false)

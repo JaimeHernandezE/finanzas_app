@@ -42,6 +42,7 @@ function TarjetaViaje({
   onActivar: (id: string) => void
   onDesactivar: (id: string) => void
 }) {
+  const { formatMonto } = useConfig()
   const esActivo = viaje.esActivo
 
   return (
@@ -139,7 +140,6 @@ function TarjetaArchivado({ viaje }: { viaje: Viaje }) {
 
 export default function ViajesPage() {
   const { refetchViajes } = useViaje()
-  const { formatMonto } = useConfig()
   const { data: activosData, loading: loadingActivos, error: errorActivos, refetch: refetchActivos } = useViajes(false)
   const { data: archivadosData, loading: loadingArchivados } = useViajes(true)
   const [expandirArchivados, setExpandirArchivados] = useState(false)

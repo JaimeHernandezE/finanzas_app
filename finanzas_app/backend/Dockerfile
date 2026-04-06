@@ -17,6 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY . /app/
 
+# WhiteNoise espera STATIC_ROOT en runtime; sin este paso /app/staticfiles/ no existe en imagen Docker.
+ENV DJANGO_SETTINGS_MODULE=core.settings
+RUN SECRET_KEY=docker-collectstatic-only DEBUG=False FIREBASE_SERVICE_ACCOUNT_JSON='{}' \
+    python manage.py collectstatic --noinput
+
 # Render (imagen Docker): sin proceso en primer plano el contenedor sale y el deploy falla.
 # En local, docker-compose sobrescribe con `command: python manage.py runserver ...`.
 ENV PORT=8000
