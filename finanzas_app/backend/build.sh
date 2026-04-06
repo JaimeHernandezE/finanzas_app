@@ -16,8 +16,10 @@ python manage.py seed_categorias
 echo "==> build.sh: crear_admin"
 python manage.py crear_admin
 
-if [ "${DEMO:-}" = "True" ]; then
-  echo "==> build.sh: seed_demo (DEMO=True)"
+# Misma lógica que settings._env_flag: true / True / 1 / yes / on
+_demo_lc=$(printf '%s' "${DEMO:-}" | tr '[:upper:]' '[:lower:]')
+if [ "$_demo_lc" = "true" ] || [ "$_demo_lc" = "1" ] || [ "$_demo_lc" = "yes" ] || [ "$_demo_lc" = "on" ]; then
+  echo "==> build.sh: seed_demo (DEMO activo)"
   python manage.py seed_demo
 fi
 

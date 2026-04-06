@@ -186,6 +186,8 @@ CORS_ALLOWED_ORIGINS          = https://<frontend>.onrender.com
 FIREBASE_SERVICE_ACCOUNT_JSON = <JSON en una línea>
 ```
 
+**Solo instancia demo (API + `demo-login`):** añade **`DEMO`** con cualquiera de estos valores (equivalentes entre sí): **`true`**, **`True`**, **`1`**, **`yes`**, **`on`**. No hace falta que sea exactamente la cadena `True` con T mayúscula: Django y `build.sh` usan la misma regla «truthy». Con `DEMO` activo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usas Firebase Admin en ese servicio. En el build, si `DEMO` está activo, `build.sh` ejecuta también **`seed_demo`**.
+
 #### 3. Static Site (frontend)
 
 En Render hay **dos rutas distintas**; no mezcles el monorepo con la carpeta de publicación:
@@ -220,14 +222,19 @@ VITE_FIREBASE_APP_ID                  = <opcional>
 
 Sin comillas en los valores. Si falta o está mal **`VITE_FIREBASE_API_KEY`**, el navegador muestra **`auth/invalid-api-key`**.
 
-**Solo entorno demo (backend con `DEMO=True`, login por `/api/usuarios/demo-login/`):** el cliente **no** inicializa Firebase. Configura:
+**Solo entorno demo (backend con **`DEMO`** activo — `true` / `1` / `yes` / `on`, etc. —, login por `/api/usuarios/demo-login/`):** el cliente **no** inicializa Firebase si:
+
+- defines **`VITE_ES_DEMO`** como `true`, `1`, `yes` o `on` (mayúsculas/minúsculas), **o**
+- **no** defines `VITE_FIREBASE_API_KEY` (vacío): el front omite Firebase y evita `auth/invalid-api-key`.
+
+Recomendado para dejar claro el intento:
 
 ```
 VITE_ES_DEMO = true
 VITE_API_URL = https://<backend-demo>.onrender.com
 ```
 
-No necesitas `VITE_FIREBASE_*` en el Static Site demo (evita el error `invalid-api-key`). Tras añadir o cambiar variables, haz **Clear build cache & deploy** o un deploy nuevo para que el build las tome.
+Tras añadir o cambiar variables, haz **Clear build cache & deploy** o un deploy nuevo: Vite solo inyecta `VITE_*` en tiempo de **build**, no en runtime.
 
 #### 4. Firebase — dominios autorizados
 
@@ -267,7 +274,7 @@ Ese mensaje solo indica que **algo falló durante el Build Command** (p. ej. `./
    - **`pip install`** — conflicto de dependencias o error de red.
    - **`collectstatic`** — a veces falla `CompressedManifestStaticFilesStorage` si falta un estático referenciado; el log suele mencionar `Missing staticfiles` o `ValueError`.
    - **`migrate`** — `DATABASE_URL` incorrecta, BD inalcanzable, migración inconsistente. Con **Supabase + Render**, un error `Network is unreachable` con una IP `2600:…` (IPv6) en el log indica que debes usar la URI del **pooler (Session)**, no la conexión directa `db.*.supabase.co` (ver sección Supabase más arriba).
-   - **`seed_demo`** — solo si `DEMO=True`; revisa el traceback (datos previos, métodos de pago, etc.).
+   - **`seed_demo`** — solo si la variable de entorno **`DEMO`** es truthy (`true`, `1`, `yes`, …); revisa el traceback (datos previos, métodos de pago, etc.).
 
 **Nota sobre el commit del Dockerfile:** si el servicio está en **entorno Python** (Build Command `./build.sh`), los cambios del **Dockerfile no forman parte de ese build**. Un rollback del Dockerfile **no arregla** un fallo de `build.sh`; hace falta el log del paso que rompió.
 

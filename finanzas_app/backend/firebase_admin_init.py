@@ -9,13 +9,18 @@ from firebase_admin import credentials
 _DEFAULT_CREDENTIALS_PATH = Path(__file__).resolve().parent / 'firebase-service-account.json'
 
 
+def _demo_desde_env() -> bool:
+    raw = os.environ.get('DEMO', 'false')
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 def init_firebase():
     """
     Inicializa Firebase Admin SDK con la clave de servicio.
     Se llama una sola vez al arrancar Django (desde apps.py o settings.py).
     Si no hay credenciales configuradas, no se inicializa (p. ej. al correr migraciones).
     """
-    if os.environ.get('DEMO', 'False') == 'True':
+    if _demo_desde_env():
         print('[Firebase] Modo DEMO — Firebase Admin omitido.')
         return
     if firebase_admin._apps:

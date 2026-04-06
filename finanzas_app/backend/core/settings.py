@@ -24,12 +24,19 @@ def _normalizar_database_url(raw: str | None) -> str | None:
         s = s[1:-1].strip()
     return s or None
 
+
+def _env_flag(name: str, default: str = 'false') -> bool:
+    """True si la variable es truthy: True, true, 1, yes, on (Render/GUI suelen variar mayúsculas)."""
+    raw = os.environ.get(name, default)
+    return str(raw).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
 SECRET_KEY = os.environ.get('SECRET_KEY', os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-change-me-in-production'))
 
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
 # Modo demo: sin Firebase Admin en runtime; login vía JWT (demo-login) y datos ficticios.
-DEMO = os.environ.get('DEMO', 'False') == 'True'
+DEMO = _env_flag('DEMO', 'false')
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 

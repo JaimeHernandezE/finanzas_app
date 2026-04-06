@@ -566,7 +566,7 @@ def familia_invitaciones(request):
     )
 
 
-@api_view(['GET'])
+@api_view(['GET', 'HEAD'])
 @permission_classes([AllowAny])
 def configuracion_global(request):
     """
