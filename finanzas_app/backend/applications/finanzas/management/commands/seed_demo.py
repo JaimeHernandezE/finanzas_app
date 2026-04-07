@@ -254,6 +254,7 @@ class Command(BaseCommand):
     help = 'Borra y recrea datos de demostración (familia Demo, Jaime y Glori; meses vía SEED_DEMO_MESES o 15).'
 
     def handle(self, *args, **options):
+        verbosity = int(options.get('verbosity', 1))
         meses_historia = _meses_historia_desde_env()
         random.seed(RNG_SEED)
         ref = timezone.localdate()
@@ -378,7 +379,7 @@ class Command(BaseCommand):
 
             _step_prog = max(1, meses_historia // 8)
             for i in range(meses_historia):
-                if self.verbosity >= 1 and (i % _step_prog == 0 or i == meses_historia - 1):
+                if verbosity >= 1 and (i % _step_prog == 0 or i == meses_historia - 1):
                     self.stdout.write(f'seed_demo: generando mes {i + 1}/{meses_historia}…')
                 primer_dia = mes_cierre - relativedelta(months=i)
                 anio, mes = primer_dia.year, primer_dia.month

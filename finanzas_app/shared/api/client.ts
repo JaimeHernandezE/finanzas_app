@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getApiBaseUrl } from './baseUrl'
+import { getApiBaseUrl, getApiTimeoutMs } from './baseUrl'
 
 /**
  * Lee el JWT: primero SecureStore (Expo / RN), luego localStorage (Vite).
@@ -42,11 +42,12 @@ async function removeToken(): Promise<void> {
 
 const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
-  timeout: 25_000,
+  timeout: getApiTimeoutMs(),
 })
 
 client.interceptors.request.use(async (config) => {
   config.baseURL = getApiBaseUrl()
+  config.timeout = getApiTimeoutMs()
   const token = await getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`

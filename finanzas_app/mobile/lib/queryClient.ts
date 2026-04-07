@@ -24,15 +24,35 @@ import { defaultShouldDehydrateQuery, type Query } from '@tanstack/query-core'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
 import type { PersistQueryClientOptions } from '@tanstack/react-query-persist-client'
+import axios from 'axios'
 
 const UN_DIA_MS = 1000 * 60 * 60 * 24
+
+function isTransientServerError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+  const status = error.response?.status
+  return status != null && status >= 500 && status < 600
+}
+
+function isNetworkOrTimeoutError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+  if (!error.response) return true
+  return error.code === 'ECONNABORTED'
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: Infinity,
       gcTime: UN_DIA_MS,
-      retry: 1,
+      // Retry inteligente:
+      // - no reintenta timeout/red (offline-first, evita esperas largas)
+      // - reintenta 1 vez solo para 5xx transitorios
+      retry: (failureCount, error) => {
+        if (isNetworkOrTimeoutError(error)) return false
+        if (isTransientServerError(error)) return failureCount < 1
+        return false
+      },
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     },

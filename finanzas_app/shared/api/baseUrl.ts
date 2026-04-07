@@ -6,8 +6,10 @@
  * podrían apuntar a instancias distintas → sin esto volvería `localhost` y Network Error.
  */
 const GLOBAL_KEY = '__finanzas_app_api_base_url__'
+const GLOBAL_TIMEOUT_KEY = '__finanzas_app_api_timeout_ms__'
 
 let _override: string | null = null
+let _timeoutOverrideMs: number | null = null
 
 function readGlobal(): string | undefined {
   try {
@@ -28,6 +30,39 @@ export function setApiBaseUrl(url: string) {
   } catch {
     /* */
   }
+}
+
+export function setApiTimeoutMs(timeoutMs: number) {
+  const value = Number(timeoutMs)
+  if (!Number.isFinite(value) || value <= 0) return
+  const normalized = Math.round(value)
+  _timeoutOverrideMs = normalized
+  try {
+    const g = globalThis as Record<string, number | undefined>
+    g[GLOBAL_TIMEOUT_KEY] = normalized
+  } catch {
+    /* */
+  }
+}
+
+export function getApiTimeoutMs(): number {
+  try {
+    const g = globalThis as Record<string, number | undefined>
+    const fromGlobal = g[GLOBAL_TIMEOUT_KEY]
+    if (typeof fromGlobal === 'number' && Number.isFinite(fromGlobal) && fromGlobal > 0) {
+      return fromGlobal
+    }
+  } catch {
+    /* */
+  }
+  if (
+    typeof _timeoutOverrideMs === 'number' &&
+    Number.isFinite(_timeoutOverrideMs) &&
+    _timeoutOverrideMs > 0
+  ) {
+    return _timeoutOverrideMs
+  }
+  return 25_000
 }
 
 export function getApiBaseUrl(): string {
