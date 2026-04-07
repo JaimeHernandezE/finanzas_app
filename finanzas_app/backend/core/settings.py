@@ -37,12 +37,15 @@ def _secret_key_desde_env() -> str:
         raw = os.environ.get(nombre)
         if raw is not None and str(raw).strip():
             return str(raw).strip()
-    return 'django-insecure-change-me-in-production'
+    raise ImproperlyConfigured(
+        'SECRET_KEY no está configurada. Define la variable de entorno SECRET_KEY '
+        'o DJANGO_SECRET_KEY antes de iniciar el servidor.'
+    )
 
 
 SECRET_KEY = _secret_key_desde_env()
 
-DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
 # Modo demo: sin Firebase Admin en runtime; login vía JWT (demo-login) y datos ficticios.
 DEMO = _env_flag('DEMO', 'false')
@@ -170,8 +173,8 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 
-# En desarrollo, permite todos los orígenes si DEBUG está activo
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+# Permitir todos los orígenes solo si se activa explícitamente vía env var (solo desarrollo local).
+CORS_ALLOW_ALL_ORIGINS = _env_flag('CORS_ALLOW_ALL_ORIGINS', 'false')
 
 # Cabeceras permitidas en preflight (incl. Authorization para POST con JWT entre orígenes)
 CORS_ALLOW_HEADERS = list(default_headers)
@@ -180,13 +183,24 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [],
+    'DEFAULT_THROTTLE_RATES': {
+        'demo_login': '10/minute',
+    },
 }
 
-# Tokens largos en demo (sin refresh automático desde Firebase).
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
-}
+# En demo: tokens más largos porque no hay refresh automático desde Firebase.
+# En producción: tiempos cortos para reducir la ventana si un token es comprometido.
+if DEMO:
+    SIMPLE_JWT = {
+        'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
+        'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    }
+else:
+    SIMPLE_JWT = {
+        'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
+        'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    }
 
 # ── SEGURIDAD EN PRODUCCIÓN ────────────────────────────────────────────────────
 if not DEBUG:
@@ -196,6 +210,7 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 # Logs en stderr (Gunicorn/Render): tracebacks de 500 visibles en la pestaña Logs del servicio.
 LOGGING = {

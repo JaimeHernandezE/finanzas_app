@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+from urllib.parse import quote as urlquote
 
 from django.conf import settings
 from django.http import StreamingHttpResponse
@@ -52,11 +53,11 @@ def _database_url() -> str:
     eng = db.get('ENGINE', '')
     if 'sqlite' in eng:
         raise ValueError('El respaldo SQL solo está soportado con PostgreSQL.')
-    pwd = db.get('PASSWORD', '') or ''
+    pwd = urlquote(db.get('PASSWORD', '') or '', safe='')
+    user = urlquote(db.get('USER', '') or '', safe='')
     host = db.get('HOST', 'localhost')
     port = str(db.get('PORT', '5432'))
     name = db.get('NAME', '')
-    user = db.get('USER', '')
     return f'postgresql://{user}:{pwd}@{host}:{port}/{name}'
 
 

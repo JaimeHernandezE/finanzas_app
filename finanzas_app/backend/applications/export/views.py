@@ -2,6 +2,7 @@
 # - POST /api/export/sheets/ — token X-Export-Token (cron / integraciones)
 # - POST /api/export/sincronizar/ — token Firebase (Bearer), solo rol ADMIN (app web y móvil)
 
+import hmac
 import os
 
 from django.conf import settings
@@ -114,9 +115,9 @@ def exportar_a_sheets(request):
     la variable de entorno EXPORT_SECRET_TOKEN.
     """
     token_esperado = os.getenv('EXPORT_SECRET_TOKEN')
-    token_recibido = request.headers.get('X-Export-Token')
+    token_recibido = request.headers.get('X-Export-Token') or ''
 
-    if not token_esperado or token_recibido != token_esperado:
+    if not token_esperado or not hmac.compare_digest(token_recibido, token_esperado):
         return Response(
             {'error': 'No autorizado.'},
             status=status.HTTP_401_UNAUTHORIZED,

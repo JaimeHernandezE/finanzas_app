@@ -35,7 +35,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_DEMO }}
           DEMO: 'true'
-          SECRET_KEY: github-actions-demo-nightly-reset
+          SECRET_KEY: ${{ secrets.SECRET_KEY_DEMO }}
           DEBUG: 'False'
         working-directory: finanzas_app/backend
         run: python manage.py seed_demo
