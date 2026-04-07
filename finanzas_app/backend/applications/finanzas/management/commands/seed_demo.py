@@ -376,7 +376,10 @@ class Command(BaseCommand):
                     cat.save(update_fields=['cuenta_personal'])
                 categorias[f'g_{nombre}'] = cat
 
+            _step_prog = max(1, meses_historia // 8)
             for i in range(meses_historia):
+                if self.verbosity >= 1 and (i % _step_prog == 0 or i == meses_historia - 1):
+                    self.stdout.write(f'seed_demo: generando mes {i + 1}/{meses_historia}…')
                 primer_dia = mes_cierre - relativedelta(months=i)
                 anio, mes = primer_dia.year, primer_dia.month
                 es_mes_actual = i == 0
@@ -568,15 +571,18 @@ class Command(BaseCommand):
                         defaults={'monto': monto},
                     )
 
-            mes_inicio = mes_cierre - relativedelta(months=meses_historia - 1)
-            services_recalculo.recalcular_familia_desde(familia.id, mes_inicio)
-            services_recalculo.backfill_resumen_historico_snapshots(familia.id)
-            RecalculoPendiente.objects.filter(familia_id=familia.id).delete()
-            transaction.on_commit(
-                lambda fid=familia.id, y=ref.year, m=ref.month: Movimiento.objects.filter(
-                    familia_id=fid, fecha__year=y, fecha__month=m
-                ).delete()
-            )
+        # Fuera del atomic: el recálculo tarda mucho y mantenerlo en la misma TX bloquea la BD
+        # (p. ej. GitHub Actions + Render usando el mismo Supabase → la tarea «se pega» esperando locks).
+        mes_inicio = mes_cierre - relativedelta(months=meses_historia - 1)
+        fid = familia.id
+        self.stdout.write('seed_demo: recalculando liquidaciones y saldos (puede tardar varios minutos)…')
+        services_recalculo.recalcular_familia_desde(fid, mes_inicio)
+        self.stdout.write('seed_demo: backfill resumen histórico…')
+        services_recalculo.backfill_resumen_historico_snapshots(fid)
+        RecalculoPendiente.objects.filter(familia_id=fid).delete()
+        Movimiento.objects.filter(
+            familia_id=fid, fecha__year=ref.year, fecha__month=ref.month
+        ).delete()
 
         self.stdout.write(
             self.style.SUCCESS(

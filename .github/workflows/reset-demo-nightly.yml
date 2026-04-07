@@ -42,6 +42,7 @@ jobs:
 
       - name: seed_demo en BD demo
         env:
+          PYTHONUNBUFFERED: '1'
           DATABASE_URL: ${{ secrets.DATABASE_URL_DEMO }}
           DEMO: 'true'
           SECRET_KEY: github-actions-demo-nightly-reset
