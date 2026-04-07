@@ -4,10 +4,15 @@ import zoneinfo
 from django.conf import settings
 from firebase_admin import auth as firebase_auth
 from rest_framework import status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
+
+
+class DemoLoginThrottle(AnonRateThrottle):
+    scope = 'demo_login'
 
 from applications import utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
@@ -185,8 +190,9 @@ def me(request):
 
 
 @api_view(['POST'])
-@authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
+@authentication_classes([])
 @permission_classes([AllowAny])
+@throttle_classes([DemoLoginThrottle])
 def demo_login(request):
     """
     Login sin Firebase cuando DEMO=True. Body: { "usuario": "jaime" | "glori" }.
