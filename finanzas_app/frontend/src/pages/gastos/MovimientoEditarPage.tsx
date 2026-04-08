@@ -221,7 +221,7 @@ export default function MovimientoEditarPage() {
     if (metodo === 'CREDITO') {
       if (!tarjetaId) next.tarjeta = 'Selecciona una tarjeta.'
       if (!numCuotas) next.numCuotas = 'Ingresa el número de cuotas.'
-      if (!tieneCuotasTc && montoCuotaInput.trim() && (!montoCuotaManualNum || montoCuotaManualNum <= 0)) {
+      if (montoCuotaInput.trim() && (!montoCuotaManualNum || montoCuotaManualNum <= 0)) {
         next.montoCuota = 'Valor de cuota inválido o déjalo vacío.'
       }
     }
@@ -239,12 +239,12 @@ export default function MovimientoEditarPage() {
     try {
       let montoCuotaPayload: number | null = null
       if (metodo === 'CREDITO') {
-        if (tieneCuotasTc && base.monto_cuota != null) {
-          montoCuotaPayload = Math.round(parseFloat(String(base.monto_cuota)))
-        } else if (montoCuotaManualNum != null && montoCuotaManualNum > 0) {
+        if (montoCuotaManualNum != null && montoCuotaManualNum > 0) {
           montoCuotaPayload = montoCuotaManualNum
         } else if (montoCuotaCalculado != null && montoCuotaCalculado > 0) {
           montoCuotaPayload = montoCuotaCalculado
+        } else if (base.monto_cuota != null) {
+          montoCuotaPayload = Math.round(parseFloat(String(base.monto_cuota)))
         }
       }
       const payload: Record<string, unknown> = {
@@ -430,7 +430,6 @@ export default function MovimientoEditarPage() {
                     type="button"
                     className={`${styles.segment} ${ambito === 'PERSONAL' ? styles.segmentActive : ''}`}
                     onClick={() => setAmbito('PERSONAL')}
-                    disabled={tieneCuotasTc}
                   >
                     Personal
                   </button>
@@ -438,19 +437,12 @@ export default function MovimientoEditarPage() {
                     type="button"
                     className={`${styles.segment} ${ambito === 'COMUN' ? styles.segmentActive : ''}`}
                     onClick={() => setAmbito('COMUN')}
-                    disabled={tieneCuotasTc}
                   >
                     Común
                   </button>
                 </div>
               </div>
             </div>
-            {tieneCuotasTc && (
-              <p style={{ fontSize: 13, color: '#6b7280' }}>
-                Movimiento con cuotas de tarjeta: tipo, ámbito, método y cuotas no se pueden cambiar
-                desde aquí.
-              </p>
-            )}
 
             {ambito === 'PERSONAL' && cuentasOpciones.length > 0 && (
               <Select
@@ -507,7 +499,6 @@ export default function MovimientoEditarPage() {
                       setMetodo(m)
                       if (m !== 'CREDITO') setMontoCuotaInput('')
                     }}
-                    disabled={tieneCuotasTc}
                   >
                     {m === 'EFECTIVO' ? 'Efectivo' : m === 'DEBITO' ? 'Débito' : 'Crédito'}
                   </button>
@@ -526,7 +517,6 @@ export default function MovimientoEditarPage() {
                     onChange={e => setTarjetaId(e.target.value)}
                     placeholder="Selecciona…"
                     error={errors.tarjeta}
-                    disabled={tieneCuotasTc}
                   />
                   <Input
                     name="numCuotas"
@@ -537,31 +527,23 @@ export default function MovimientoEditarPage() {
                     value={numCuotas}
                     onChange={e => setNumCuotas(e.target.value)}
                     error={errors.numCuotas}
-                    disabled={tieneCuotasTc}
                   />
                 </div>
-                {tieneCuotasTc && base.monto_cuota != null && (
-                  <p style={{ fontSize: 13, color: '#6b7280', marginTop: 8 }}>
-                    Valor cuota: {formatMonto(Math.round(parseFloat(String(base.monto_cuota))))}
-                  </p>
-                )}
-                {!tieneCuotasTc && (
-                  <Input
-                    name="montoCuota"
-                    label="Valor cuota (opcional)"
-                    type="text"
-                    inputMode="numeric"
-                    value={montoCuotaInput}
-                    onChange={e => setMontoCuotaInput(e.target.value)}
-                    placeholder={
-                      montoCuotaCalculado
-                        ? `${formatMonto(montoCuotaCalculado)} (calculado)`
-                        : 'Se calcula automático'
-                    }
-                    error={errors.montoCuota}
-                    helperText="Si no ingresas, se divide monto ÷ cuotas."
-                  />
-                )}
+                <Input
+                  name="montoCuota"
+                  label="Valor cuota (opcional)"
+                  type="text"
+                  inputMode="numeric"
+                  value={montoCuotaInput}
+                  onChange={e => setMontoCuotaInput(e.target.value)}
+                  placeholder={
+                    montoCuotaCalculado
+                      ? `${formatMonto(montoCuotaCalculado)} (calculado)`
+                      : 'Se calcula automático'
+                  }
+                  error={errors.montoCuota}
+                  helperText="Si no ingresas, se divide monto ÷ cuotas."
+                />
               </div>
             )}
 

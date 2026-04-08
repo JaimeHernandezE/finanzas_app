@@ -601,20 +601,31 @@ export default function PagarTarjetaPage() {
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [vistaActiva, setVistaActiva] = useState<VistaTarjeta>('UTILIZADO')
+  const tarjetaActivaId = useMemo(() => {
+    const idSel = tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id
+    if (idSel != null) return idSel
+    return tarjetas[0]?.id ?? null
+  }, [tarjetas, tarjetaSeleccionada])
   const { data: cuotasData, loading: cuotasLoading, error: cuotasError, refetch } = useApi(
-    () => movimientosApi.getCuotas({
-      tarjeta: tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id ?? tarjetas[0]?.id,
-      mes: mes + 1,
-      anio,
-    }),
-    [tarjetaSeleccionada, tarjetas, mes, anio],
+    () => {
+      if (tarjetaActivaId == null) return Promise.resolve({ data: [] as Cuota[] })
+      return movimientosApi.getCuotas({
+        tarjeta: tarjetaActivaId,
+        mes: mes + 1,
+        anio,
+      })
+    },
+    [tarjetaActivaId, mes, anio],
   )
   const cuotas = (cuotasData ?? []) as Cuota[]
   const { data: cuotasTarjetaData, loading: cuotasTarjetaLoading, error: cuotasTarjetaError, refetch: refetchCuotasTarjeta } = useApi(
-    () => movimientosApi.getCuotas({
-      tarjeta: tarjetas.find(t => String(t.id) === tarjetaSeleccionada)?.id ?? tarjetas[0]?.id,
-    }),
-    [tarjetaSeleccionada, tarjetas],
+    () => {
+      if (tarjetaActivaId == null) return Promise.resolve({ data: [] as Cuota[] })
+      return movimientosApi.getCuotas({
+        tarjeta: tarjetaActivaId,
+      })
+    },
+    [tarjetaActivaId],
   )
   const cuotasTarjeta = (cuotasTarjetaData ?? []) as Cuota[]
 
