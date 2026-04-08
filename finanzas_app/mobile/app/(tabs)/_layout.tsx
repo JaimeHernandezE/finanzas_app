@@ -56,7 +56,8 @@ export default function TabsLayout() {
       {/* Pantallas sin icono en el tab bar — href: null las oculta pero mantienen la barra visible */}
       <Tabs.Screen name="sueldos"           options={{ href: null }} />
       <Tabs.Screen name="presupuesto"       options={{ href: null }} />
-      <Tabs.Screen name="tarjetas"          options={{ href: null }} />
+      <Tabs.Screen name="tarjetas/index"    options={{ href: null }} />
+      <Tabs.Screen name="tarjeta-pagar"     options={{ href: null }} />
       <Tabs.Screen name="nuevo-movimiento"  options={{ href: null }} />
       <Tabs.Screen name="perfil"            options={{ href: null }} />
       <Tabs.Screen name="cuenta/[id]"       options={{ href: null }} />

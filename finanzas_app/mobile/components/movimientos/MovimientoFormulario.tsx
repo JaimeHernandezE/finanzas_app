@@ -231,12 +231,15 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         ? cuentaPersonalFija
         : null
 
-    const { nuevo, ambito, cuenta, editar } = useLocalSearchParams<{
+    const { nuevo, ambito, cuenta, editar, returnTo } = useLocalSearchParams<{
       nuevo?: string
       ambito?: string
       cuenta?: string
       editar?: string
+      returnTo?: string
     }>()
+    const returnToSafe =
+      returnTo && String(returnTo).startsWith('/') ? String(returnTo) : null
 
     const { data: metData, loading: loadingMetodos } = useMetodosPago()
     const { data: tarjetasData } = useTarjetas()
@@ -282,6 +285,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const modoTarjetaCreditoFija = creditoTarjetaFijaId != null
 
     const cerrarForm = useCallback(() => {
+      if (esStandalone && returnToSafe) {
+        router.replace(returnToSafe as never)
+        return
+      }
       if (esStandalone && cuentaFija != null) {
         router.replace(`/cuenta/${cuentaFija}` as never)
         return
@@ -293,7 +300,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setErrorGeneral(null)
       setBaseMetodoPagoId(null)
       setCreditoTarjetaFijaId(null)
-    }, [esStandalone, cuentaFija, router])
+    }, [esStandalone, cuentaFija, returnToSafe, router])
 
     function setField<K extends keyof typeof FORM_INICIAL>(key: K, val: (typeof FORM_INICIAL)[K]) {
       setForm((f) => ({ ...f, [key]: val }))
@@ -476,7 +483,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       if (!editar) return
       const idNum = parseInt(String(editar), 10)
       if (!Number.isFinite(idNum)) {
-        router.replace('/(tabs)')
+        router.replace((returnToSafe ?? '/(tabs)') as never)
         return
       }
       if (idNum < 0) {
@@ -484,11 +491,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           'Espera',
           'Este movimiento aún se está sincronizando. No se puede editar hasta tener el ID del servidor.',
         )
-        router.replace('/(tabs)')
+        router.replace((returnToSafe ?? '/(tabs)') as never)
         return
       }
       void iniciarEdicion(idNum)
-    }, [esStandalone, editar, router, iniciarEdicion])
+    }, [esStandalone, editar, returnToSafe, router, iniciarEdicion])
 
     // Categorías filtradas por tipo (las del picker usan busquedaCategoria adicionalmente)
     const categoriasPorTipo = useMemo(
@@ -621,7 +628,9 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             },
           )
           const idCuentaTrasGuardar = form.ambito === 'PERSONAL' ? form.cuenta : 0
-          if (esStandalone && cuentaFija != null) {
+          if (esStandalone && returnToSafe) {
+            router.replace(returnToSafe as never)
+          } else if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${idCuentaTrasGuardar || cuentaFija}` as never)
           } else {
             cerrarForm()
@@ -763,7 +772,9 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             cuenta: payload.cuenta,
           }
           patchMovimientoOptimistic(queryClient, editingId, payload, optimisticRowPatch)
-          if (esStandalone && cuentaFija != null) {
+          if (esStandalone && returnToSafe) {
+            router.replace(returnToSafe as never)
+          } else if (esStandalone && cuentaFija != null) {
             router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
           } else {
             cerrarForm()
@@ -800,7 +811,9 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         cerrarForm()
         return
       }
-      if (esStandalone && cuentaFija != null) {
+      if (esStandalone && returnToSafe) {
+        router.replace(returnToSafe as never)
+      } else if (esStandalone && cuentaFija != null) {
         router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
       } else {
         cerrarForm()

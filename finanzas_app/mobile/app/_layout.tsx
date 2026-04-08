@@ -22,10 +22,10 @@ export default function RootLayout() {
         setOnline(Boolean(state.isConnected))
       })
       return unsubscribeNetInfo
-    })
+    }) as void | (() => void)
 
     return () => {
-      unsubscribeOnlineManager()
+      unsubscribeOnlineManager?.()
     }
   }, [])
 
