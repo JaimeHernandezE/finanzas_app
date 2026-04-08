@@ -573,6 +573,13 @@ export default function PagarTarjetaPage() {
   const tarjetas = (tarjetasData ?? []) as Tarjeta[]
   const [tarjetaSeleccionada, setTarjetaSeleccionada] = useState('')
   const tarjetaQuery = searchParams.get('tarjeta')
+  const actualizarTarjetaSeleccionada = (nextId: string) => {
+    setTarjetaSeleccionada(nextId)
+    if (tarjetaQuery === nextId) return
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tarjeta', nextId)
+    setSearchParams(nextParams, { replace: true })
+  }
   useEffect(() => {
     if (!tarjetas.length) return
 
@@ -582,17 +589,15 @@ export default function PagarTarjetaPage() {
     }
 
     if (!tarjetaSeleccionada || !tarjetas.some(t => String(t.id) === tarjetaSeleccionada)) {
-      setTarjetaSeleccionada(String(tarjetas[0].id))
+      const fallbackId = String(tarjetas[0].id)
+      setTarjetaSeleccionada(fallbackId)
+      if (tarjetaQuery !== fallbackId) {
+        const nextParams = new URLSearchParams(searchParams)
+        nextParams.set('tarjeta', fallbackId)
+        setSearchParams(nextParams, { replace: true })
+      }
     }
-  }, [tarjetas, tarjetaSeleccionada, tarjetaQuery])
-  useEffect(() => {
-    if (!tarjetaSeleccionada) return
-    if (searchParams.get('tarjeta') === tarjetaSeleccionada) return
-
-    const nextParams = new URLSearchParams(searchParams)
-    nextParams.set('tarjeta', tarjetaSeleccionada)
-    setSearchParams(nextParams, { replace: true })
-  }, [tarjetaSeleccionada, searchParams, setSearchParams])
+  }, [tarjetas, tarjetaSeleccionada, tarjetaQuery, searchParams, setSearchParams])
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [vistaActiva, setVistaActiva] = useState<VistaTarjeta>('UTILIZADO')
@@ -868,7 +873,7 @@ export default function PagarTarjetaPage() {
             <select
               className={styles.tarjetaSelect}
               value={tarjetaSeleccionada}
-              onChange={e => setTarjetaSeleccionada(e.target.value)}
+              onChange={e => actualizarTarjetaSeleccionada(e.target.value)}
               aria-label="Seleccionar tarjeta"
             >
               {tarjetas.map(t => (
