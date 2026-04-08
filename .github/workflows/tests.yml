@@ -47,20 +47,5 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT_JSON: '{}'
         run: pytest --tb=short -q
 
-  deploy:
-    name: Deploy a Render
-    needs: test
-    runs-on: ubuntu-latest
-    # Solo en push a main (no en PRs) y solo si los tests pasaron
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Deploy backend
-        run: |
-          curl --silent --show-error --fail \
-            "${{ secrets.RENDER_DEPLOY_HOOK_BACKEND }}"
-
-      - name: Deploy frontend
-        run: |
-          curl --silent --show-error --fail \
-            "${{ secrets.RENDER_DEPLOY_HOOK_FRONTEND }}"
+  # Deploy gestionado por Railway Auto Deploy desde GitHub.
+  # Este workflow mantiene solo validación de tests.
