@@ -83,8 +83,43 @@ def get_usuario_autenticado(request):
 
     try:
         decoded = _verify_id_token_cached(token)
-        email = decoded.get('email')
-        usuario = Usuario.objects.select_related('familia').get(email=email)
+        email = (decoded.get('email') or '').strip()
+        uid = decoded.get('uid')
+
+        if not email:
+            return None, Response(
+                {'error': 'Token inválido: no contiene email.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        candidatos = list(
+            Usuario.objects.select_related('familia').filter(email__iexact=email)[:5]
+        )
+        if not candidatos:
+            raise Usuario.DoesNotExist()
+
+        if len(candidatos) > 1:
+            coincidencias_uid = [u for u in candidatos if u.firebase_uid == uid]
+            if len(coincidencias_uid) == 1:
+                usuario = coincidencias_uid[0]
+            else:
+                logger.error(
+                    'get_usuario_autenticado: múltiples usuarios para email=%r (uid=%r, total=%s)',
+                    email,
+                    uid,
+                    len(candidatos),
+                )
+                return None, Response(
+                    {
+                        'error': (
+                            'Cuenta con datos inconsistentes para este correo. '
+                            'Contacta al administrador.'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+        else:
+            usuario = candidatos[0]
     except Usuario.DoesNotExist:
         return None, Response(
             {'error': 'Usuario no registrado.'},
