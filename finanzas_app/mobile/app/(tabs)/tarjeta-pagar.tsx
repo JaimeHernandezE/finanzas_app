@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   Modal,
   ScrollView,
   Text,
@@ -282,16 +283,23 @@ export default function TarjetaPagarScreen() {
   const omitirPrimerFoco = useRef(true)
   useFocusEffect(
     useCallback(() => {
+      const onBackPress = () => {
+        router.replace('/(tabs)/tarjetas' as never)
+        return true
+      }
+      const backSub = BackHandler.addEventListener('hardwareBackPress', onBackPress)
+
       if (omitirPrimerFoco.current) {
         omitirPrimerFoco.current = false
-        return
+        return () => backSub.remove()
       }
       void refetchTarjetas()
       void refetchCuotas()
       void refetchCuotasTarjeta()
       void refetchMovPersonal()
       void refetchMovComun()
-    }, [refetchTarjetas, refetchCuotas, refetchCuotasTarjeta, refetchMovPersonal, refetchMovComun]),
+      return () => backSub.remove()
+    }, [router, refetchTarjetas, refetchCuotas, refetchCuotasTarjeta, refetchMovPersonal, refetchMovComun]),
   )
 
   const toMonthIndex = (fechaIso: string): number | null => {
@@ -323,8 +331,14 @@ export default function TarjetaPagarScreen() {
     if (idxs.length === 0) return null
     return Math.max(...idxs)
   }, [cuotasTarjeta])
-  // Si no logramos calcular el tope por datos incompletos, permitimos avanzar para no bloquear la UX.
-  const puedeAvanzar = maxMesActivoIdx == null ? true : anio * 12 + mes < maxMesActivoIdx
+  const maxMesNavegableIdx = maxMesActivoIdx != null ? maxMesActivoIdx + 1 : null
+  const hayCuotasActivas = useMemo(
+    () => cuotasTarjeta.some((c) => c.estado !== 'PAGADO'),
+    [cuotasTarjeta],
+  )
+  // Si hay cuotas activas pero no logramos inferir mes tope por datos incompletos, no bloqueamos avanzar.
+  const puedeAvanzar =
+    hayCuotasActivas && (maxMesNavegableIdx == null ? true : anio * 12 + mes < maxMesNavegableIdx)
 
   const estadoPorMovimiento = useMemo(() => {
     const map = new Map<number, 'ACTIVO' | 'PAGADO'>()
@@ -551,6 +565,12 @@ export default function TarjetaPagarScreen() {
     <MobileShell title="Pagar tarjeta">
       <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: 48 }}>
         <View className="px-5 pt-3">
+          <TouchableOpacity
+            onPress={() => router.replace('/(tabs)/tarjetas' as never)}
+            className="mb-3 self-start"
+          >
+            <Text className="text-dark text-sm font-semibold">← Volver al listado</Text>
+          </TouchableOpacity>
           <View className="mb-3">
             <Text className="text-xs font-bold text-muted uppercase tracking-wide mb-1">Tarjeta</Text>
             <Text className="text-dark font-semibold text-sm">{tarjetaSeleccionada.nombre}</Text>

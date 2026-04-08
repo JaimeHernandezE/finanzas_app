@@ -17,14 +17,18 @@ export function useApi<T>(
 
   const fetcherRef = useRef(fetcher)
   fetcherRef.current = fetcher
+  const requestSeqRef = useRef(0)
 
   const fetch = useCallback(async () => {
+    const seq = ++requestSeqRef.current
     setLoading(true)
     setError(null)
     try {
       const res = await fetcherRef.current()
+      if (requestSeqRef.current !== seq) return
       setData(res.data)
     } catch (err: unknown) {
+      if (requestSeqRef.current !== seq) return
       const ax = err as { response?: { data?: { error?: string } }; message?: string }
       setError(
         ax.response?.data?.error ??
@@ -32,6 +36,7 @@ export function useApi<T>(
           'Error al cargar los datos.',
       )
     } finally {
+      if (requestSeqRef.current !== seq) return
       setLoading(false)
     }
   }, [])

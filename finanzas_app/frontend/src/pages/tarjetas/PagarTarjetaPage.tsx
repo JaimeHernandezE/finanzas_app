@@ -668,11 +668,27 @@ export default function PagarTarjetaPage() {
 
   const toMonthIndex = (fecha: string | undefined) => {
     if (!fecha) return null
-    const [y, m] = fecha.split('-').map(Number)
-    if (!Number.isFinite(y) || !Number.isFinite(m)) return null
-    return y * 12 + (m - 1)
+    const raw = String(fecha).trim()
+    if (!raw) return null
+
+    const ym = raw.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?$/)
+    if (ym) {
+      const y = Number(ym[1])
+      const m = Number(ym[2])
+      if (Number.isFinite(y) && Number.isFinite(m) && m >= 1 && m <= 12) {
+        return y * 12 + (m - 1)
+      }
+    }
+
+    const d = new Date(raw)
+    if (!Number.isFinite(d.getTime())) return null
+    return d.getFullYear() * 12 + d.getMonth()
   }
   const mesSeleccionadoIdx = anio * 12 + mes
+  const hayCuotasActivas = useMemo(
+    () => cuotasTarjeta.some(c => c.estado !== 'PAGADO'),
+    [cuotasTarjeta],
+  )
   const maxMesActivoIdx = useMemo(() => {
     const activos = cuotasTarjeta.filter(c => c.estado !== 'PAGADO')
     if (activos.length === 0) return null
@@ -682,7 +698,9 @@ export default function PagarTarjetaPage() {
     if (idxs.length === 0) return null
     return Math.max(...idxs)
   }, [cuotasTarjeta])
-  const puedeAvanzar = maxMesActivoIdx !== null && mesSeleccionadoIdx < maxMesActivoIdx
+  const maxMesNavegableIdx = maxMesActivoIdx != null ? maxMesActivoIdx + 1 : null
+  const puedeAvanzar =
+    hayCuotasActivas && (maxMesNavegableIdx === null || mesSeleccionadoIdx < maxMesNavegableIdx)
 
   const irAnterior = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }

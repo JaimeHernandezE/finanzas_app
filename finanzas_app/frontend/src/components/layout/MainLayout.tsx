@@ -112,6 +112,10 @@ export default function MainLayout() {
   const { viajeActivo } = useViaje()
   const { formatMonto } = useConfig()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
+  const masItems = useMemo(
+    () => (esDemoUi ? MAS_ITEMS.filter((item) => item.to !== '/inversiones' && item.to !== '/viajes') : MAS_ITEMS),
+    [esDemoUi],
+  )
 
   useEffect(() => {
     const onCuentasActualizadas = () => {
@@ -216,7 +220,7 @@ export default function MainLayout() {
 
           {/* Más */}
           <GroupLabel label="Más" />
-          {MAS_ITEMS.map(item => (
+          {masItems.map(item => (
             <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
           ))}
 

@@ -88,17 +88,30 @@ function AppRoutes() {
         <Route path="liquidacion" element={<LiquidacionPage />} />
         <Route path="presupuesto" element={<PresupuestoPage />} />
 
-        <Route path="inversiones">
-          <Route index element={<InversionesPage />} />
-          <Route path=":id" element={<FondoDetallePage />} />
-        </Route>
+        {ES_DEMO ? (
+          <>
+            <Route path="inversiones" element={<Navigate to="/dashboard" replace />} />
+            <Route path="inversiones/:id" element={<Navigate to="/dashboard" replace />} />
+            <Route path="viajes" element={<Navigate to="/dashboard" replace />} />
+            <Route path="viajes/nuevo" element={<Navigate to="/dashboard" replace />} />
+            <Route path="viajes/:id" element={<Navigate to="/dashboard" replace />} />
+            <Route path="viajes/:id/editar" element={<Navigate to="/dashboard" replace />} />
+          </>
+        ) : (
+          <>
+            <Route path="inversiones">
+              <Route index element={<InversionesPage />} />
+              <Route path=":id" element={<FondoDetallePage />} />
+            </Route>
 
-        <Route path="viajes">
-          <Route index element={<ViajesPage />} />
-          <Route path="nuevo" element={<ViajeFormPage />} />
-          <Route path=":id" element={<ViajeDetallePage />} />
-          <Route path=":id/editar" element={<ViajeFormPage />} />
-        </Route>
+            <Route path="viajes">
+              <Route index element={<ViajesPage />} />
+              <Route path="nuevo" element={<ViajeFormPage />} />
+              <Route path=":id" element={<ViajeDetallePage />} />
+              <Route path=":id/editar" element={<ViajeFormPage />} />
+            </Route>
+          </>
+        )}
 
         <Route path="configuracion" element={<ConfiguracionLayout />}>
           <Route index element={<ConfiguracionPage />} />

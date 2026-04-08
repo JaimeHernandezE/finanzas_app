@@ -266,7 +266,7 @@ export default function TarjetasScreen() {
                       onPress={() => router.push(`/(tabs)/tarjeta-pagar?tarjeta=${t.id}` as never)}
                       className="flex-1 bg-dark rounded-lg py-1.5 items-center"
                     >
-                      <Text className="text-white text-xs font-semibold">Pagar tarjeta</Text>
+                      <Text className="text-white text-xs font-semibold">Ver detalle</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
