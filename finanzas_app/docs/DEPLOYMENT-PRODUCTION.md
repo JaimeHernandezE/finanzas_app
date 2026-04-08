@@ -22,6 +22,44 @@ Localmente sigues usando [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md); en producci
 
 ## Guía actual: Render (plan gratuito)
 
+> Nota de experiencia real del proyecto: se migró la demo fuera de Render gratuito por latencia alta en cold starts y caídas/reinicios frecuentes en uso diario.
+
+## Opción recomendada: Railway (más estable para demo/uso continuo)
+
+Si buscas evitar el sleep/cold start del plan free de Render, Railway suele ser una mejor base para este proyecto porque mantiene el servicio más estable en uso continuo (API + frontend con tráfico real).
+
+### Costos orientativos (Railway)
+
+> Referencia práctica (puede cambiar): revisar siempre la calculadora/precios oficiales de Railway antes de cerrar presupuesto.
+
+| Concepto | Costo aproximado |
+|----------|------------------|
+| Cuenta Hobby | USD 5/mes (incluye crédito de uso) |
+| Backend Django + PostgreSQL pequeños (demo) | Desde ~USD 5/mes total si el consumo entra en el crédito |
+| Demo con uso más activo (24/7, más datos/backups) | ~USD 8–20/mes según CPU/RAM/almacenamiento y egreso |
+
+### Variables mínimas en Railway (backend demo)
+
+```env
+DEBUG=False
+DEMO=True
+SECRET_KEY=<tu_secret>
+DATABASE_URL=<postgres_railway_url>
+ALLOWED_HOSTS=<tu-backend>.up.railway.app
+CORS_ALLOWED_ORIGINS=https://<tu-frontend>.up.railway.app
+```
+
+Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase Admin en ese servicio.
+
+### Frontend web demo (Railway)
+
+```env
+VITE_ES_DEMO=true
+VITE_API_URL=https://<tu-backend>.up.railway.app
+```
+
+Si no usas `VITE_ES_DEMO=true`, deberás definir también las `VITE_FIREBASE_*`.
+
 ### Requisitos previos
 
 - Cuenta en [render.com](https://render.com) conectada a GitHub
