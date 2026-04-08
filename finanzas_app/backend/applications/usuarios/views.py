@@ -2,6 +2,7 @@ import logging
 import zoneinfo
 
 from django.conf import settings
+from django.db import IntegrityError
 from firebase_admin import auth as firebase_auth
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
@@ -158,9 +159,44 @@ def me(request):
 
     email = (decoded.get('email') or '').strip()
     uid = decoded.get('uid')
+    if not email:
+        logger.warning('/me: token Firebase sin email (uid=%r)', uid)
+        return Response(
+            {'error': 'El token autenticado no contiene email.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
-        usuario = Usuario.objects.select_related('familia').get(email=email)
+        candidatos = list(
+            Usuario.objects.select_related('familia').filter(email__iexact=email)[:5]
+        )
+        if not candidatos:
+            raise Usuario.DoesNotExist()
+
+        # Si hay más de un registro para el mismo correo, intenta elegir por UID.
+        # Evita un 500 por datos históricos inconsistentes y deja trazabilidad en logs.
+        if len(candidatos) > 1:
+            coincidencias_uid = [u for u in candidatos if u.firebase_uid == uid]
+            if len(coincidencias_uid) == 1:
+                usuario = coincidencias_uid[0]
+            else:
+                logger.error(
+                    '/me: múltiples usuarios para email=%r (uid=%r, total=%s)',
+                    email,
+                    uid,
+                    len(candidatos),
+                )
+                return Response(
+                    {
+                        'error': (
+                            'Se detectaron datos inconsistentes para este correo. '
+                            'Contacta al administrador.'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+        else:
+            usuario = candidatos[0]
 
         if not usuario.activo:
             return Response(
@@ -175,7 +211,24 @@ def me(request):
 
         if usuario.firebase_uid != uid:
             usuario.firebase_uid = uid
-            usuario.save(update_fields=['firebase_uid'])
+            try:
+                usuario.save(update_fields=['firebase_uid'])
+            except IntegrityError:
+                logger.error(
+                    '/me: conflicto al actualizar firebase_uid para email=%r (uid=%r)',
+                    email,
+                    uid,
+                    exc_info=True,
+                )
+                return Response(
+                    {
+                        'error': (
+                            'No fue posible vincular tu cuenta con Firebase por un conflicto '
+                            'de datos. Contacta al administrador.'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
 
         if request.method == 'PATCH':
             return _patch_me_perfil(usuario, request, decoded, es_demo=False)
@@ -186,6 +239,12 @@ def me(request):
         return Response(
             {'error': 'Usuario no registrado en ninguna familia.'},
             status=status.HTTP_404_NOT_FOUND
+        )
+    except Exception:
+        logger.exception('/me: error inesperado (email=%r, uid=%r)', email, uid)
+        return Response(
+            {'error': 'Error interno al obtener perfil de usuario.'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
 
