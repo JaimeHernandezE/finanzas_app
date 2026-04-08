@@ -1,8 +1,11 @@
 # applications/finanzas/serializers.py
 
 from datetime import date
+from decimal import Decimal, ROUND_DOWN
 
 from rest_framework import serializers
+from django.db import transaction
+from dateutil.relativedelta import relativedelta
 from .models import (
     Categoria,
     CuentaPersonal,
@@ -145,6 +148,49 @@ MOVIMIENTO_INGRESO_COMUN_CAMPOS_RESTRINGIDOS = frozenset({
 })
 
 
+def _calcular_mes_base_cuotas(fecha_gasto: date, dia_facturacion: int | None) -> date:
+    if not dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+    if fecha_gasto.day <= dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+    siguiente = date(fecha_gasto.year, fecha_gasto.month, 1) + relativedelta(months=1)
+    return date(siguiente.year, siguiente.month, 1)
+
+
+def _regenerar_cuotas_movimiento_credito(movimiento: Movimiento) -> None:
+    n = movimiento.num_cuotas or 0
+    if n <= 0:
+        Cuota.objects.filter(movimiento=movimiento).delete()
+        return
+
+    monto_base = Decimal(str(movimiento.monto))
+    if movimiento.monto_cuota:
+        monto_cuota = Decimal(str(movimiento.monto_cuota))
+    else:
+        monto_cuota = (monto_base / n).quantize(
+            Decimal('0.01'),
+            rounding=ROUND_DOWN,
+        )
+    diferencia = monto_base - (monto_cuota * n)
+    dia_facturacion = movimiento.tarjeta.dia_facturacion if movimiento.tarjeta else None
+    mes_base = _calcular_mes_base_cuotas(movimiento.fecha, dia_facturacion)
+
+    Cuota.objects.filter(movimiento=movimiento).delete()
+    cuotas = []
+    for i in range(n):
+        mes_facturacion = mes_base + relativedelta(months=i)
+        monto_final = monto_cuota + (diferencia if i == 0 else Decimal('0.00'))
+        cuotas.append(Cuota(
+            movimiento=movimiento,
+            numero=i + 1,
+            monto=monto_final,
+            mes_facturacion=mes_facturacion,
+            estado='PENDIENTE',
+            incluir=True,
+        ))
+    Cuota.objects.bulk_create(cuotas)
+
+
 class MovimientoSerializer(serializers.ModelSerializer):
     cuotas = CuotaSerializer(many=True, read_only=True)
     ingreso_comun = serializers.SerializerMethodField()
@@ -196,6 +242,14 @@ class MovimientoSerializer(serializers.ModelSerializer):
         return data
 
     def update(self, instance, validated_data):
+        previo = {
+            'monto': instance.monto,
+            'num_cuotas': instance.num_cuotas,
+            'monto_cuota': instance.monto_cuota,
+            'fecha': instance.fecha,
+            'tarjeta_id': instance.tarjeta_id,
+            'metodo_pago_tipo': instance.metodo_pago.tipo if instance.metodo_pago_id else None,
+        }
         ic = IngresoComun.objects.filter(movimiento_id=instance.pk).first()
         if ic:
             restringidos = MOVIMIENTO_INGRESO_COMUN_CAMPOS_RESTRINGIDOS & validated_data.keys()
@@ -207,15 +261,40 @@ class MovimientoSerializer(serializers.ModelSerializer):
                     )
                     for k in restringidos
                 })
-        instance = super().update(instance, validated_data)
-        ic = IngresoComun.objects.filter(movimiento_id=instance.pk).first()
-        if ic:
-            mes = date(instance.fecha.year, instance.fecha.month, 1)
-            IngresoComun.objects.filter(pk=ic.pk).update(
-                monto=instance.monto,
-                origen=instance.comentario or '',
-                mes=mes,
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+
+            es_credito = instance.metodo_pago.tipo == 'CREDITO'
+            era_credito = previo['metodo_pago_tipo'] == 'CREDITO'
+            cambios_que_afectan_cuotas = (
+                instance.monto != previo['monto']
+                or instance.num_cuotas != previo['num_cuotas']
+                or instance.monto_cuota != previo['monto_cuota']
+                or instance.fecha != previo['fecha']
+                or instance.tarjeta_id != previo['tarjeta_id']
+                or (es_credito and not era_credito)
             )
+
+            if es_credito and cambios_que_afectan_cuotas:
+                if Cuota.objects.filter(movimiento=instance, estado='PAGADO').exists():
+                    raise serializers.ValidationError({
+                        'monto': (
+                            'Este movimiento tiene cuotas pagadas. '
+                            'No se puede recalcular su plan de cuotas.'
+                        )
+                    })
+                _regenerar_cuotas_movimiento_credito(instance)
+            elif era_credito and not es_credito:
+                Cuota.objects.filter(movimiento=instance).delete()
+
+            ic = IngresoComun.objects.filter(movimiento_id=instance.pk).first()
+            if ic:
+                mes = date(instance.fecha.year, instance.fecha.month, 1)
+                IngresoComun.objects.filter(pk=ic.pk).update(
+                    monto=instance.monto,
+                    origen=instance.comentario or '',
+                    mes=mes,
+                )
         return instance
 
 

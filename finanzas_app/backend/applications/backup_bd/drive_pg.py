@@ -32,6 +32,46 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # pg_dump de PostgreSQL 17+ emite SET transaction_timeout; servidores <17 fallan al restaurar.
 _RE_SET_TRANSACTION_TIMEOUT = re.compile(br'^\s*SET\s+transaction_timeout\b', re.IGNORECASE)
+_RE_CREATE_SCHEMA = re.compile(br'^\s*CREATE\s+SCHEMA\b', re.IGNORECASE)
+_RE_CREATE_SCHEMA_IF_NOT_EXISTS = re.compile(
+    br'^\s*CREATE\s+SCHEMA\s+IF\s+NOT\s+EXISTS\b',
+    re.IGNORECASE,
+)
+_RE_CREATE_FUNCTION = re.compile(br'^\s*CREATE\s+FUNCTION\b', re.IGNORECASE)
+_RE_CREATE_OR_REPLACE_FUNCTION = re.compile(
+    br'^\s*CREATE\s+OR\s+REPLACE\s+FUNCTION\b',
+    re.IGNORECASE,
+)
+_RE_PSQL_RESTRICT = re.compile(br'^\s*\\restrict\b', re.IGNORECASE)
+_RE_PSQL_UNRESTRICT = re.compile(br'^\s*\\unrestrict\b', re.IGNORECASE)
+_RE_EXTENSION_OR_SCHEMA_STMT = re.compile(
+    br'^\s*(CREATE|COMMENT\s+ON|ALTER)\s+(EXTENSION|SCHEMA)\b',
+    re.IGNORECASE,
+)
+_RE_PUBLICATION_STMT = re.compile(
+    br'^\s*(CREATE|ALTER|COMMENT\s+ON|DROP)\s+PUBLICATION\b',
+    re.IGNORECASE,
+)
+_UNSUPPORTED_EXTENSION_NAMES = (b'pg_graphql', b'supabase_vault')
+_UNSUPPORTED_OBJECT_MARKERS = (
+    b'vault.',
+    b'"vault".',
+)
+_UNSUPPORTED_PUBLICATION_NAMES = (b'supabase_realtime',)
+_RE_COPY_FROM_STDIN = re.compile(
+    br'^\s*COPY\b.*\bFROM\s+stdin;?\s*$',
+    re.IGNORECASE,
+)
+_SCHEMAS_EXTERNOS_REINICIO = (
+    'auth',
+    'vault',
+    'storage',
+    'graphql',
+    'graphql_public',
+    'extensions',
+    'realtime',
+    'supabase_functions',
+)
 
 
 def _mensaje_error_oauth_drive(exc: Exception) -> str:
@@ -295,11 +335,69 @@ def run_backup_to_drive() -> dict:
 
 
 def _decompress_sql_gz_to_path(gz_path: str, sql_path: str) -> None:
-    """Descomprime .sql.gz a disco; omite SET transaction_timeout (PG17) para restaurar en PG <17."""
+    """
+    Descomprime .sql.gz a disco aplicando saneamientos de compatibilidad.
+
+    - Omite ``SET transaction_timeout`` (emitido por PG17, inválido en PG<17).
+    - Convierte ``CREATE SCHEMA ...`` a ``CREATE SCHEMA IF NOT EXISTS ...`` para
+      evitar fallos al restaurar dumps que incluyen esquemas preexistentes (p. ej. ``auth``).
+    - Convierte ``CREATE FUNCTION ...`` a ``CREATE OR REPLACE FUNCTION ...`` para
+      tolerar definiciones duplicadas dentro del dump.
+    - Omite metacomandos ``\\restrict``/``\\unrestrict`` de psql (PG moderno) para
+      evitar bloqueos por "backslash commands are restricted".
+    - Omite sentencias de extensiones no disponibles en el entorno local
+      (actualmente ``pg_graphql`` y ``supabase_vault``) para evitar que la
+      restauración se detenga.
+    - Omite sentencias que referencian objetos del esquema ``vault`` cuando
+      dicho esquema no existe en el destino.
+    - Omite sentencias de publicaciones lógicas no compatibles/locales
+      (actualmente ``supabase_realtime``).
+    - Si se omite un ``COPY ... FROM stdin`` de objetos no soportados, también
+      se omite su bloque de datos hasta el terminador ``\.``.
+    """
     with gzip.open(gz_path, 'rb') as gz, open(sql_path, 'wb') as out:
+        skipping_copy_block = False
         for line in gz:
+            if skipping_copy_block:
+                if line.strip() == b'\\.':
+                    skipping_copy_block = False
+                continue
             if _RE_SET_TRANSACTION_TIMEOUT.match(line):
                 continue
+            if _RE_PSQL_RESTRICT.match(line) or _RE_PSQL_UNRESTRICT.match(line):
+                continue
+            line_low = line.lower()
+            if _RE_COPY_FROM_STDIN.match(line) and any(
+                marker in line_low for marker in _UNSUPPORTED_OBJECT_MARKERS
+            ):
+                skipping_copy_block = True
+                continue
+            if any(marker in line_low for marker in _UNSUPPORTED_OBJECT_MARKERS):
+                continue
+            if _RE_EXTENSION_OR_SCHEMA_STMT.match(line) and any(
+                ext in line_low for ext in _UNSUPPORTED_EXTENSION_NAMES
+            ):
+                continue
+            if _RE_PUBLICATION_STMT.match(line) and any(
+                pub in line_low for pub in _UNSUPPORTED_PUBLICATION_NAMES
+            ):
+                continue
+            if _RE_CREATE_SCHEMA.match(line) and not _RE_CREATE_SCHEMA_IF_NOT_EXISTS.match(line):
+                line = re.sub(
+                    br'^\s*CREATE\s+SCHEMA\b',
+                    b'CREATE SCHEMA IF NOT EXISTS',
+                    line,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
+            if _RE_CREATE_FUNCTION.match(line) and not _RE_CREATE_OR_REPLACE_FUNCTION.match(line):
+                line = re.sub(
+                    br'^\s*CREATE\s+FUNCTION\b',
+                    b'CREATE OR REPLACE FUNCTION',
+                    line,
+                    count=1,
+                    flags=re.IGNORECASE,
+                )
             out.write(line)
 
 
@@ -323,14 +421,19 @@ def _run_psql(database_url: str, psql_args: list[str]) -> None:
 
 def _reset_public_schema(database_url: str) -> None:
     """
-    Elimina y recrea el esquema ``public`` para que un volcado completo no choque con
-    tablas existentes (p. ej. auth_group). Requiere permisos suficientes sobre la BD.
+    Elimina y recrea el esquema ``public`` y limpia esquemas externos comunes de
+    dumps de Supabase para evitar choques de objetos preexistentes (tipos, tablas,
+    funciones). Requiere permisos suficientes sobre la BD.
     """
+    drop_externos = ' '.join(
+        f'DROP SCHEMA IF EXISTS "{schema}" CASCADE;'
+        for schema in _SCHEMAS_EXTERNOS_REINICIO
+    )
     _run_psql(
         database_url,
         [
             '-c',
-            'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;',
+            f'{drop_externos} DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;',
         ],
     )
 

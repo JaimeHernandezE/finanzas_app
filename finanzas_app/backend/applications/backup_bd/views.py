@@ -5,6 +5,7 @@ import tempfile
 from urllib.parse import quote as urlquote
 
 from django.conf import settings
+from django.db.utils import OperationalError, ProgrammingError
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
@@ -119,6 +120,7 @@ def subir_dump_a_drive(request):
 
 
 CONFIRMACION_IMPORT = 'RESTAURAR_BD'
+CONFIRMACION_IMPORT_EMERGENCIA = 'IMPORTAR_MODO_EMERGENCIA'
 MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
 
@@ -129,17 +131,46 @@ def importar_dump(request):
     """
     Restaura desde un .sql.gz generado por esta app (pg_dump -Fp | gzip).
     Requiere confirmacion=RESTAURAR_BD en el formulario.
+
+    Modo recuperación: si la BD quedó inconsistente y no existe usuarios_usuario,
+    permite continuar con token Firebase válido + confirmacion_emergencia.
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
-    usuario, err = _usuario_y_error_firebase(request)
-    if err is not None:
-        return err
-    if not _es_admin(usuario):
+
+    decoded, error = obtener_usuario_desde_token(request)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_401_UNAUTHORIZED)
+
+    email = (decoded.get('email') or '').strip()
+    try:
+        usuario = Usuario.objects.select_related('familia').get(email__iexact=email)
+        if not _es_admin(usuario):
+            return Response(
+                {'detail': 'Solo administradores pueden importar la base de datos.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+    except Usuario.DoesNotExist:
         return Response(
-            {'detail': 'Solo administradores pueden importar la base de datos.'},
-            status=status.HTTP_403_FORBIDDEN,
+            {'detail': 'Usuario no registrado.'},
+            status=status.HTTP_401_UNAUTHORIZED,
         )
+    except (ProgrammingError, OperationalError) as e:
+        # Si la tabla de usuarios ya no existe por una restauración incompleta, habilitamos
+        # un modo de recuperación explícito para permitir importar nuevamente el respaldo.
+        detalle = str(e)
+        if 'usuarios_usuario' not in detalle or 'does not exist' not in detalle:
+            return Response({'error': detalle}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if request.POST.get('confirmacion_emergencia') != CONFIRMACION_IMPORT_EMERGENCIA:
+            return Response(
+                {
+                    'error': (
+                        'La base de datos está incompleta (falta tabla de usuarios). '
+                        f'Para forzar la restauración agrega confirmacion_emergencia={CONFIRMACION_IMPORT_EMERGENCIA}.'
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
     if request.POST.get('confirmacion') != CONFIRMACION_IMPORT:
         return Response(

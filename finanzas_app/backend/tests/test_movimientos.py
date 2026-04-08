@@ -2,6 +2,7 @@
 
 import pytest
 from decimal import Decimal
+from datetime import date
 
 from applications.finanzas.models import Movimiento, Cuota, IngresoComun
 
@@ -221,6 +222,50 @@ class TestMovimientosEdicionEliminacion:
         assert res.status_code == 200
         assert res.json()['comentario'] == 'Bencina editada'
 
+    def test_patch_movimiento_credito_recalcula_cuotas(
+        self, client, auth_header, movimiento_credito
+    ):
+        """Editar monto/cuotas en crédito regenera el plan de cuotas."""
+        res = client.patch(
+            f'/api/finanzas/movimientos/{movimiento_credito.id}/',
+            data={
+                'monto': '200000.00',
+                'num_cuotas': 4,
+            },
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+
+        cuotas = list(
+            Cuota.objects.filter(movimiento_id=movimiento_credito.id).order_by('numero')
+        )
+        assert len(cuotas) == 4
+        assert all(c.estado == 'PENDIENTE' for c in cuotas)
+        assert all(c.incluir is True for c in cuotas)
+        assert [c.numero for c in cuotas] == [1, 2, 3, 4]
+        assert sum(c.monto for c in cuotas) == Decimal('200000.00')
+
+    def test_patch_movimiento_credito_comentario_no_recalcula_cuotas(
+        self, client, auth_header, movimiento_credito
+    ):
+        """Editar solo comentario no debe regenerar cuotas."""
+        cuota_1 = Cuota.objects.filter(movimiento_id=movimiento_credito.id, numero=1).first()
+        assert cuota_1 is not None
+        cuota_1.incluir = False
+        cuota_1.save(update_fields=['incluir'])
+
+        res = client.patch(
+            f'/api/finanzas/movimientos/{movimiento_credito.id}/',
+            data={'comentario': 'Televisor living'},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+
+        cuota_1.refresh_from_db()
+        assert cuota_1.incluir is False
+
     def test_no_puede_editar_movimiento_ajeno(
         self, client, auth_header_2, movimiento_efectivo
     ):
@@ -297,6 +342,30 @@ class TestMovimientosEdicionEliminacion:
         assert ing.origen == 'Sueldo + bono'
         assert ing.mes.isoformat() == '2026-04-01'
 
+    def test_recalculo_historico_repara_cuotas_credito(
+        self, client, auth_header, movimiento_credito
+    ):
+        """El recálculo histórico debe reparar cuotas desalineadas de crédito."""
+        cuota_1 = Cuota.objects.filter(movimiento=movimiento_credito, numero=1).first()
+        assert cuota_1 is not None
+        cuota_1.monto = Decimal('1.00')
+        cuota_1.save(update_fields=['monto'])
+
+        res = client.post(
+            '/api/finanzas/recalculo/historico/',
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        payload = res.json()
+        assert payload.get('ok') is True
+        assert payload.get('procesado') is True
+        assert 'cuotas_reparadas' in payload
+        assert payload['cuotas_reparadas']['cuotas_actualizadas'] >= 1
+
+        cuota_1.refresh_from_db()
+        assert cuota_1.monto == Decimal('30000.00')
+
     def test_patch_movimiento_vinculado_no_permite_cambiar_tipo(
         self, client, auth_header, usuario, familia, categoria_egreso
     ):
@@ -367,6 +436,102 @@ class TestCuotasEndpoint:
         # Solo la primera cuota cae en marzo
         assert len(res.json()) == 1
 
+    def test_facturado_mes_actual_dia_facturacion_mayor_a_vencimiento(
+        self,
+        client,
+        auth_header,
+        usuario,
+        familia,
+        categoria_egreso,
+        metodo_credito,
+        tarjeta,
+    ):
+        """Con facturación > vencimiento, el mes X consulta mes_facturacion X-1."""
+        tarjeta.dia_facturacion = 20
+        tarjeta.dia_vencimiento = 7
+        tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
+
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-02-21',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='100000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-20',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='200000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+
+        res = client.get(
+            f'/api/finanzas/cuotas/?tarjeta={tarjeta.id}&mes=4&anio=2026',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        assert len(res.json()) == 2
+        assert all(c['estado'] == 'FACTURADO' for c in res.json())
+
+    def test_facturado_mes_actual_dia_facturacion_menor_a_vencimiento(
+        self,
+        client,
+        auth_header,
+        usuario,
+        familia,
+        categoria_egreso,
+        metodo_credito,
+        tarjeta,
+    ):
+        """Con facturación < vencimiento, el mes X consulta mes_facturacion X."""
+        tarjeta.dia_facturacion = 20
+        tarjeta.dia_vencimiento = 30
+        tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
+
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-21',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='120000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-04-20',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='80000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+
+        res = client.get(
+            f'/api/finanzas/cuotas/?tarjeta={tarjeta.id}&mes=4&anio=2026',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        assert len(res.json()) == 2
+        assert all(c['estado'] == 'FACTURADO' for c in res.json())
+
     def test_marcar_cuota_excluida_mueve_mes(
         self, client, auth_header, movimiento_credito
     ):
@@ -398,3 +563,62 @@ class TestCuotasEndpoint:
         res = client.get('/api/finanzas/cuotas/', **auth_header_otra_familia)
         assert res.status_code == 200
         assert len(res.json()) == 0
+
+    def test_cuotas_deuda_pendiente_respeta_regla_facturacion_vencimiento(
+        self,
+        client,
+        auth_header,
+        monkeypatch,
+        usuario,
+        familia,
+        categoria_egreso,
+        metodo_credito,
+        tarjeta,
+    ):
+        """Total pendiente del mes usa ventana correcta cuando facturación > vencimiento."""
+        tarjeta.dia_facturacion = 20
+        tarjeta.dia_vencimiento = 7
+        tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
+
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-02-21',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='100000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-20',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='200000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+        # Queda fuera del estado de cuenta de abril (se facturaría en mayo).
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-04-05',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='50000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+
+        monkeypatch.setattr('applications.finanzas.views.timezone.localdate', lambda: date(2026, 4, 10))
+        res = client.get('/api/finanzas/cuotas/deuda-pendiente/', **auth_header)
+        assert res.status_code == 200
+        assert Decimal(res.json()['total']) == Decimal('300000.00')

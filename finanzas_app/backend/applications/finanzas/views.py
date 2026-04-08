@@ -98,6 +98,38 @@ def _parse_cuenta_personal_usuario(usuario, cuenta_raw):
     return cuenta_id, None
 
 
+def _mes_facturacion_para_mes_facturado(
+    mes_facturado: date,
+    dia_facturacion: int | None,
+    dia_vencimiento: int | None,
+) -> date:
+    """
+    Mapea el mes que se está pagando/facturando al mes_facturacion almacenado en Cuota.
+
+    Regla:
+    - Si dia_facturacion > dia_vencimiento: el facturado del mes X usa mes_facturacion X-1.
+    - Si dia_facturacion < dia_vencimiento: el facturado del mes X usa mes_facturacion X.
+    - Si faltan datos de ciclo, se mantiene el comportamiento histórico (X).
+    """
+    if not dia_facturacion or not dia_vencimiento:
+        return mes_facturado
+    if dia_facturacion > dia_vencimiento:
+        return mes_facturado + relativedelta(months=-1)
+    return mes_facturado
+
+
+def _cuota_corresponde_a_mes_facturado(cuota: Cuota, mes_facturado: date) -> bool:
+    tarjeta = getattr(cuota.movimiento, 'tarjeta', None)
+    dia_facturacion = getattr(tarjeta, 'dia_facturacion', None) if tarjeta else None
+    dia_vencimiento = getattr(tarjeta, 'dia_vencimiento', None) if tarjeta else None
+    esperado = _mes_facturacion_para_mes_facturado(
+        mes_facturado,
+        dia_facturacion,
+        dia_vencimiento,
+    )
+    return cuota.mes_facturacion == esperado
+
+
 # ── CATEGORÍAS ────────────────────────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
@@ -723,12 +755,25 @@ def cuotas(request):
     if tarjeta:
         qs = qs.filter(movimiento__tarjeta_id=tarjeta)
     if mes and anio:
-        qs = qs.filter(
-            mes_facturacion__month=mes,
-            mes_facturacion__year=anio
-        )
+        try:
+            mes_facturado = date(int(anio), int(mes), 1)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'mes y anio inválidos.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cuotas_mes = [c for c in qs if _cuota_corresponde_a_mes_facturado(c, mes_facturado)]
+        # Para la vista de facturación, las cuotas no pagadas del mes consultado
+        # deben mostrarse como FACTURADO.
+        for c in cuotas_mes:
+            if c.estado != 'PAGADO':
+                c.estado = 'FACTURADO'
+        qs = cuotas_mes
     if estado:
-        qs = qs.filter(estado=estado)
+        if isinstance(qs, list):
+            qs = [c for c in qs if c.estado == estado]
+        else:
+            qs = qs.filter(estado=estado)
 
     return Response(CuotaSerializer(qs, many=True).data)
 
@@ -747,18 +792,25 @@ def cuotas_deuda_pendiente(request):
         return error
 
     hoy = timezone.localdate()
-    mes_facturacion = date(hoy.year, hoy.month, 1)
+    mes_facturado = date(hoy.year, hoy.month, 1)
+    meses_candidatos = {
+        mes_facturado,
+        mes_facturado + relativedelta(months=-1),
+    }
 
     qs = Cuota.objects.filter(
         movimiento__usuario=usuario,
-        mes_facturacion=mes_facturacion,
+        mes_facturacion__in=meses_candidatos,
         incluir=True,
         estado__in=('PENDIENTE', 'FACTURADO'),
-    )
+    ).select_related('movimiento__tarjeta')
     if usuario.familia_id:
         qs = qs.filter(movimiento__familia_id=usuario.familia_id)
 
-    total = qs.aggregate(t=Sum('monto'))['t'] or Decimal('0')
+    total = Decimal('0')
+    for cuota in qs:
+        if _cuota_corresponde_a_mes_facturado(cuota, mes_facturado):
+            total += cuota.monto
     return Response({'total': str(total)})
 
 
@@ -1856,12 +1908,14 @@ def recalculo_estado(request):
 @permission_classes([AllowAny])
 def recalculo_historico(request):
     """
-    Recalcula snapshots históricos de la familia:
+    Recalcula snapshots históricos de la familia y repara plan de cuotas crédito:
     - Liquidación común y saldos personales (todos los miembros) desde el primer mes con datos
       hasta el mes actual.
     - Snapshots de resumen histórico familiar por mes (backfill_resumen_historico_snapshots).
     - Refuerzo explícito de saldos mensuales por cuenta solo del usuario autenticado
       (backfill_saldos_personales_usuario).
+    - Reparación de cuotas de movimientos con tarjeta de crédito para corregir inconsistencias
+      históricas (sin tocar cuotas ya pagadas).
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
@@ -1899,6 +1953,7 @@ def recalculo_historico(request):
     meses_saldos_usuario = services_recalculo.backfill_saldos_personales_usuario(
         usuario.pk, familia_id
     )
+    reparacion_cuotas = services_recalculo.reparar_cuotas_credito_familia(familia_id)
     RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
 
     return Response(
@@ -1909,6 +1964,7 @@ def recalculo_historico(request):
             'hasta': services_recalculo.primer_dia_mes(timezone.localdate()).isoformat(),
             'meses_resumen_historico_familia': meses_resumen_familia,
             'meses_saldos_personales_usuario': meses_saldos_usuario,
+            'cuotas_reparadas': reparacion_cuotas,
         }
     )
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
@@ -79,6 +79,14 @@ const fechaCorta = (iso: string) => {
   return new Date(y, m - 1, d).toLocaleDateString('es-CL', {
     day: '2-digit', month: 'short',
   })
+}
+
+const clampDiaMes = (anio: number, mesIndex: number, dia: number) =>
+  Math.min(dia, new Date(anio, mesIndex + 1, 0).getDate())
+
+const fechaIso = (anio: number, mesIndex: number, dia: number) => {
+  const d = clampDiaMes(anio, mesIndex, dia)
+  return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -785,14 +793,33 @@ export default function PagarTarjetaPage() {
     return map
   }, [cuotasTarjeta])
   const utilizadoPersonalVisible = useMemo(
-    () => movimientosPersonalesTarjeta.filter(m => estadoPorMovimiento.has(m.id)).slice(0, 10),
+    () => movimientosPersonalesTarjeta.filter(m => estadoPorMovimiento.has(m.id)),
     [movimientosPersonalesTarjeta, estadoPorMovimiento],
   )
   const utilizadoComunVisible = useMemo(
-    () => movimientosComunesTarjeta.filter(m => estadoPorMovimiento.has(m.id)).slice(0, 10),
+    () => movimientosComunesTarjeta.filter(m => estadoPorMovimiento.has(m.id)),
     [movimientosComunesTarjeta, estadoPorMovimiento],
   )
   const estadoFacturado = cuotas.some(c => c.estado !== 'PAGADO') ? 'PENDIENTE' : 'PAGADO'
+  const cicloFacturacionTexto = useMemo(() => {
+    if (!tarjeta?.dia_facturacion) return null
+    const df = tarjeta.dia_facturacion
+    const dv = tarjeta.dia_vencimiento
+    if (!dv || df === dv) {
+      return (
+        `Ciclo: del ${df + 1} del mes anterior al ${df} de este mes` +
+        (dv ? ` · Vence el ${dv} del mes siguiente` : '')
+      )
+    }
+
+    const startOffset = df > dv ? -2 : -1
+    const endOffset = df > dv ? -1 : 0
+    const startDate = new Date(anio, mes + startOffset, 1)
+    const endDate = new Date(anio, mes + endOffset, 1)
+    const inicio = fechaCorta(fechaIso(startDate.getFullYear(), startDate.getMonth(), df + 1))
+    const fin = fechaCorta(fechaIso(endDate.getFullYear(), endDate.getMonth(), df))
+    return `Ciclo: del ${inicio} al ${fin} · Vence el ${dv}`
+  }, [tarjeta?.dia_facturacion, tarjeta?.dia_vencimiento, anio, mes])
   const totalCuotasPorMovimiento = useMemo(() => {
     const map = new Map<number, number>()
     for (const c of cuotasTarjeta) {
@@ -892,10 +919,9 @@ export default function PagarTarjetaPage() {
               ))}
             </select>
           </div>
-          {tarjeta?.dia_facturacion && (
+          {cicloFacturacionTexto && (
             <p className={styles.cicloInfo}>
-              Ciclo: del {tarjeta.dia_facturacion + 1} del mes anterior al {tarjeta.dia_facturacion} de este mes
-              {tarjeta.dia_vencimiento ? ` · Vence el ${tarjeta.dia_vencimiento} del mes siguiente` : ''}
+              {cicloFacturacionTexto}
             </p>
           )}
           <div className={styles.mesNav}>
@@ -970,7 +996,7 @@ export default function PagarTarjetaPage() {
                       <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
                       <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
                     </div>
-                    {grupo.movimientos.slice(0, 10).map(mov => (
+                    {grupo.movimientos.map(mov => (
                       <div
                         key={mov.id}
                         className={`${styles.movItem} ${styles.movItemClickable}`}
@@ -999,11 +1025,6 @@ export default function PagarTarjetaPage() {
                   </div>
                 ))
               )}
-              <div className={styles.movDetalleFooter}>
-                <Link to={(cuentasData ?? []).find(c => c.es_propia)?.id ? `/gastos/cuenta/${(cuentasData ?? []).find(c => c.es_propia)!.id}` : '/configuracion/cuentas'} className={styles.movDetalleLink}>
-                  Ver detalle
-                </Link>
-              </div>
             </div>
 
             <div className={styles.movGrupo}>
@@ -1014,7 +1035,7 @@ export default function PagarTarjetaPage() {
               {utilizadoComunVisible.length === 0 ? (
                 <p className={styles.movGrupoVacio}>Sin movimientos comunes para este período.</p>
               ) : (
-                utilizadoComunVisible.slice(0, 10).map(mov => (
+                utilizadoComunVisible.map(mov => (
                   <div
                     key={mov.id}
                     className={`${styles.movItem} ${styles.movItemClickable}`}
@@ -1044,11 +1065,6 @@ export default function PagarTarjetaPage() {
                   </div>
                 ))
               )}
-              <div className={styles.movDetalleFooter}>
-                <Link to="/gastos/comunes" className={styles.movDetalleLink}>
-                  Ver detalle
-                </Link>
-              </div>
             </div>
           </div>
         </>

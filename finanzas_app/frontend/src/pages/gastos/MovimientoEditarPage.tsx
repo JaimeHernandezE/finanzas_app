@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Button, Input, Select, Textarea, CategoriaSelect } from '@/components/ui'
+import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import type { SelectOption } from '@/components/ui' // usado en tarjetaOpciones / cuentasOpciones
 import { useCategorias, useTarjetas, useMetodosPago } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { movimientosApi } from '@/api'
 import { Cargando } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
+import { useAuth } from '@/context/AuthContext'
+import { montoClpANumero } from '@/utils/montoClp'
 import styles from './MovimientoFormPage.module.scss'
 
 type Tipo = 'EGRESO' | 'INGRESO'
@@ -46,8 +48,21 @@ function destinoTrasGuardar(m: MovimientoApi) {
   return '/gastos/comunes'
 }
 
+function montoApiAEntero(valor: unknown): number {
+  const bruto = String(valor ?? '').trim()
+  if (!bruto) return 0
+  const conPuntoDecimal = bruto.replace(',', '.')
+  const num = Number.parseFloat(conPuntoDecimal)
+  if (Number.isFinite(num)) return Math.round(num)
+  return montoClpANumero(bruto)
+}
+
 export default function MovimientoEditarPage() {
-  const { formatMonto } = useConfig()
+  const { formatMonto, config } = useConfig()
+  const { user } = useAuth()
+  const monedaCodigo = user?.moneda_display ?? config?.moneda.codigo ?? 'CLP'
+  const labelMonto = `Monto (${monedaCodigo})`
+  const helperMonto = `Monto en ${monedaCodigo}`
   const { id: idParam } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -124,7 +139,7 @@ export default function MovimientoEditarPage() {
         setBase(d)
         setTipo(d.tipo)
         setAmbito(d.ambito)
-        setMonto(String(d.monto))
+        setMonto(String(montoApiAEntero(d.monto)))
         setFecha(d.fecha?.slice(0, 10) ?? '')
         setComentario(d.comentario ?? '')
         setCategoriaId(String(d.categoria))
@@ -133,7 +148,7 @@ export default function MovimientoEditarPage() {
         setNumCuotas(d.num_cuotas != null ? String(d.num_cuotas) : '')
         setMontoCuotaInput(
           d.monto_cuota != null && String(d.monto_cuota).trim() !== ''
-            ? String(Math.round(parseFloat(String(d.monto_cuota))))
+            ? String(montoApiAEntero(d.monto_cuota))
             : '',
         )
       } catch (err: unknown) {
@@ -165,9 +180,10 @@ export default function MovimientoEditarPage() {
   const vinculadoIngresoComun = base != null && base.ingreso_comun != null
   const tieneCuotasTc = (base?.cuotas?.length ?? 0) > 0
 
+  const montoNum = montoClpANumero(monto)
   const montoCuotaCalculado =
-    numCuotas && monto
-      ? Math.ceil(parseFloat(monto) / parseInt(numCuotas, 10))
+    numCuotas && montoNum > 0
+      ? Math.ceil(montoNum / parseInt(numCuotas, 10))
       : null
   const montoCuotaManualDigits = montoCuotaInput.replace(/\D/g, '')
   const montoCuotaManualNum = montoCuotaManualDigits
@@ -178,7 +194,7 @@ export default function MovimientoEditarPage() {
     e.preventDefault()
     if (!base) return
     const next: FormErrors = {}
-    if (!monto) next.monto = 'El monto es obligatorio.'
+    if (!monto || montoNum <= 0) next.monto = 'El monto es obligatorio.'
     setErrors(next)
     if (Object.keys(next).length) return
     setLoading(true)
@@ -186,7 +202,7 @@ export default function MovimientoEditarPage() {
     try {
       await movimientosApi.patchMovimiento(base.id, {
         fecha,
-        monto: String(monto),
+        monto: String(montoNum),
         comentario: comentario.trim(),
       })
       navigate(returnTo ?? destinoTrasGuardar(base), { replace: true })
@@ -216,7 +232,7 @@ export default function MovimientoEditarPage() {
     e.preventDefault()
     if (!base) return
     const next: FormErrors = {}
-    if (!monto) next.monto = 'El monto es obligatorio.'
+    if (!monto || montoNum <= 0) next.monto = 'El monto es obligatorio.'
     if (!categoriaId) next.categoria = 'Selecciona una categoría.'
     if (metodo === 'CREDITO') {
       if (!tarjetaId) next.tarjeta = 'Selecciona una tarjeta.'
@@ -244,7 +260,8 @@ export default function MovimientoEditarPage() {
         } else if (montoCuotaCalculado != null && montoCuotaCalculado > 0) {
           montoCuotaPayload = montoCuotaCalculado
         } else if (base.monto_cuota != null) {
-          montoCuotaPayload = Math.round(parseFloat(String(base.monto_cuota)))
+          const montoBase = montoApiAEntero(base.monto_cuota)
+          montoCuotaPayload = montoBase > 0 ? montoBase : null
         }
       }
       const payload: Record<string, unknown> = {
@@ -253,7 +270,7 @@ export default function MovimientoEditarPage() {
         ambito,
         categoria: Number(categoriaId),
         cuenta: ambito === 'PERSONAL' && cuentaId ? Number(cuentaId) : null,
-        monto: String(monto),
+        monto: String(montoNum),
         comentario: comentario.trim(),
         metodo_pago: metodoPagoId,
         tarjeta: metodo === 'CREDITO' && tarjetaId ? Number(tarjetaId) : null,
@@ -359,15 +376,13 @@ export default function MovimientoEditarPage() {
               value={fecha}
               onChange={e => setFecha(e.target.value)}
             />
-            <Input
+            <InputMontoClp
               name="monto"
-              label="Monto (CLP)"
-              type="number"
-              min="1"
-              step="1"
+              label={labelMonto}
               value={monto}
-              onChange={e => setMonto(e.target.value)}
+              onChange={setMonto}
               error={errors.monto}
+              helperText={helperMonto}
               required
             />
             <Textarea
@@ -474,16 +489,13 @@ export default function MovimientoEditarPage() {
               />
             </div>
 
-            <Input
+            <InputMontoClp
               name="monto"
-              label="Monto"
-              type="number"
-              min="1"
-              step="1"
+              label={labelMonto}
               value={monto}
-              onChange={e => setMonto(e.target.value)}
+              onChange={setMonto}
               error={errors.monto}
-              helperText="Pesos chilenos (CLP)"
+              helperText={helperMonto}
               required
             />
 
@@ -529,20 +541,17 @@ export default function MovimientoEditarPage() {
                     error={errors.numCuotas}
                   />
                 </div>
-                <Input
+                <InputMontoClp
                   name="montoCuota"
                   label="Valor cuota (opcional)"
-                  type="text"
-                  inputMode="numeric"
                   value={montoCuotaInput}
-                  onChange={e => setMontoCuotaInput(e.target.value)}
-                  placeholder={
-                    montoCuotaCalculado
-                      ? `${formatMonto(montoCuotaCalculado)} (calculado)`
-                      : 'Se calcula automático'
-                  }
+                  onChange={setMontoCuotaInput}
                   error={errors.montoCuota}
-                  helperText="Si no ingresas, se divide monto ÷ cuotas."
+                  helperText={
+                    montoCuotaCalculado
+                      ? `Si no ingresas, se usa ${formatMonto(montoCuotaCalculado)} (calculado).`
+                      : 'Si no ingresas, se divide monto ÷ cuotas.'
+                  }
                 />
               </div>
             )}

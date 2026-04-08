@@ -1,0 +1,52 @@
+name: Recálculo histórico mensual (admin TZ)
+
+on:
+  schedule:
+    # Se ejecuta cada hora el día 1 (UTC). El comando decide si corresponde
+    # según la zona horaria del administrador (día 1, 02:00 local).
+    - cron: '0 * 1 * *'
+  workflow_dispatch:
+
+jobs:
+  recalculo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        working-directory: finanzas_app/backend
+        run: pip install --quiet -r requirements.txt
+
+      - name: Validar secrets mínimos
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Falta secret DATABASE_URL"
+            exit 1
+          fi
+          if [ -z "$SECRET_KEY" ]; then
+            echo "::error::Falta secret SECRET_KEY"
+            exit 1
+          fi
+
+      - name: Ejecutar recálculo mensual condicionado por TZ admin
+        working-directory: finanzas_app/backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+          DEBUG: 'False'
+          FIREBASE_SERVICE_ACCOUNT_JSON: '{}'
+          # Opcional: fija administrador explícito (si existe más de uno)
+          RECALCULO_ADMIN_ID: ${{ secrets.RECALCULO_ADMIN_ID }}
+        run: |
+          if [ -n "$RECALCULO_ADMIN_ID" ]; then
+            python manage.py recalculo_mensual_admin_tz --admin-id "$RECALCULO_ADMIN_ID"
+          else
+            python manage.py recalculo_mensual_admin_tz
+          fi

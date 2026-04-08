@@ -3,7 +3,7 @@ Recálculo incremental de snapshots mensuales (efectivo personal y liquidación 
 """
 
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from typing import Iterable
 
 from dateutil.relativedelta import relativedelta
@@ -12,6 +12,7 @@ from django.db.models import Count, Exists, Min, OuterRef, Sum
 from django.utils import timezone
 
 from .models import (
+    Cuota,
     CuentaPersonal,
     IngresoComun,
     LiquidacionComunMensualSnapshot,
@@ -26,6 +27,124 @@ def primer_dia_mes(d: date | str) -> date:
     if isinstance(d, str):
         d = datetime.strptime(d[:10], '%Y-%m-%d').date()
     return date(d.year, d.month, 1)
+
+
+def _calcular_mes_base_cuotas(fecha_gasto: date, dia_facturacion: int | None) -> date:
+    if not dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+    if fecha_gasto.day <= dia_facturacion:
+        return date(fecha_gasto.year, fecha_gasto.month, 1)
+    siguiente = date(fecha_gasto.year, fecha_gasto.month, 1) + relativedelta(months=1)
+    return date(siguiente.year, siguiente.month, 1)
+
+
+def _plan_cuotas_esperado(mov: Movimiento) -> list[dict]:
+    n = mov.num_cuotas or 0
+    if n <= 0:
+        return []
+
+    monto_base = Decimal(str(mov.monto))
+    if mov.monto_cuota:
+        monto_cuota = Decimal(str(mov.monto_cuota))
+    else:
+        monto_cuota = (monto_base / n).quantize(Decimal('0.01'), rounding=ROUND_DOWN)
+    diferencia = monto_base - (monto_cuota * n)
+
+    dia_facturacion = mov.tarjeta.dia_facturacion if mov.tarjeta else None
+    mes_base = _calcular_mes_base_cuotas(mov.fecha, dia_facturacion)
+    plan = []
+    for i in range(n):
+        plan.append({
+            'numero': i + 1,
+            'monto': monto_cuota + (diferencia if i == 0 else Decimal('0.00')),
+            'mes_facturacion': mes_base + relativedelta(months=i),
+        })
+    return plan
+
+
+def reparar_cuotas_credito_familia(familia_id: int) -> dict:
+    """
+    Repara cuotas de movimientos CREDITO preservando historia de pagos:
+    - Actualiza monto y, si incluir=True, mes_facturacion de cuotas no pagadas.
+    - Crea cuotas faltantes.
+    - Elimina cuotas sobrantes no pagadas.
+    - Nunca modifica ni elimina cuotas con estado PAGADO.
+    """
+    stats = {
+        'movimientos_credito': 0,
+        'cuotas_creadas': 0,
+        'cuotas_actualizadas': 0,
+        'cuotas_eliminadas': 0,
+        'cuotas_pagadas_omitidas': 0,
+    }
+
+    movimientos = (
+        Movimiento.objects.filter(familia_id=familia_id, metodo_pago__tipo='CREDITO')
+        .select_related('tarjeta')
+        .order_by('id')
+    )
+    stats['movimientos_credito'] = movimientos.count()
+
+    for mov in movimientos:
+        esperadas = _plan_cuotas_esperado(mov)
+        existentes = list(Cuota.objects.filter(movimiento=mov).order_by('numero', 'id'))
+
+        existentes_por_num: dict[int, list[Cuota]] = {}
+        for c in existentes:
+            existentes_por_num.setdefault(c.numero, []).append(c)
+
+        numeros_esperados = {e['numero'] for e in esperadas}
+        pagadas = [c for c in existentes if c.estado == 'PAGADO']
+        stats['cuotas_pagadas_omitidas'] += len(pagadas)
+
+        for e in esperadas:
+            num = e['numero']
+            candidatos = existentes_por_num.get(num, [])
+            base = candidatos[0] if candidatos else None
+
+            if base is None:
+                Cuota.objects.create(
+                    movimiento=mov,
+                    numero=num,
+                    monto=e['monto'],
+                    mes_facturacion=e['mes_facturacion'],
+                    estado='PENDIENTE',
+                    incluir=True,
+                )
+                stats['cuotas_creadas'] += 1
+                continue
+
+            if base.estado != 'PAGADO':
+                cambios = []
+                if base.monto != e['monto']:
+                    base.monto = e['monto']
+                    cambios.append('monto')
+                # Si fue excluida manualmente, se respeta su desplazamiento de mes.
+                if base.incluir and base.mes_facturacion != e['mes_facturacion']:
+                    base.mes_facturacion = e['mes_facturacion']
+                    cambios.append('mes_facturacion')
+                if cambios:
+                    base.save(update_fields=cambios)
+                    stats['cuotas_actualizadas'] += 1
+
+            duplicadas = candidatos[1:] if len(candidatos) > 1 else []
+            for dup in duplicadas:
+                if dup.estado == 'PAGADO':
+                    stats['cuotas_pagadas_omitidas'] += 1
+                    continue
+                dup.delete()
+                stats['cuotas_eliminadas'] += 1
+
+        for c in existentes:
+            if c.numero in numeros_esperados:
+                continue
+            if c.estado == 'PAGADO':
+                stats['cuotas_pagadas_omitidas'] += 1
+                continue
+            c.delete()
+            stats['cuotas_eliminadas'] += 1
+
+    return stats
 
 
 def ultimo_mes_cerrado(hoy: date | None = None) -> date:

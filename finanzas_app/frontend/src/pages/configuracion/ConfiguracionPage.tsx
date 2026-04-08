@@ -117,12 +117,16 @@ export default function ConfiguracionPage() {
       } else {
         const nRh = data.meses_resumen_historico_familia
         const nSu = data.meses_saldos_personales_usuario
+        const cr = data.cuotas_reparadas
         const extra =
           nRh != null || nSu != null
             ? ` Resumen familiar: ${nRh ?? '—'} meses; tus cuentas personales: ${nSu ?? '—'} meses.`
             : ''
+        const extraCuotas = cr
+          ? ` Cuotas crédito reparadas: ${cr.cuotas_creadas} creadas, ${cr.cuotas_actualizadas} actualizadas, ${cr.cuotas_eliminadas} eliminadas.`
+          : ''
         setMsgRecalculo(
-          `Recálculo histórico completado (${data.desde ?? 'inicio'} → ${data.hasta ?? 'hoy'}).${extra}`
+          `Recálculo histórico completado (${data.desde ?? 'inicio'} → ${data.hasta ?? 'hoy'}).${extra}${extraCuotas}`
         )
       }
     } catch (e: unknown) {
@@ -229,7 +233,8 @@ export default function ConfiguracionPage() {
             <h3 className={styles.accionTitulo}>Recálculo histórico mensual</h3>
             <p className={styles.accionTexto}>
               Actualiza liquidación común, saldos por cuenta de la familia, snapshots del resumen familiar
-              por mes y vuelve a generar los saldos mensuales de tus cuentas personales.
+              por mes, vuelve a generar los saldos mensuales de tus cuentas personales y repara cuotas de tarjeta
+              para corregir posibles inconsistencias.
             </p>
           </div>
           <button

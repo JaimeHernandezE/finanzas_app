@@ -54,6 +54,13 @@ export interface RecalculoHistoricoResult {
   meses_resumen_historico_familia?: number
   /** Meses recalculados en saldos por cuenta del usuario autenticado */
   meses_saldos_personales_usuario?: number
+  cuotas_reparadas?: {
+    movimientos_credito: number
+    cuotas_creadas: number
+    cuotas_actualizadas: number
+    cuotas_eliminadas: number
+    cuotas_pagadas_omitidas: number
+  }
 }
 
 /** GET/PUT /api/finanzas/sueldos-estimados-prorrateo/ */
