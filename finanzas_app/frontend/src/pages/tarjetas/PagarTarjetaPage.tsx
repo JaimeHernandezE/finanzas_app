@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
 import type { SelectOption } from '@/components/ui'
@@ -89,14 +89,22 @@ function CuotaRow({
   cuota,
   totalCuotas,
   onToggleIncluir,
+  onOpenMovimiento,
 }: {
   cuota: Cuota
   totalCuotas?: number
   onToggleIncluir: (id: number) => void
+  onOpenMovimiento?: (movimientoId: number) => void
 }) {
   const { formatMonto } = useConfig()
   const excluida = !cuota.incluir
   const deshabilitado = cuota.estado === 'PAGADO'
+  const movimientoId = cuota.movimiento ?? cuota.movimientoId ?? null
+  const clickable = movimientoId != null && onOpenMovimiento != null
+  const abrirEdicion = () => {
+    if (!clickable) return
+    onOpenMovimiento(movimientoId)
+  }
   const badgeClass =
     cuota.estado === 'PENDIENTE' ? styles.badgePendiente
     : cuota.estado === 'FACTURADO' ? styles.badgeFacturado
@@ -112,12 +120,26 @@ function CuotaRow({
     cat && com ? `${cat} - ${com}` : cat || com || null
 
   return (
-    <div className={styles.cuotaRow}>
+    <div
+      className={`${styles.cuotaRow} ${clickable ? styles.cuotaRowClickable : ''}`}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onClick={clickable ? abrirEdicion : undefined}
+      onKeyDown={clickable ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          abrirEdicion()
+        }
+      } : undefined}
+      aria-label={clickable ? 'Editar movimiento de la cuota' : undefined}
+    >
       <input
         type="checkbox"
         className={styles.cuotaCheckbox}
         checked={cuota.incluir}
         disabled={deshabilitado}
+        onPointerDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
         onChange={() => onToggleIncluir(cuota.id)}
         aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''}${totalCuotas ? ` de ${totalCuotas}` : ''} en el pago`}
       />
@@ -534,7 +556,9 @@ function ModalNuevoGasto({
 
 export default function PagarTarjetaPage() {
   const { formatMonto } = useConfig()
+  const location = useLocation()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: cuentasData } = useCuentasPersonales()
   const cuentaOptionsModal = useMemo(
     () =>
@@ -548,9 +572,27 @@ export default function PagarTarjetaPage() {
   const { data: tarjetasData } = useTarjetas()
   const tarjetas = (tarjetasData ?? []) as Tarjeta[]
   const [tarjetaSeleccionada, setTarjetaSeleccionada] = useState('')
+  const tarjetaQuery = searchParams.get('tarjeta')
   useEffect(() => {
-    if (tarjetas[0] && !tarjetaSeleccionada) setTarjetaSeleccionada(String(tarjetas[0].id))
-  }, [tarjetas, tarjetaSeleccionada])
+    if (!tarjetas.length) return
+
+    if (tarjetaQuery && tarjetas.some(t => String(t.id) === tarjetaQuery)) {
+      if (tarjetaSeleccionada !== tarjetaQuery) setTarjetaSeleccionada(tarjetaQuery)
+      return
+    }
+
+    if (!tarjetaSeleccionada || !tarjetas.some(t => String(t.id) === tarjetaSeleccionada)) {
+      setTarjetaSeleccionada(String(tarjetas[0].id))
+    }
+  }, [tarjetas, tarjetaSeleccionada, tarjetaQuery])
+  useEffect(() => {
+    if (!tarjetaSeleccionada) return
+    if (searchParams.get('tarjeta') === tarjetaSeleccionada) return
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.set('tarjeta', tarjetaSeleccionada)
+    setSearchParams(nextParams, { replace: true })
+  }, [tarjetaSeleccionada, searchParams, setSearchParams])
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [vistaActiva, setVistaActiva] = useState<VistaTarjeta>('UTILIZADO')
@@ -592,11 +634,13 @@ export default function PagarTarjetaPage() {
   const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
   const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
+  const [modalConfirmacionFinalPago, setModalConfirmacionFinalPago] = useState(false)
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [errorPago, setErrorPago] = useState<string | null>(null)
+  const returnTo = `${location.pathname}${location.search}`
 
   const toMonthIndex = (fecha: string | undefined) => {
     if (!fecha) return null
@@ -676,6 +720,7 @@ export default function PagarTarjetaPage() {
       setTotalPagado(totalCuotasPagadas)
       setCargosAdicionales([])
       setModalConfirmarPago(false)
+      setModalConfirmacionFinalPago(false)
       setExitoPostPago(true)
       void refetch()
       void refetchCuotasTarjeta()
@@ -691,6 +736,9 @@ export default function PagarTarjetaPage() {
 
   const tarjeta = tarjetas.find(t => String(t.id) === tarjetaSeleccionada)
   const tarjetaId = tarjeta?.id ?? null
+  const irEditarMovimiento = (movimientoId: number) => {
+    navigate(`/gastos/${movimientoId}/editar?returnTo=${encodeURIComponent(returnTo)}`)
+  }
 
   const movimientosPersonalesTarjeta = useMemo(
     () =>
@@ -876,14 +924,6 @@ export default function PagarTarjetaPage() {
           </button>
         </div>
         <div className={styles.filterBarSpacer} />
-        <button
-          type="button"
-          className={styles.btnPrimary}
-          disabled={tarjetaId == null}
-          onClick={() => setModalNuevoGasto(true)}
-        >
-          + Gasto
-        </button>
       </div>
 
       {vistaActiva === 'UTILIZADO' && (
@@ -915,7 +955,20 @@ export default function PagarTarjetaPage() {
                       <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
                     </div>
                     {grupo.movimientos.slice(0, 10).map(mov => (
-                      <div key={mov.id} className={styles.movItem}>
+                      <div
+                        key={mov.id}
+                        className={`${styles.movItem} ${styles.movItemClickable}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => irEditarMovimiento(mov.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            irEditarMovimiento(mov.id)
+                          }
+                        }}
+                        aria-label={`Editar movimiento ${mov.comentario || mov.categoria_nombre}`}
+                      >
                         <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
                         <div className={styles.movInfo}>
                           <span className={styles.movDesc}>{mov.comentario || '—'}</span>
@@ -946,7 +999,20 @@ export default function PagarTarjetaPage() {
                 <p className={styles.movGrupoVacio}>Sin movimientos comunes para este período.</p>
               ) : (
                 utilizadoComunVisible.slice(0, 10).map(mov => (
-                  <div key={mov.id} className={styles.movItem}>
+                  <div
+                    key={mov.id}
+                    className={`${styles.movItem} ${styles.movItemClickable}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => irEditarMovimiento(mov.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        irEditarMovimiento(mov.id)
+                      }
+                    }}
+                    aria-label={`Editar movimiento ${mov.comentario || mov.categoria_nombre}`}
+                  >
                     <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
                     <div className={styles.movInfo}>
                       <span className={styles.movDesc}>{mov.comentario || '—'}</span>
@@ -999,6 +1065,7 @@ export default function PagarTarjetaPage() {
                   cuota={cuota}
                   totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
                   onToggleIncluir={toggleIncluir}
+                  onOpenMovimiento={irEditarMovimiento}
                 />
               ))
             )}
@@ -1051,6 +1118,7 @@ export default function PagarTarjetaPage() {
             total={total}
             onRegistrar={() => {
               setErrorPago(null)
+              setModalConfirmacionFinalPago(false)
               setModalConfirmarPago(true)
             }}
           />
@@ -1079,47 +1147,87 @@ export default function PagarTarjetaPage() {
       {modalConfirmarPago && (
         <div
           className={styles.modalOverlay}
-          onClick={() => !guardandoPago && setModalConfirmarPago(false)}
+          onClick={() => {
+            if (guardandoPago) return
+            setModalConfirmacionFinalPago(false)
+            setModalConfirmarPago(false)
+          }}
         >
           <div
             className={styles.modalCard}
             onClick={e => e.stopPropagation()}
           >
-            <h2 className={styles.modalTitulo}>Registrar pago</h2>
-            <p className={styles.modalTexto}>
-              {tarjeta?.nombre} — {MESES[mes]} {anio}
-              <br />
-              {cuotasIncluidasCount} cuota(s) incluidas
-              {cuotasExcluidasCount > 0 && (
-                <>
+            {!modalConfirmacionFinalPago ? (
+              <>
+                <h2 className={styles.modalTitulo}>Registrar pago</h2>
+                <p className={styles.modalTexto}>
+                  {tarjeta?.nombre} — {MESES[mes]} {anio}
                   <br />
-                  {cuotasExcluidasCount} cuota(s) pasa(n) al mes siguiente
-                </>
-              )}
-              <br />
-              <strong>Total a pagar {formatMonto(total)}</strong>
-            </p>
-            {errorPago && (
-              <p style={{ color: '#b91c1c', fontSize: 14, marginTop: 8 }}>{errorPago}</p>
+                  {cuotasIncluidasCount} cuota(s) incluidas
+                  {cuotasExcluidasCount > 0 && (
+                    <>
+                      <br />
+                      {cuotasExcluidasCount} cuota(s) se moverá(n) al mes siguiente al registrar el pago
+                    </>
+                  )}
+                  <br />
+                  <strong>Total a pagar {formatMonto(total)}</strong>
+                </p>
+                {errorPago && (
+                  <p style={{ color: '#b91c1c', fontSize: 14, marginTop: 8 }}>{errorPago}</p>
+                )}
+                <div className={styles.modalBtns}>
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    disabled={guardandoPago}
+                    onClick={() => setModalConfirmarPago(false)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    disabled={guardandoPago}
+                    onClick={() => setModalConfirmacionFinalPago(true)}
+                  >
+                    Continuar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className={styles.modalTitulo}>Confirmación final</h2>
+                <p className={styles.modalTexto}>
+                  Al aceptar, las cuotas incluidas se registrarán como pagadas y se generará un movimiento
+                  en efectivo por cada cuota pagada.
+                  <br />
+                  <br />
+                  ¿Deseas continuar?
+                </p>
+                {errorPago && (
+                  <p style={{ color: '#b91c1c', fontSize: 14, marginTop: 8 }}>{errorPago}</p>
+                )}
+                <div className={styles.modalBtns}>
+                  <button
+                    type="button"
+                    className={styles.btnGhost}
+                    disabled={guardandoPago}
+                    onClick={() => setModalConfirmacionFinalPago(false)}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    disabled={guardandoPago}
+                    onClick={handleConfirmarPago}
+                  >
+                    {guardandoPago ? 'Registrando…' : 'Aceptar y registrar'}
+                  </button>
+                </div>
+              </>
             )}
-            <div className={styles.modalBtns}>
-              <button
-                type="button"
-                className={styles.btnGhost}
-                disabled={guardandoPago}
-                onClick={() => setModalConfirmarPago(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className={styles.btnPrimary}
-                disabled={guardandoPago}
-                onClick={handleConfirmarPago}
-              >
-                {guardandoPago ? 'Registrando…' : 'Confirmar'}
-              </button>
-            </div>
           </div>
         </div>
       )}

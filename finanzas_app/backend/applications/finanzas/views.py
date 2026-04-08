@@ -10,6 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Min, OuterRef, ProtectedError, Q, Subquery, Sum
 from django.contrib.auth import get_user_model
@@ -49,6 +50,7 @@ from .serializers import (
 )
 
 logger = logging.getLogger(__name__)
+_SUELDOS_PRORRATEO_CACHE_SECONDS = 45
 
 
 def _nuevo_import_debug_id():
@@ -1711,6 +1713,10 @@ def _primer_dia_mes_param(mes: int, anio: int) -> date:
     return date(anio, mes, 1)
 
 
+def _cache_key_sueldos_prorrateo(familia_id: int, mes: int, anio: int) -> str:
+    return f'sueldos-prorrateo:{familia_id}:{anio}:{mes}'
+
+
 @api_view(['GET', 'PUT'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -1752,12 +1758,18 @@ def sueldos_estimados_prorrateo(request):
         return Response({'mes': mes_i, 'anio': anio_i, 'montos': {}}, status=status.HTTP_200_OK)
 
     if request.method == 'GET':
+        cache_key = _cache_key_sueldos_prorrateo(usuario.familia_id, mes_i, anio_i)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
         rows = SueldoEstimadoProrrateoMensual.objects.filter(
             usuario_id__in=miembros_ids,
             mes=primer,
         ).values('usuario_id', 'monto')
         montos = {str(r['usuario_id']): str(r['monto']) for r in rows}
-        return Response({'mes': mes_i, 'anio': anio_i, 'montos': montos})
+        payload = {'mes': mes_i, 'anio': anio_i, 'montos': montos}
+        cache.set(cache_key, payload, _SUELDOS_PRORRATEO_CACHE_SECONDS)
+        return Response(payload)
 
     if request.method == 'PUT':
         raw = request.data.get('montos')
@@ -1817,7 +1829,13 @@ def sueldos_estimados_prorrateo(request):
             mes=primer,
         ).values('usuario_id', 'monto')
         montos = {str(r['usuario_id']): str(r['monto']) for r in rows}
-        return Response({'mes': mes_i, 'anio': anio_i, 'montos': montos})
+        payload = {'mes': mes_i, 'anio': anio_i, 'montos': montos}
+        cache.set(
+            _cache_key_sueldos_prorrateo(usuario.familia_id, mes_i, anio_i),
+            payload,
+            _SUELDOS_PRORRATEO_CACHE_SECONDS,
+        )
+        return Response(payload)
 
 
 @api_view(['GET'])

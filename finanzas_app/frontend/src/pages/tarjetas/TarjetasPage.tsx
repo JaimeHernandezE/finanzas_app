@@ -16,6 +16,7 @@ interface TarjetaRow {
 export default function TarjetasPage() {
   const { data, loading, error, refetch } = useTarjetas()
   const tarjetas = (data ?? []) as TarjetaRow[]
+  const pagarTarjetaPath = tarjetas[0] ? `/tarjetas/pagar?tarjeta=${tarjetas[0].id}` : '/tarjetas/pagar'
 
   const [nombre, setNombre] = useState('')
   const [banco, setBanco] = useState('')
@@ -72,7 +73,7 @@ export default function TarjetasPage() {
       </p>
 
       <div className={styles.actionsTop}>
-        <Link to="/tarjetas/pagar" className={styles.linkPagar}>
+        <Link to={pagarTarjetaPath} className={styles.linkPagar}>
           Ir a pagar tarjeta →
         </Link>
       </div>
@@ -97,7 +98,7 @@ export default function TarjetasPage() {
                   </span>
                 )}
               </div>
-              <Link to="/tarjetas/pagar" className={styles.linkPagar}>
+              <Link to={`/tarjetas/pagar?tarjeta=${t.id}`} className={styles.linkPagar}>
                 Estado de cuenta
               </Link>
             </div>

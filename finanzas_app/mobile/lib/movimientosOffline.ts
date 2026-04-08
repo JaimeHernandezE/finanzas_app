@@ -41,6 +41,16 @@ function isOfflineError(error: unknown): boolean {
   )
 }
 
+function isTransientServerError(error: unknown): boolean {
+  const e = error as { response?: { status?: number } }
+  const status = e?.response?.status
+  return status === 502 || status === 503 || status === 504
+}
+
+function shouldQueueForLater(error: unknown): boolean {
+  return isOfflineError(error) || isTransientServerError(error)
+}
+
 async function readOutbox(): Promise<OutboxItem[]> {
   const raw = await AsyncStorage.getItem(OUTBOX_KEY)
   if (!raw) return []
@@ -169,7 +179,7 @@ export function createMovimientoOptimistic(
       setSyncBannerPhase(qc, 'synced')
       scheduleSyncBannerHide(qc, 2000)
     } catch (error) {
-      if (isOfflineError(error)) {
+      if (shouldQueueForLater(error)) {
         await enqueue({
           kind: 'create',
           local_id: localId,
@@ -216,7 +226,7 @@ export function patchMovimientoOptimistic(
       updateMovimientoInCaches(qc, id, res.data as Record<string, unknown>)
       invalidateFinanzasTrasMovimiento(qc)
     } catch (error) {
-      if (isOfflineError(error)) {
+      if (shouldQueueForLater(error)) {
         await enqueue({ kind: 'patch', id, payload, created_at: Date.now() })
         updateMovimientoInCaches(qc, id, { ...payload, _offline_pending: true })
       } else {
@@ -243,7 +253,7 @@ export async function deleteMovimientoOptimistic(qc: QueryClient, id: number) {
       await movimientosApi.deleteMovimiento(id)
       invalidateFinanzasTrasMovimiento(qc)
     } catch (error) {
-      if (isOfflineError(error)) {
+      if (shouldQueueForLater(error)) {
         await enqueue({ kind: 'delete', id, created_at: Date.now() })
       } else {
         // Restaurar lista desde servidor
@@ -280,7 +290,7 @@ export async function flushMovimientosOutbox(qc: QueryClient) {
       }
       await movimientosApi.deleteMovimiento(mappedId)
     } catch (error) {
-      if (isOfflineError(error)) {
+      if (shouldQueueForLater(error)) {
         pending.push(item)
         continue
       }

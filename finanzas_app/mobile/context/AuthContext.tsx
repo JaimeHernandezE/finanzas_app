@@ -107,6 +107,33 @@ function mapFirebaseError(code: string): string {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRetriableStatus(status?: number): boolean {
+  return status === 502 || status === 503 || status === 504
+}
+
+async function getMeConReintento(firebaseToken: string) {
+  let lastError: unknown = null
+  const waits = [0, 900, 1900]
+  for (let i = 0; i < waits.length; i++) {
+    if (waits[i] > 0) await sleep(waits[i])
+    try {
+      return await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
+        headers: { Authorization: `Bearer ${firebaseToken}` },
+      })
+    } catch (err) {
+      lastError = err
+      if (!axios.isAxiosError(err) || !isRetriableStatus(err.response?.status)) {
+        throw err
+      }
+    }
+  }
+  throw lastError
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const [usuario, setUsuario] = useState<Usuario | null>(null)
@@ -149,9 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sincronizarSesionBackend = useCallback(
     async (firebaseToken: string, redirectToTabs = true) => {
       await SecureStore.setItemAsync('auth_token', firebaseToken)
-      const res = await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
-        headers: { Authorization: `Bearer ${firebaseToken}` },
-      })
+      const res = await getMeConReintento(firebaseToken)
       setUsuario(res.data)
       if (redirectToTabs) {
         router.replace('/(tabs)')
@@ -187,9 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await SecureStore.setItemAsync('auth_token', tokenToUse)
       }
 
-      const res = await axios.get(`${API_BASE_URL}/api/usuarios/me/`, {
-        headers: { Authorization: `Bearer ${tokenToUse}` },
-      })
+      const res = await getMeConReintento(tokenToUse)
       setUsuario(res.data)
     } catch {
       await SecureStore.deleteItemAsync('auth_token')

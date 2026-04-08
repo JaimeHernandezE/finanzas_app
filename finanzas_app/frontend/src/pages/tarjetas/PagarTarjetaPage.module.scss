@@ -308,6 +308,15 @@
   }
 }
 
+.movItemClickable {
+  cursor: pointer;
+  transition: background $transition-fast;
+
+  &:hover {
+    background: #f7f7f5;
+  }
+}
+
 .movFecha {
   font-size: $font-size-xs;
   color: $color-text-muted;
@@ -453,6 +462,10 @@
   &:hover {
     background: #f7f7f5;
   }
+}
+
+.cuotaRowClickable {
+  cursor: pointer;
 }
 
 .cuotaCheckbox {
@@ -812,13 +825,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 40px;
+  height: 40px;
   border: none;
   border-radius: $radius-base;
-  background: none;
+  background: rgba(0, 0, 0, 0.04);
   cursor: pointer;
-  font-size: $font-size-base;
+  font-size: 24px;
+  line-height: 1;
   color: $color-text-muted;
   transition: background $transition-fast;
 

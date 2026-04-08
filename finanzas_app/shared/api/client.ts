@@ -45,6 +45,14 @@ const client = axios.create({
   timeout: getApiTimeoutMs(),
 })
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRetriableStatus(status?: number): boolean {
+  return status === 502 || status === 503 || status === 504
+}
+
 client.interceptors.request.use(async (config) => {
   config.baseURL = getApiBaseUrl()
   config.timeout = getApiTimeoutMs()
@@ -58,6 +66,24 @@ client.interceptors.request.use(async (config) => {
 client.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const cfg = error?.config as
+      | (Record<string, unknown> & { method?: string; __retryCount?: number })
+      | undefined
+    const method = String(cfg?.method ?? '').toLowerCase()
+    const safeMethod = method === 'get' || method === 'head' || method === 'options'
+    const status = error?.response?.status as number | undefined
+
+    // Reintento corto para errores transitorios del servidor/proxy.
+    if (cfg && safeMethod && isRetriableStatus(status)) {
+      const retries = Number(cfg.__retryCount ?? 0)
+      if (retries < 2) {
+        cfg.__retryCount = retries + 1
+        const waitMs = retries === 0 ? 800 : 1800
+        await sleep(waitMs)
+        return client.request(cfg as any)
+      }
+    }
+
     if (error.response?.status === 401) {
       const reqUrl = String(error.config?.url ?? '')
       if (reqUrl.includes('/api/export/sincronizar')) {
