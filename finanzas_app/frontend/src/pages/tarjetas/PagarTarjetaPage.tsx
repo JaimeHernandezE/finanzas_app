@@ -657,6 +657,7 @@ export default function PagarTarjetaPage() {
 
   const [cargosAdicionales, setCargosAdicionales] = useState<CargoAdicional[]>([])
   const [formularioCargoVisible, setFormularioCargoVisible] = useState(false)
+  const [incluirPorCuota, setIncluirPorCuota] = useState<Record<number, boolean>>({})
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
   const [modalConfirmacionFinalPago, setModalConfirmacionFinalPago] = useState(false)
   const [exitoPostPago, setExitoPostPago] = useState(false)
@@ -702,6 +703,16 @@ export default function PagarTarjetaPage() {
   const puedeAvanzar =
     hayCuotasActivas && (maxMesNavegableIdx === null || mesSeleccionadoIdx < maxMesNavegableIdx)
 
+  useEffect(() => {
+    setIncluirPorCuota((prev) => {
+      const next: Record<number, boolean> = {}
+      for (const c of cuotas) {
+        next[c.id] = prev[c.id] ?? c.incluir
+      }
+      return next
+    })
+  }, [cuotas])
+
   const irAnterior = () => {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }
     else setMes(m => m - 1)
@@ -712,22 +723,30 @@ export default function PagarTarjetaPage() {
     else setMes(m => m + 1)
   }
 
+  const cuotasConSeleccionLocal = useMemo(
+    () =>
+      cuotas.map((c) => ({
+        ...c,
+        incluir: incluirPorCuota[c.id] ?? c.incluir,
+      })),
+    [cuotas, incluirPorCuota],
+  )
+
   // Filtrado por estado (mock: todas las cuotas son del mes/tarjeta seleccionados)
-  const cuotasFiltradas = cuotas
+  const cuotasFiltradas = cuotasConSeleccionLocal
 
   const montoNum = (c: Cuota) => typeof c.monto === 'number' ? c.monto : Number(c.monto)
-  const incluido = cuotas
+  const incluido = cuotasConSeleccionLocal
     .filter(c => c.incluir && c.estado !== 'PAGADO')
     .reduce((s, c) => s + montoNum(c), 0)
-  const excluido = cuotas.filter(c => !c.incluir).reduce((s, c) => s + montoNum(c), 0)
+  const excluido = cuotasConSeleccionLocal.filter(c => !c.incluir).reduce((s, c) => s + montoNum(c), 0)
   const cargos = cargosAdicionales.reduce((s, c) => s + c.monto, 0)
   const total = incluido + cargos
 
-  const toggleIncluir = async (id: number) => {
-    const c = cuotas.find(x => x.id === id)
+  const toggleIncluir = (id: number) => {
+    const c = cuotasConSeleccionLocal.find(x => x.id === id)
     if (!c) return
-    await movimientosApi.updateCuota(id, { incluir: !c.incluir })
-    refetch()
+    setIncluirPorCuota((prev) => ({ ...prev, [id]: !c.incluir }))
   }
 
   const agregarCargo = (descripcion: string, monto: number) => {
@@ -743,7 +762,7 @@ export default function PagarTarjetaPage() {
   }
 
   const handleConfirmarPago = async () => {
-    const aMarcar = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO')
+    const aMarcar = cuotasConSeleccionLocal.filter(c => c.incluir && c.estado !== 'PAGADO')
     if (!tarjetaId || aMarcar.length === 0) {
       setErrorPago('No hay cuotas seleccionadas para pagar.')
       return
@@ -882,8 +901,8 @@ export default function PagarTarjetaPage() {
   if (cuotasError || cuotasTarjetaError || movPersonalError || movComunError) {
     return <ErrorCarga mensaje={cuotasError || cuotasTarjetaError || movPersonalError || movComunError || 'Error al cargar datos.'} />
   }
-  const cuotasIncluidasCount = cuotas.filter(c => c.incluir && c.estado !== 'PAGADO').length
-  const cuotasExcluidasCount = cuotas.filter(c => !c.incluir).length
+  const cuotasIncluidasCount = cuotasConSeleccionLocal.filter(c => c.incluir && c.estado !== 'PAGADO').length
+  const cuotasExcluidasCount = cuotasConSeleccionLocal.filter(c => !c.incluir).length
 
   // ── Pantalla de éxito post-pago ─────────────────────────────────────────────
   if (exitoPostPago) {
