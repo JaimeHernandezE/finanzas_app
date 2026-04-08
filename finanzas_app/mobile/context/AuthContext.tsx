@@ -176,8 +176,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sincronizarSesionBackend = useCallback(
     async (firebaseToken: string, redirectToTabs = true) => {
       await SecureStore.setItemAsync('auth_token', firebaseToken)
-      const res = await getMeConReintento(firebaseToken)
-      setUsuario(res.data)
+      try {
+        const res = await getMeConReintento(firebaseToken)
+        setUsuario(res.data)
+      } catch (err) {
+        // Paridad con web: si /me responde 404, intentar registro automático.
+        if (axios.isAxiosError(err) && err.response?.status === 404) {
+          const reg = await axios.post(
+            `${API_BASE_URL}/api/usuarios/registro/`,
+            {},
+            { headers: { Authorization: `Bearer ${firebaseToken}` } }
+          )
+          setUsuario(reg.data)
+        } else {
+          throw err
+        }
+      }
       if (redirectToTabs) {
         router.replace('/(tabs)')
       }

@@ -9,7 +9,6 @@ import {
 import { useRouter } from 'expo-router'
 import * as WebBrowser from 'expo-web-browser'
 import * as Google from 'expo-auth-session/providers/google'
-import * as AuthSession from 'expo-auth-session'
 import Constants from 'expo-constants'
 import { useAuth } from '../../context/AuthContext'
 
@@ -33,16 +32,11 @@ export default function LoginScreen() {
     process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ?? webClientId
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID ?? webClientId
   const isExpoGo = Constants.appOwnership === 'expo'
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'finanzas',
-    path: 'oauthredirect',
-  })
 
   const [, response, promptAsync] = Google.useIdTokenAuthRequest({
     webClientId,
     androidClientId,
     iosClientId,
-    redirectUri,
   })
 
   useEffect(() => {
