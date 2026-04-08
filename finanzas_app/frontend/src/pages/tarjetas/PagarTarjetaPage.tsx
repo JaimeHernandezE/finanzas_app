@@ -273,7 +273,6 @@ function TotalesPanel({
       <button
         type="button"
         className={`${styles.btnPrimary} ${styles.btnRegistrar}`}
-        disabled={total === 0}
         onClick={onRegistrar}
       >
         Registrar pago
@@ -762,22 +761,34 @@ export default function PagarTarjetaPage() {
   }
 
   const handleConfirmarPago = async () => {
-    const aMarcar = cuotasConSeleccionLocal.filter(c => c.incluir && c.estado !== 'PAGADO')
-    if (!tarjetaId || aMarcar.length === 0) {
-      setErrorPago('No hay cuotas seleccionadas para pagar.')
+    const cuotasPendientes = cuotasConSeleccionLocal.filter(c => c.estado !== 'PAGADO')
+    const cuotasIncluidas = cuotasPendientes.filter(c => c.incluir)
+    const cuotasExcluidas = cuotasPendientes.filter(c => !c.incluir)
+
+    if (!tarjetaId) {
+      setErrorPago('No hay tarjeta seleccionada.')
       return
     }
     setGuardandoPago(true)
     setErrorPago(null)
     try {
-      await movimientosApi.pagarTarjeta({
-        tarjeta_id: tarjetaId,
-        mes: mes + 1,
-        anio,
-        fecha_pago: new Date().toISOString().slice(0, 10),
-        cuota_ids: aMarcar.map(c => c.id),
-      })
-      const totalCuotasPagadas = aMarcar.reduce((s, c) => s + montoNum(c), 0)
+      if (cuotasExcluidas.length > 0) {
+        await Promise.all(
+          cuotasExcluidas.map((c) => movimientosApi.updateCuota(c.id, { incluir: false })),
+        )
+      }
+
+      if (cuotasIncluidas.length > 0) {
+        await movimientosApi.pagarTarjeta({
+          tarjeta_id: tarjetaId,
+          mes: mes + 1,
+          anio,
+          fecha_pago: new Date().toISOString().slice(0, 10),
+          cuota_ids: cuotasIncluidas.map(c => c.id),
+        })
+      }
+
+      const totalCuotasPagadas = cuotasIncluidas.reduce((s, c) => s + montoNum(c), 0)
       setTotalPagado(totalCuotasPagadas)
       setCargosAdicionales([])
       setModalConfirmarPago(false)
