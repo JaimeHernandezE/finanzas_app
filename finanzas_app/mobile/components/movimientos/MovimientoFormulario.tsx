@@ -271,6 +271,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
     /** Modo «nuevo gasto con esta tarjeta»: crédito + tarjeta fijos; ámbito y cuenta editables. */
     const [creditoTarjetaFijaId, setCreditoTarjetaFijaId] = useState<number | null>(null)
+    const submitLockRef = useRef(false)
     const formScrollRef = useRef<RNScrollView | null>(null)
     const [keyboardHeight, setKeyboardHeight] = useState(0)
     const { data: catData } = useCategorias({
@@ -611,6 +612,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           )
           return
         }
+        if (submitLockRef.current) return
+        submitLockRef.current = true
         setSaving(true)
         try {
           patchMovimientoOptimistic(
@@ -653,6 +656,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           }
         } finally {
           setSaving(false)
+          submitLockRef.current = false
         }
         return
       }
@@ -758,6 +762,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           )
           return
         }
+        if (submitLockRef.current) return
+        submitLockRef.current = true
         setSaving(true)
         try {
           const optimisticRowPatch: Record<string, unknown> = {
@@ -797,31 +803,40 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           }
         } finally {
           setSaving(false)
+          submitLockRef.current = false
         }
         return
       }
 
+      if (submitLockRef.current) return
+      submitLockRef.current = true
+      setSaving(true)
       const eraModoTarjetaFija = creditoTarjetaFijaId != null
-      createMovimientoOptimistic(queryClient, payload, {
-        categoria_nombre: categoriaNombre ?? '—',
-        metodo_pago_tipo: metodoTipo,
-      })
-      if (eraModoTarjetaFija) {
-        onPostMovimientoGuardado?.()
-        cerrarForm()
-        return
-      }
-      if (esStandalone && returnToSafe) {
-        router.replace(returnToSafe as never)
-      } else if (esStandalone && cuentaFija != null) {
-        router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
-      } else {
-        cerrarForm()
-        if (payload.ambito === 'PERSONAL' && cuentaDestino > 0) {
-          router.replace(`/cuenta/${cuentaDestino}` as never)
-        } else {
-          refetchMovimientosComun?.()
+      try {
+        createMovimientoOptimistic(queryClient, payload, {
+          categoria_nombre: categoriaNombre ?? '—',
+          metodo_pago_tipo: metodoTipo,
+        })
+        if (eraModoTarjetaFija) {
+          onPostMovimientoGuardado?.()
+          cerrarForm()
+          return
         }
+        if (esStandalone && returnToSafe) {
+          router.replace(returnToSafe as never)
+        } else if (esStandalone && cuentaFija != null) {
+          router.replace(`/cuenta/${cuentaDestino || cuentaFija}` as never)
+        } else {
+          cerrarForm()
+          if (payload.ambito === 'PERSONAL' && cuentaDestino > 0) {
+            router.replace(`/cuenta/${cuentaDestino}` as never)
+          } else {
+            refetchMovimientosComun?.()
+          }
+        }
+      } finally {
+        setSaving(false)
+        submitLockRef.current = false
       }
     }
 
