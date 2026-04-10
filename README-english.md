@@ -29,15 +29,13 @@ I knew exactly what I needed. I just needed to build it.
 - Each member sees their own data; shared expenses are visible to all
 
 **Other modules**
-- Investment tracking (mutual funds) with return calculation
-- Trip budgeting: plan by category, track spending in real time
 - Daily backup: full `pg_dump` uploaded to a private Google Drive folder + Google Sheets export for analysis
 
 ---
 
 ## Demo
 
-The demo environment has two users — Jaime and Gloria — with 15 months of realistic fictional data. Switch between them from the sidebar to see how the app looks from each perspective.
+The demo environment has two users — Jaime and Gloria — with 6 months of realistic fictional data. Switch between them from the sidebar to see how the app looks from each perspective.
 
 > Data resets on every deploy. No real data is ever stored in the demo.
 
