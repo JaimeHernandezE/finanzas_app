@@ -420,6 +420,10 @@ export default function DashboardScreen() {
     setSelectorY(event.nativeEvent.layout.y)
   }
 
+  function irEditarMovimiento(item: Movimiento) {
+    router.push(`/nuevo-movimiento?editar=${item.id}&cuenta=${item.cuenta ?? ''}` as never)
+  }
+
   return (
     <MobileShell title="Dashboard">
       <ScrollView
@@ -660,8 +664,14 @@ export default function DashboardScreen() {
                       Number(item.usuario) === Number(user.id)
 
                     return (
-                      <View
+                      <TouchableOpacity
                         key={item.id}
+                        onPress={() => {
+                          if (!puedeEditar) return
+                          irEditarMovimiento(item)
+                        }}
+                        disabled={!puedeEditar}
+                        activeOpacity={0.75}
                         className={`px-5 py-3 flex-row items-start ${i < ultimos.length - 1 ? 'border-b border-border' : ''}`}
                       >
                         <Text className="text-[11px] text-muted min-w-[48px] pt-0.5">
@@ -685,21 +695,9 @@ export default function DashboardScreen() {
                                 {badge.label}
                               </Text>
                             </View>
-                            {puedeEditar && (
-                              <TouchableOpacity
-                                onPress={() =>
-                                  router.push(
-                                    `/nuevo-movimiento?editar=${item.id}&cuenta=${item.cuenta ?? ''}` as never
-                                  )
-                                }
-                                hitSlop={8}
-                              >
-                                <Text className="text-dark text-xs font-semibold">Editar</Text>
-                              </TouchableOpacity>
-                            )}
                           </View>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     )
                   })}
 

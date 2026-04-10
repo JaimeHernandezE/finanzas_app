@@ -21,7 +21,7 @@ import {
   ScrollView as RNScrollView,
   Keyboard,
 } from 'react-native'
-import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
@@ -618,10 +618,9 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
     const fechaPickerValue = useMemo(() => displayToDate(form.fecha) ?? new Date(), [form.fecha])
 
-    function onFechaPickerChange(event: DateTimePickerEvent, selectedDate?: Date) {
-      setShowDatePicker(false)
-      if (event.type === 'dismissed' || !selectedDate) return
+    function onFechaSeleccionada(_event: unknown, selectedDate: Date) {
       setField('fecha', isoToDisplay(dateToIsoLocal(selectedDate)))
+      setShowDatePicker(false)
     }
 
     // Ámbito en overlay: solo lectura salvo modo tarjeta fija (desde Tarjetas).
@@ -1132,7 +1131,8 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             value={fechaPickerValue}
             mode="date"
             display="default"
-            onChange={onFechaPickerChange}
+            onValueChange={onFechaSeleccionada}
+            onDismiss={() => setShowDatePicker(false)}
           />
         )}
 

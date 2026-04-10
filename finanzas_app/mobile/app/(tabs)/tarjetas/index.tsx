@@ -1,8 +1,11 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
+import { movimientosApi } from '@finanzas/shared/api/movimientos'
+import { useApi } from '@finanzas/shared/hooks/useApi'
+import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../../components/layout/MobileShell'
 
 interface Tarjeta {
@@ -11,6 +14,18 @@ interface Tarjeta {
   banco: string
   dia_facturacion: number | null
   dia_vencimiento: number | null
+}
+
+interface CuotaResumen {
+  id: number
+  movimiento?: number
+  monto: number
+  estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
+}
+
+interface MovimientoCreditoResumen {
+  id: number
+  tarjeta: number | null
 }
 
 function parseDia(val: string): number | null {
@@ -96,9 +111,30 @@ function FormTarjeta(props: {
 }
 
 export default function TarjetasScreen() {
+  const { formatMonto } = useConfig()
   const router = useRouter()
   const { data: tarjetasRaw, loading: loadingTarjetas, refetch: refetchTarjetas } = useTarjetas()
   const tarjetas = (tarjetasRaw as Tarjeta[] | null) ?? []
+  const {
+    data: cuotasData,
+    loading: loadingCuotas,
+    error: errorCuotas,
+  } = useApi<CuotaResumen[]>(
+    () => movimientosApi.getCuotas({}) as Promise<{ data: CuotaResumen[] }>,
+    [],
+  )
+  const {
+    data: movimientosCreditoData,
+    loading: loadingMovimientosCredito,
+    error: errorMovimientosCredito,
+  } = useApi<MovimientoCreditoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        tipo: 'EGRESO',
+        metodo: 'CREDITO',
+      }) as Promise<{ data: MovimientoCreditoResumen[] }>,
+    [],
+  )
 
   const [tarjetaSeleccionadaId, setTarjetaSeleccionadaId] = useState<number | null>(null)
   const [editandoId, setEditandoId] = useState<number | null>(null)
@@ -106,6 +142,28 @@ export default function TarjetasScreen() {
   const [form, setForm] = useState(FORM_VACIO)
   const [formError, setFormError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+
+  const deudaPorTarjeta = useMemo(() => {
+    const movToTarjeta = new Map<number, number>()
+    for (const mov of (movimientosCreditoData ?? []) as MovimientoCreditoResumen[]) {
+      if (mov.tarjeta == null) continue
+      movToTarjeta.set(mov.id, mov.tarjeta)
+    }
+    const deuda = new Map<number, number>()
+    for (const cuota of (cuotasData ?? []) as CuotaResumen[]) {
+      if (cuota.estado === 'PAGADO') continue
+      const movId = Number(cuota.movimiento)
+      const tarjetaId = movToTarjeta.get(movId)
+      if (!tarjetaId) continue
+      const previo = deuda.get(tarjetaId) ?? 0
+      deuda.set(tarjetaId, previo + Number(cuota.monto || 0))
+    }
+    return deuda
+  }, [cuotasData, movimientosCreditoData])
+  const totalUtilizado = useMemo(
+    () => Array.from(deudaPorTarjeta.values()).reduce((acc, x) => acc + x, 0),
+    [deudaPorTarjeta],
+  )
 
   useEffect(() => {
     if (tarjetaSeleccionadaId != null) return
@@ -196,9 +254,24 @@ export default function TarjetasScreen() {
             )}
           </View>
 
-          {loadingTarjetas && (
+          <View className="bg-white border border-border rounded-xl px-4 py-3 mb-3">
+            <Text className="text-[11px] text-muted font-semibold uppercase tracking-wide">
+              Utilizado total
+            </Text>
+            <Text className="text-dark text-2xl font-bold mt-1">{formatMonto(totalUtilizado)}</Text>
+          </View>
+
+          {(loadingTarjetas || loadingCuotas || loadingMovimientosCredito) && (
             <View className="py-6 items-center">
               <ActivityIndicator color="#0f0f0f" />
+            </View>
+          )}
+
+          {(errorCuotas || errorMovimientosCredito) && (
+            <View className="bg-danger/10 border border-danger/30 rounded-xl p-4 mb-3">
+              <Text className="text-danger text-sm text-center">
+                {errorCuotas || errorMovimientosCredito}
+              </Text>
             </View>
           )}
 
@@ -247,6 +320,12 @@ export default function TarjetasScreen() {
                               .join('  ·  ')}
                           </Text>
                         )}
+                        <View className="mt-2">
+                          <Text className="text-[10px] text-muted uppercase tracking-wide">Utilizado</Text>
+                          <Text className="text-dark text-sm font-semibold">
+                            {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
+                          </Text>
+                        </View>
                       </View>
                       {seleccionada && (
                         <View className="w-5 h-5 rounded-full bg-dark items-center justify-center">

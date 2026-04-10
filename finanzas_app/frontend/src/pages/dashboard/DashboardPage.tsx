@@ -504,7 +504,13 @@ function SaldoProyectadoCard({
   )
 }
 
-function MovimientoItem({ mov }: { mov: MovimientoApi }) {
+function MovimientoItem({
+  mov,
+  onEditar,
+}: {
+  mov: MovimientoApi
+  onEditar: (id: number) => void
+}) {
   const { formatMonto } = useConfig()
   const badge     = METODO_BADGE[mov.metodo_pago_tipo]
   const esIngreso = mov.tipo === 'INGRESO'
@@ -518,7 +524,12 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
         : `−${formatMonto(monto)}`
 
   return (
-    <div className={styles.movItem}>
+    <button
+      type="button"
+      className={styles.movItem}
+      onClick={() => onEditar(mov.id)}
+      aria-label={`Editar movimiento ${mov.comentario || 'sin comentario'}`}
+    >
       <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
       <div className={styles.movInfo}>
         <span className={styles.movDesc}>{mov.comentario || '—'}</span>
@@ -538,7 +549,7 @@ function MovimientoItem({ mov }: { mov: MovimientoApi }) {
           {badge.label}
         </span>
       </div>
-    </div>
+    </button>
   )
 }
 
@@ -546,10 +557,12 @@ function MovimientosList({
   titulo,
   movimientos,
   verTodosTo,
+  onEditarMovimiento,
 }: {
   titulo:       string
   movimientos:  MovimientoApi[]
   verTodosTo?:  string
+  onEditarMovimiento: (id: number) => void
 }) {
   const [expandido, setExpandido] = useState(true)
   const movimientosRecientes = useMemo(() => movimientos.slice(0, 10), [movimientos])
@@ -578,7 +591,7 @@ function MovimientosList({
           ) : (
             <>
               {movimientosRecientes.map(m => (
-                <MovimientoItem key={m.id} mov={m} />
+                <MovimientoItem key={m.id} mov={m} onEditar={onEditarMovimiento} />
               ))}
               {verTodosTo && (
                 <Link to={verTodosTo} className={styles.verTodos}>
@@ -895,6 +908,11 @@ export default function DashboardPage() {
     return p ? `/gastos/cuenta/${p.id}` : '/configuracion/cuentas'
   }, [cuentaTab, cuentasData])
 
+  function irEditarMovimiento(id: number) {
+    const returnTo = '/dashboard'
+    navigate(`/gastos/${id}/editar?returnTo=${encodeURIComponent(returnTo)}`)
+  }
+
   if (
     loading ||
     loadingEfectivo ||
@@ -1038,6 +1056,7 @@ export default function DashboardPage() {
             titulo="Gastos personales"
             movimientos={movimientosCuentaSeleccionada}
             verTodosTo={linkListadoCuentaActiva}
+            onEditarMovimiento={irEditarMovimiento}
           />
         </div>
 

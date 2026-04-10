@@ -682,10 +682,20 @@
   align-items: flex-start;
   gap: $space-3;
   padding: $space-3 $space-5;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
   transition: background $transition-fast;
 
   &:hover {
     background: $color-bg-subtle;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #0f0f0f;
+    outline-offset: -2px;
   }
 }
 

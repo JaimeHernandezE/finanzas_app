@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTarjetas } from '@/hooks/useCatalogos'
+import { useApi } from '@/hooks/useApi'
+import { movimientosApi } from '@/api'
 import { catalogosApi } from '@/api/catalogos'
 import { Button, Input, Cargando, ErrorCarga } from '@/components/ui'
+import { useConfig } from '@/context/ConfigContext'
 import styles from './TarjetasPage.module.scss'
 
 interface TarjetaRow {
@@ -13,10 +16,43 @@ interface TarjetaRow {
   dia_vencimiento: number | null
 }
 
+interface CuotaResumen {
+  id: number
+  movimiento?: number
+  monto: number
+  estado: 'PENDIENTE' | 'FACTURADO' | 'PAGADO'
+}
+
+interface MovimientoCreditoResumen {
+  id: number
+  tarjeta: number | null
+}
+
 export default function TarjetasPage() {
+  const { formatMonto } = useConfig()
   const { data, loading, error, refetch } = useTarjetas()
   const tarjetas = (data ?? []) as TarjetaRow[]
   const pagarTarjetaPath = tarjetas[0] ? `/tarjetas/pagar?tarjeta=${tarjetas[0].id}` : '/tarjetas/pagar'
+  const {
+    data: cuotasData,
+    loading: loadingCuotas,
+    error: errorCuotas,
+  } = useApi<CuotaResumen[]>(
+    () => movimientosApi.getCuotas({}) as Promise<{ data: CuotaResumen[] }>,
+    [],
+  )
+  const {
+    data: movimientosCreditoData,
+    loading: loadingMovimientosCredito,
+    error: errorMovimientosCredito,
+  } = useApi<MovimientoCreditoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        tipo: 'EGRESO',
+        metodo: 'CREDITO',
+      }) as Promise<{ data: MovimientoCreditoResumen[] }>,
+    [],
+  )
 
   const [nombre, setNombre] = useState('')
   const [banco, setBanco] = useState('')
@@ -24,6 +60,28 @@ export default function TarjetasPage() {
   const [diaVencimiento, setDiaVencimiento] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  const deudaPorTarjeta = useMemo(() => {
+    const movToTarjeta = new Map<number, number>()
+    for (const mov of (movimientosCreditoData ?? []) as MovimientoCreditoResumen[]) {
+      if (mov.tarjeta == null) continue
+      movToTarjeta.set(mov.id, mov.tarjeta)
+    }
+    const deuda = new Map<number, number>()
+    for (const cuota of (cuotasData ?? []) as CuotaResumen[]) {
+      if (cuota.estado === 'PAGADO') continue
+      const movId = Number(cuota.movimiento)
+      const tarjetaId = movToTarjeta.get(movId)
+      if (!tarjetaId) continue
+      const previo = deuda.get(tarjetaId) ?? 0
+      deuda.set(tarjetaId, previo + Number(cuota.monto || 0))
+    }
+    return deuda
+  }, [cuotasData, movimientosCreditoData])
+  const totalUtilizado = useMemo(
+    () => Array.from(deudaPorTarjeta.values()).reduce((acc, x) => acc + x, 0),
+    [deudaPorTarjeta],
+  )
 
   const handleCrear = async () => {
     const n = nombre.trim()
@@ -62,8 +120,10 @@ export default function TarjetasPage() {
     }
   }
 
-  if (loading) return <Cargando />
-  if (error) return <ErrorCarga mensaje={error} />
+  if (loading || loadingCuotas || loadingMovimientosCredito) return <Cargando />
+  if (error || errorCuotas || errorMovimientosCredito) {
+    return <ErrorCarga mensaje={error || errorCuotas || errorMovimientosCredito || 'Error al cargar tarjetas.'} />
+  }
 
   return (
     <div className={styles.page}>
@@ -76,6 +136,11 @@ export default function TarjetasPage() {
         <Link to={pagarTarjetaPath} className={styles.linkPagar}>
           Ir a pagar tarjeta →
         </Link>
+      </div>
+
+      <div className={styles.resumenUtilizado}>
+        <span className={styles.resumenUtilizadoLabel}>Utilizado total</span>
+        <strong className={styles.resumenUtilizadoMonto}>{formatMonto(totalUtilizado)}</strong>
       </div>
 
       <h2 className={styles.sectionTitle}>Mis tarjetas</h2>
@@ -98,9 +163,17 @@ export default function TarjetasPage() {
                   </span>
                 )}
               </div>
-              <Link to={`/tarjetas/pagar?tarjeta=${t.id}`} className={styles.linkPagar}>
-                Estado de cuenta
-              </Link>
+              <div className={styles.tarjetaActions}>
+                <div className={styles.tarjetaUtilizado}>
+                  <span className={styles.tarjetaUtilizadoLabel}>Utilizado</span>
+                  <strong className={styles.tarjetaUtilizadoMonto}>
+                    {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
+                  </strong>
+                </div>
+                <Link to={`/tarjetas/pagar?tarjeta=${t.id}`} className={styles.linkPagar}>
+                  Estado de cuenta
+                </Link>
+              </div>
             </div>
           ))
         )}
