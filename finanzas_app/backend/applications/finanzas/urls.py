@@ -74,6 +74,8 @@ urlpatterns = [
         views.sueldos_estimados_prorrateo,
         name='sueldos-estimados-prorrateo',
     ),
+    # Alias legacy para compatibilidad con tests/clients antiguos.
+    path('recalculo-estado/', views.recalculo_estado, name='recalculo-estado-legacy'),
     path('recalculo/estado/', views.recalculo_estado, name='recalculo-estado'),
     path('recalculo/historico/', views.recalculo_historico, name='recalculo-historico'),
 
