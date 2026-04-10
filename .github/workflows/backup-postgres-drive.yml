@@ -4,12 +4,12 @@
 # - Google Cloud: OAuth (escritorio o web) + API “Google Drive” + alcance drive; refresh token de tu cuenta Gmail.
 # - Drive: carpeta en «Mi unidad» de esa cuenta; GOOGLE_DRIVE_BACKUP_FOLDER_ID = ID de la URL.
 # - GitHub → Settings → Secrets → Actions:
-#     DATABASE_URL = URL externa de Postgres (Render: External Database URL; alcanzable desde internet).
+#     DATABASE_URL = URL de conexión PostgreSQL alcanzable desde internet (tu proveedor cloud).
 #     GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN, GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET
 #     GOOGLE_DRIVE_BACKUP_FOLDER_ID
 #
-# Nota: si Postgres solo acepta conexiones desde la red interna de Render, este job fallará;
-#       en ese caso usa el respaldo desde la app web o un job en Render.
+# Nota: si tu Postgres solo acepta conexiones privadas/internas del proveedor, este job fallará;
+#       en ese caso usa un backup ejecutado dentro de la misma red privada.
 
 name: Backup PostgreSQL a Drive
 

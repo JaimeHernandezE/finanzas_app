@@ -3,7 +3,7 @@
 # Cualquier cambio que usuarios de prueba hubieran hecho en esa familia desaparece.
 #
 # Requisitos:
-# - Postgres de la demo accesible desde internet (p. ej. External Database URL de Render).
+# - Postgres de la demo accesible desde internet (URL externa de tu proveedor).
 # - Repositorio con Actions habilitados.
 #
 # Secret (GitHub → Settings → Secrets and variables → Actions):

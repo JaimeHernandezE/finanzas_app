@@ -60,6 +60,26 @@ VITE_API_URL=https://<tu-backend>.up.railway.app
 
 Si no usas `VITE_ES_DEMO=true`, deberás definir también las `VITE_FIREBASE_*`.
 
+### Credenciales neutrales (backend + GitHub Actions)
+
+Para evitar acoplarte a un proveedor (Render/Railway/etc.), usa nombres de secretos genéricos y separa dónde vive cada uno:
+
+| Secret / variable | Dónde debe existir | Para qué se usa |
+|-------------------|--------------------|-----------------|
+| `DATABASE_URL` | **Backend (entorno)** y **GitHub Actions Secrets** | Conexión principal de Django (runtime) y jobs como backup/recálculo. |
+| `SECRET_KEY` | **Backend (entorno)** y **GitHub Actions Secrets** | Firmado de Django/JWT en runtime y workflow `recalculo-historico-mensual.yml`. |
+| `DATABASE_URL_DEMO` | **GitHub Actions Secrets** (y opcional backend demo) | Workflow `reset-demo-nightly.yml` para ejecutar `seed_demo` sobre la BD demo. |
+| `SECRET_KEY_DEMO` | **Backend demo (entorno)** y **GitHub Actions Secrets** | Runtime de la instancia demo y workflow `reset-demo-nightly.yml`. |
+| `BACKEND_BASE_URL` | **GitHub Actions Secrets** | URL base del backend para jobs HTTP (`export-sheets.yml`). Ejemplo: `https://tu-backend.up.railway.app`. |
+| `EXPORT_SECRET_TOKEN` | **Backend (entorno)** y **GitHub Actions Secrets** | Header `X-Export-Token` para proteger `/api/export/sheets/`. Debe ser el mismo valor en ambos lados. |
+| `GOOGLE_DRIVE_OAUTH_*`, `GOOGLE_DRIVE_BACKUP_FOLDER_ID` | **GitHub Actions Secrets** | Credenciales del workflow de backup `pg_dump` a Google Drive. |
+
+#### GitHub Actions: dónde cargarlos
+
+En GitHub: **Settings → Secrets and variables → Actions → New repository secret**.
+
+Si falta alguno, los workflows fallan con error de variable vacía (por ejemplo: `SECRET_KEY`/`SECRET_KEY_DEMO` en recálculo y reset).
+
 ### Requisitos previos
 
 - Cuenta en [render.com](https://render.com) conectada a GitHub
@@ -157,9 +177,9 @@ Si la contraseña tiene caracteres reservados en URLs (`@`, `:`, `/`, `#`, `%`, 
 
 5. Si el backend **no conecta** pese a URL válida: además de lo IPv6 anterior, revisa **Network restrictions** en Supabase.
 
-### Generar SECRET_KEY
+### Generar claves y tokens (`SECRET_KEY`, `EXPORT_SECRET_TOKEN`)
 
-Puedes generar una `SECRET_KEY` nueva de varias formas:
+Puedes generar valores seguros para `SECRET_KEY` y también para `EXPORT_SECRET_TOKEN` con los mismos métodos:
 
 **1. Con Django (recomendado si ya tienes Django instalado)**
 
@@ -191,7 +211,13 @@ openssl rand -base64 48
 [Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
 ```
 
-> En producción, guarda el valor solo en variables de entorno o en un gestor de secretos; no lo subas al repositorio.
+Ejemplo recomendado para `EXPORT_SECRET_TOKEN` (más corto y cómodo para headers):
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+> En producción, guarda estos valores solo en variables de entorno o en un gestor de secretos; no los subas al repositorio.
 
 ### Convertir Firebase JSON a una línea (para variable de entorno)
 

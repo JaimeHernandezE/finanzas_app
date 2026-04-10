@@ -14,12 +14,24 @@ jobs:
       # "Re-run failed jobs" reutiliza el workflow del commit original, no el último push.
       # Para probar cambios en este YAML: push a la rama por defecto y "Run workflow" o espera al cron.
       - name: Llamar endpoint de exportación
+        env:
+          BACKEND_BASE_URL: ${{ secrets.BACKEND_BASE_URL }}
+          EXPORT_SECRET_TOKEN: ${{ secrets.EXPORT_SECRET_TOKEN }}
         run: |
+          if [ -z "$BACKEND_BASE_URL" ]; then
+            echo "::error::Falta secret BACKEND_BASE_URL"
+            exit 1
+          fi
+          if [ -z "$EXPORT_SECRET_TOKEN" ]; then
+            echo "::error::Falta secret EXPORT_SECRET_TOKEN"
+            exit 1
+          fi
+
           response=$(curl --silent --show-error --fail \
             --max-time 120 \
             -X POST \
-            -H "X-Export-Token: ${{ secrets.EXPORT_SECRET_TOKEN }}" \
-            "${{ secrets.RENDER_EXPORT_URL }}/api/export/sheets/")
+            -H "X-Export-Token: $EXPORT_SECRET_TOKEN" \
+            "${BACKEND_BASE_URL}/api/export/sheets/")
 
           echo "Respuesta: $response"
 
