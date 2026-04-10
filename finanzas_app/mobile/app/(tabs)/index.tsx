@@ -421,7 +421,10 @@ export default function DashboardScreen() {
   }
 
   function irEditarMovimiento(item: Movimiento) {
-    router.push(`/nuevo-movimiento?editar=${item.id}&cuenta=${item.cuenta ?? ''}` as never)
+    const returnTo = '/(tabs)/index'
+    router.push(
+      `/nuevo-movimiento?editar=${item.id}&cuenta=${item.cuenta ?? ''}&returnTo=${encodeURIComponent(returnTo)}` as never,
+    )
   }
 
   return (
