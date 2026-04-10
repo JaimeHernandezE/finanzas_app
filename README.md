@@ -246,7 +246,7 @@ La generación de cuotas y la creación del `Movimiento` espejo de `IngresoComun
 Cada modelo de datos tiene una FK a `Familia`. No hay schemas separados ni row-level security en PostgreSQL. Simple, suficiente para el volumen de datos de una familia.
 
 ### Doble frontend (web + mobile) con shared API client
-El código de llamadas a la API vive en `/shared` y es consumido por ambos frontends, evitando duplicación de URLs, tipos y lógica de error.
+El código de llamadas a la API vive en `/shared`. Hoy se consume principalmente desde mobile y contiene módulos reutilizables para otros clientes, evitando duplicación de URLs, tipos y lógica de error.
 
 ### Firebase Auth como proveedor de identidad externo
 El backend nunca almacena contraseñas. Firebase entrega un ID token → el backend lo verifica y emite un JWT propio. Esto permite agregar Google/Apple sign-in sin cambiar el backend.
@@ -258,18 +258,18 @@ El backend nunca almacena contraseñas. Firebase entrega un ID token → el back
 ### Requisitos previos
 
 1. **Firebase**: Crear proyecto, habilitar Authentication (Email/Password), descargar `serviceAccountKey.json`
-2. **PostgreSQL**: Render, Supabase, o instancia propia
+2. **PostgreSQL**: Railway (principal). Supabase o Render PostgreSQL como alternativas opcionales.
 3. **Google Cloud** (opcional, para backup/export): Crear Service Account con acceso a Drive y Sheets
 
-### Backend en Render
+### Backend en Railway (principal)
 
 ```bash
-# Variables de entorno en Render:
-DJANGO_SECRET_KEY=<secret-largo-aleatorio>
+# Variables de entorno backend:
+SECRET_KEY=<secret-largo-aleatorio>
 DEBUG=False
 DATABASE_URL=postgresql://user:pass@host:5432/dbname
-FIREBASE_CREDENTIALS=<contenido JSON del serviceAccountKey, en una línea>
-ALLOWED_HOSTS=tu-app.onrender.com
+FIREBASE_SERVICE_ACCOUNT_JSON=<contenido JSON del serviceAccountKey, en una línea>
+ALLOWED_HOSTS=tu-backend.example.com
 CORS_ALLOWED_ORIGINS=https://tu-frontend.com
 ```
 
@@ -281,7 +281,7 @@ pip install -r requirements.txt && python manage.py collectstatic --no-input && 
 gunicorn core.wsgi:application --bind 0.0.0.0:$PORT
 ```
 
-### Frontend web en Render (Static Site)
+### Frontend web (Static Site)
 
 ```bash
 # Build command
@@ -291,7 +291,7 @@ npm install && npm run build
 dist
 
 # Variables de entorno:
-VITE_API_BASE_URL=https://tu-backend.onrender.com
+VITE_API_URL=https://tu-backend.example.com
 VITE_FIREBASE_API_KEY=...
 VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
@@ -308,7 +308,11 @@ eas build --platform android --profile preview
 
 ### Base de datos con Supabase
 
-Supabase ofrece PostgreSQL 15 en su tier gratuito. Toma la `DATABASE_URL` del panel y úsala directamente en las variables de Render.
+Supabase es una alternativa opcional. Si la usas, toma la `DATABASE_URL` del panel y úsala directamente en las variables de Railway (o del proveedor donde despliegues el backend).
+
+### Render (opcional)
+
+Render también puede usarse como alternativa para backend/base de datos, pero la configuración principal documentada para este proyecto es Railway.
 
 ### Backup diario a Google Drive (GitHub Actions)
 
@@ -362,6 +366,49 @@ cd ../mobile && npm install && npx expo start
 | `/api/viajes/` | viajes | Viajes, presupuestos de viaje |
 | `/api/export/` | export | Exportación a Google Sheets |
 | `/api/backup/` | backup_bd | Respaldo PostgreSQL a Google Drive |
+
+---
+
+## Mapa de modelos financieros (backend)
+
+Esta sección detalla **para qué sirve cada modelo** de `applications/finanzas/models.py` y dónde se conecta con lógica de negocio en **signals**, **services** y **management commands**.
+
+> Referencias de código principales:
+> - Signals: `finanzas_app/backend/applications/finanzas/signals.py`
+> - Services: `finanzas_app/backend/applications/finanzas/services_recalculo.py`
+> - Commands: `finanzas_app/backend/applications/finanzas/management/commands/`
+
+| Modelo | Para qué sirve | Signals vinculados | Services vinculados | Commands vinculados |
+|---|---|---|---|---|
+| `Categoria` | Clasifica ingresos/egresos y define si un egreso es inversión (`es_inversion`) para excluirlo de gasto corriente/prorrateo. Soporta jerarquía padre-hija y scope global/familiar/personal. | `signals.py`: `_obtener_categoria_ingreso_declarado()` crea/usa categoría global para espejo de `IngresoComun` en `Movimiento`. | `services_recalculo.py`: no importa `Categoria` directamente, pero usa `categoria__es_inversion` al calcular netos y liquidación. | `seed_categorias`, `seed_demo` (crea categorías familiares/personales), `importar_movimientos_csv` (resuelve categoría por nombre/tipo). |
+| `MetodoPago` | Catálogo de métodos (`EFECTIVO`, `DEBITO`, `CREDITO`) que determina comportamiento del gasto (inmediato vs cuotas). | `signals.py`: `_obtener_metodo_efectivo()` para `IngresoComun`; `generar_cuotas` se activa por `metodo_pago.tipo == CREDITO`. | `services_recalculo.py`: excluye `CREDITO` en múltiples agregaciones de saldos y liquidación. | `seed_demo` / `seed_demo_minimal` (vía `_asegurar_metodos`), `importar_movimientos_csv` (resuelve método). |
+| `Tarjeta` | Tarjetas de crédito por usuario, con ciclo (`dia_facturacion`, `dia_vencimiento`) para determinar facturación/deuda mensual. | `signals.py`: `generar_cuotas` usa `dia_facturacion` para calcular `mes_facturacion` base de cuotas. | `services_recalculo.py`: `reparar_cuotas_credito_familia()` recalcula plan esperado según tarjeta y ciclo. | `seed_demo` (crea tarjetas demo), `importar_movimientos_csv` (resuelve tarjeta para movimientos crédito). |
+| `CuentaPersonal` | Agrupador lógico de finanzas personales por usuario (ej. "Personal", "Arquitecto"), incluyendo opción `visible_familia`. | `signals.py`: `crear_cuenta_personal_por_defecto`; `_asegurar_cuenta_personal()` para ingresos comunes. | `services_recalculo.py`: saldos por cuenta (`saldo_efectivo_cuentas_desde_snapshot`, `resumen_cuenta_personal_mensual`, etc.). | `seed_demo` (usa/crea cuentas), `importar_movimientos_csv` (asigna cuenta por nombre). |
+| `TutorCuenta` | Relación de tutoría para que un usuario opere/vea cuentas de otro (sin ser dueño). | Sin signal directo en `finanzas/signals.py`. | Sin service directo en `services_recalculo.py`. | `seed_demo` limpia tutorías al reiniciar demo. |
+| `Movimiento` | Entidad transaccional central (ingreso/egreso, personal/común, método pago, viaje, cuotas). | `signals.py`: cache de fecha previa, invalidación de resumen, `generar_cuotas`, dispatch de recálculo al crear/editar/borrar. | `services_recalculo.py`: base de cálculos de liquidación, saldos, efectivo disponible, históricos y reparación de cuotas crédito. | `importar_movimientos_csv`, `seed_demo`, `seed_demo_if_empty` (verifica si hay datos demo), `recalculo_mensual_admin_tz` (busca primer mes con datos). |
+| `Cuota` | Cuota individual de un movimiento en crédito (mes, estado, inclusión manual en estado de cuenta). | `signals.py`: creación automática masiva en `generar_cuotas`. | `services_recalculo.py`: reparación consistente (`reparar_cuotas_credito_familia`) preservando cuotas pagadas. | `seed_demo` (limpia cuotas al reset demo), `recalculo_mensual_admin_tz` (repara cuotas crédito indirectamente vía service). |
+| `Presupuesto` | Meta mensual por categoría, familiar o personal, para comparar plan vs real. | Sin signal directo en `finanzas/signals.py`. | Sin service de snapshots directo en `services_recalculo.py` (se consume más en vistas de presupuesto). | `rollover_presupuestos_mensuales` (copia mes anterior), `seed_demo` (siembra presupuestos mensuales). |
+| `IngresoComun` | Ingreso declarado al fondo común familiar (base del prorrateo proporcional). | `signals.py`: cache mes previo, invalidación resumen, sincronización a `Movimiento` espejo, dispatch de recálculo, eliminación en cascada lógica del movimiento asociado. | `services_recalculo.py`: núcleo de liquidación y efectivo (`recalcular_mes_liquidacion_comun`, `calcular_resumen_mes`, `efectivo_disponible_dashboard`, etc.). | `seed_demo` (genera ingresos por mes), `recalculo_mensual_admin_tz` (define inicio histórico), `importar_movimientos_csv` no lo crea directamente. |
+| `SaldoMensualSnapshot` | Snapshot mensual por usuario/cuenta con ingresos, egresos y efectivo neto (sin crédito). | Se actualiza por dispatch desde signals de `Movimiento`/`IngresoComun` (no signal propio del modelo). | `services_recalculo.py`: `recalcular_mes_saldos_personales_usuario/familia`, lectura con `saldo_efectivo_cuentas_desde_snapshot`. | `seed_demo` (limpia + recalcula), `recalcular_pendientes`, `recalculo_mensual_admin_tz`. |
+| `LiquidacionComunMensualSnapshot` | Snapshot agregado por usuario y tipo de línea (`INGRESO_COMUN` / `GASTO_COMUN_NO_CREDITO`) para liquidación del mes. | Se actualiza por dispatch desde signals (no signal propio del modelo). | `services_recalculo.py`: `recalcular_mes_liquidacion_comun`, consumo en `liquidacion_datos_desde_snapshot_o_query`. | `seed_demo` (limpia + recalcula), `recalcular_pendientes`, `recalculo_mensual_admin_tz`. |
+| `ResumenHistoricoMesSnapshot` | Payload persistido del resumen histórico mensual (prorrateo, compensación y transferencias sugeridas). | `signals.py`: invalidación puntual ante cambios en `Movimiento` común o `IngresoComun`. | `services_recalculo.py`: `calcular_resumen_mes`, `backfill_resumen_historico_snapshots`, `resumen_historico_familia`, invalidación/rebuild. | `backfill_resumen_historico`, `seed_demo` (backfill al final), `recalculo_mensual_admin_tz` (backfill mensual). |
+| `SueldoEstimadoProrrateoMensual` | Base editable de sueldo estimado por usuario/mes para compensación proyectada (sin duplicar ingresos reales del mes). | Sin signal directo en `finanzas/signals.py`. | Se consume desde vistas de compensación proyectada; no participa en snapshots de `services_recalculo.py` actuales. | `seed_demo` (limpia registros al reset demo). |
+| `RecalculoPendiente` | Cola persistida por familia (`dirty_from`) para recálculo diferido de snapshots fuera de ventana síncrona. | Se crea/actualiza/elimina indirectamente por dispatch de recálculo llamado desde signals de `Movimiento`/`IngresoComun`. | `services_recalculo.py`: `merge_recalculo_pendiente`, `dispatch_recalculo_*`, `procesar_recalculos_pendientes`, `get_recalculo_estado`. | `recalcular_pendientes` (procesa cola), `recalculo_mensual_admin_tz` (limpia cola tras recálculo completo), `seed_demo` (limpia al finalizar). |
+
+### Commands clave y cuándo usarlos
+
+- `python manage.py importar_movimientos_csv <archivo> --usuario-id=<id> [--familia-id=<id>] [--dry-run]`  
+  Carga movimientos históricos o externos validando categorías, métodos, tarjetas y cuotas.
+- `python manage.py rollover_presupuestos_mensuales [--mes YYYY-MM-01] [--familia-id=<id>] [--dry-run]`  
+  Copia presupuestos del mes anterior al mes destino sin sobrescribir existentes.
+- `python manage.py recalcular_pendientes [--limit <n>]`  
+  Procesa familias en cola `RecalculoPendiente`.
+- `python manage.py backfill_resumen_historico [--familia-id <id>]`  
+  Recompone y persiste snapshots históricos mensuales.
+- `python manage.py recalculo_mensual_admin_tz [--admin-id <id>] [--force]`  
+  Job mensual de mantenimiento (recalcula snapshots + repara cuotas crédito).
+- `python manage.py seed_demo` / `seed_demo_minimal` / `ensure_demo_seed` / `seed_demo_if_empty`  
+  Flujo de carga demo (mínimo, completo y autoarranque según entorno DEMO).
 
 ---
 
