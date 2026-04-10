@@ -13,11 +13,10 @@ from applications.finanzas.models import (
     IngresoComun,
     LiquidacionComunMensualSnapshot,
     Movimiento,
-    RecalculoPendiente,
     SaldoMensualSnapshot,
 )
 
-# Fecha fija para que recalcular_familia_desde incluya marzo 2026 en cualquier año de CI
+# Fecha fija para estabilizar ventanas de mes durante CI
 FAKE_TODAY = date(2026, 3, 15)
 
 
@@ -39,7 +38,7 @@ class TestRecalculoSnapshots:
         gasto_comun_jaime,
         gasto_comun_glori,
     ):
-        services_recalculo.recalcular_familia_desde(familia.id, date(2026, 3, 1))
+        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
         qs = LiquidacionComunMensualSnapshot.objects.filter(
             familia=familia,
             mes=date(2026, 3, 1),
@@ -50,7 +49,7 @@ class TestRecalculoSnapshots:
     def test_liquidacion_snapshot_igual_totales_declarados(
         self, hoy_marzo_2026, familia, ingreso_jaime, ingreso_glori
     ):
-        services_recalculo.recalcular_familia_desde(familia.id, date(2026, 3, 1))
+        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
         snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
             familia.id, 3, 2026
         )
@@ -67,7 +66,7 @@ class TestRecalculoSnapshots:
         ingreso_glori,
         gasto_comun_jaime,
     ):
-        services_recalculo.recalcular_familia_desde(familia.id, date(2026, 3, 1))
+        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
         snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
             familia.id, 3, 2026
         )
@@ -119,7 +118,7 @@ class TestRecalculoSnapshots:
             comentario='Test',
             metodo_pago=metodo_efectivo,
         )
-        services_recalculo.recalcular_familia_desde(familia.id, date(2026, 3, 1))
+        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
         row = SaldoMensualSnapshot.objects.filter(
             familia=familia,
             usuario=usuario,
@@ -173,11 +172,12 @@ class TestRecalculoSnapshots:
         meses = r2.json()['meses']
         assert any(m['mes'] == 3 and m['anio'] == 2026 for m in meses)
 
-    def test_post_movimiento_mes_antiguo_marca_recalculo_pendiente(
+    def test_post_movimiento_mes_antiguo_recalcula_snapshot_inmediato(
         self,
         hoy_marzo_2026,
         client,
         auth_header,
+        usuario,
         familia,
         categoria_egreso,
         metodo_efectivo,
@@ -195,15 +195,20 @@ class TestRecalculoSnapshots:
             '/api/finanzas/movimientos/', payload, format='json', **auth_header
         )
         assert res.status_code == 201
-        rp = RecalculoPendiente.objects.get(familia=familia)
-        assert rp.dirty_from == date(2024, 6, 1)
+        snap = SaldoMensualSnapshot.objects.filter(
+            familia=familia,
+            usuario=usuario,
+            mes=date(2024, 6, 1),
+            cuenta_id=0,
+        ).first()
+        assert snap is not None
+        assert snap.egresos_efectivo == Decimal('100.00')
 
-    def test_post_movimiento_mes_actual_no_deja_pendiente(
+    def test_post_movimiento_mes_actual_recalculo_estado_sin_pendientes(
         self,
         hoy_marzo_2026,
         client,
         auth_header,
-        familia,
         categoria_egreso,
         metodo_efectivo,
     ):
@@ -220,17 +225,8 @@ class TestRecalculoSnapshots:
             '/api/finanzas/movimientos/', payload, format='json', **auth_header
         )
         assert res.status_code == 201
-        assert not RecalculoPendiente.objects.filter(familia=familia).exists()
-
-    def test_procesar_recalculos_pendientes_limpia_y_recalcula(
-        self, hoy_marzo_2026, familia, ingreso_jaime
-    ):
-        RecalculoPendiente.objects.create(
-            familia=familia, dirty_from=date(2026, 3, 1)
-        )
-        n = services_recalculo.procesar_recalculos_pendientes()
-        assert n == 1
-        assert not RecalculoPendiente.objects.filter(familia=familia).exists()
-        assert LiquidacionComunMensualSnapshot.objects.filter(
-            familia=familia, mes=date(2026, 3, 1)
-        ).exists()
+        estado = client.get('/api/finanzas/recalculo-estado/', **auth_header)
+        assert estado.status_code == 200
+        payload_estado = estado.json()
+        assert payload_estado['pendiente'] is False
+        assert payload_estado['dirty_from'] is None

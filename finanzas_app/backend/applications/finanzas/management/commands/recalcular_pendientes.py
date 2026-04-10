@@ -4,7 +4,7 @@ from applications.finanzas import services_recalculo
 
 
 class Command(BaseCommand):
-    help = 'Procesa familias con RecalculoPendiente y actualiza snapshots mensuales.'
+    help = 'Comando legado: la cola RecalculoPendiente fue eliminada.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -18,4 +18,9 @@ class Command(BaseCommand):
         n = services_recalculo.procesar_recalculos_pendientes(
             limit_familias=options.get('limit'),
         )
-        self.stdout.write(self.style.SUCCESS(f'Familias procesadas: {n}.'))
+        self.stdout.write(
+            self.style.WARNING(
+                'No-op: ya no existe cola diferida de recálculo. '
+                f'Familias procesadas: {n}.'
+            )
+        )

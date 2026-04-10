@@ -356,8 +356,8 @@ El plan gratuito duerme el servidor tras 15 min sin tráfico.
 
 ### CI/CD automático
 
-Render despliega automáticamente en cada push a `main`.
-El workflow `.github/workflows/tests.yml` corre los tests antes del deploy.
+Railway puede desplegar automáticamente en cada push a `main` (Auto Deploy desde GitHub).
+El workflow `.github/workflows/tests.yml` corre tests en push/PR, pero para exigir "tests verdes antes de merge/deploy" debes activar reglas de protección de rama en GitHub (required status checks).
 
 ### Fallo del build: «Exited with status 1 while building your code»
 

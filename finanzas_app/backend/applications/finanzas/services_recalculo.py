@@ -17,7 +17,6 @@ from .models import (
     IngresoComun,
     LiquidacionComunMensualSnapshot,
     Movimiento,
-    RecalculoPendiente,
     ResumenHistoricoMesSnapshot,
     SaldoMensualSnapshot,
 )
@@ -182,27 +181,10 @@ def miembros_para_prorrateo_fondo_comun(familia_id: int, mes_pd: date) -> list:
 
 
 def get_recalculo_estado(familia_id: int) -> dict:
-    rp = RecalculoPendiente.objects.filter(familia_id=familia_id).first()
     return {
-        'pendiente': rp is not None,
-        'dirty_from': rp.dirty_from.isoformat() if rp else None,
+        'pendiente': False,
+        'dirty_from': None,
     }
-
-
-def umbral_mes_anterior() -> date:
-    """Primer día del mes anterior al actual (zona horaria Django)."""
-    hoy = timezone.localdate()
-    actual = primer_dia_mes(hoy)
-    return actual - relativedelta(months=1)
-
-
-def debe_recalculo_sincrono(mes_afectado: date) -> bool:
-    """True si el mes afectado es el actual o el inmediato anterior."""
-    mes_afectado = primer_dia_mes(mes_afectado)
-    hoy = timezone.localdate()
-    actual = primer_dia_mes(hoy)
-    anterior = actual - relativedelta(months=1)
-    return mes_afectado in (actual, anterior)
 
 
 def _efectivo_neto_personal_qs(qs):
@@ -372,40 +354,17 @@ def recalcular_familia_desde(familia_id: int, mes_inicio: date) -> None:
         recalcular_mes_saldos_personales_familia(familia_id, mes)
 
 
-def merge_recalculo_pendiente(familia_id: int, dirty_from: date) -> None:
-    dirty_from = primer_dia_mes(dirty_from)
-    obj, created = RecalculoPendiente.objects.get_or_create(
-        familia_id=familia_id,
-        defaults={'dirty_from': dirty_from},
-    )
-    if not created and obj.dirty_from > dirty_from:
-        obj.dirty_from = dirty_from
-        obj.save(update_fields=['dirty_from', 'updated_at'])
+def recalcular_familia_meses(familia_id: int, meses: Iterable[date]) -> None:
+    """Recalcula snapshots solo para los meses especificados."""
+    meses_norm = sorted({primer_dia_mes(m) for m in meses})
+    for mes in meses_norm:
+        recalcular_mes_liquidacion_comun(familia_id, mes)
+        recalcular_mes_saldos_personales_familia(familia_id, mes)
 
 
 def dispatch_recalculo_tras_cambio(familia_id: int, mes_afectado: date) -> None:
-    """
-    Tras crear/editar/borrar datos que impactan snapshots:
-    - Si el mes está en ventana síncrona, recalcula desde ese mes.
-    - Si no, marca RecalculoPendiente.
-    - Conserva pendientes antiguos si el recálculo síncrono no los cubre.
-    """
-    mes_afectado = primer_dia_mes(mes_afectado)
-    rp = RecalculoPendiente.objects.filter(familia_id=familia_id).first()
-
-    if not debe_recalculo_sincrono(mes_afectado):
-        merge_recalculo_pendiente(familia_id, mes_afectado)
-        return
-
-    recalcular_familia_desde(familia_id, mes_afectado)
-
-    if rp and rp.dirty_from < mes_afectado:
-        RecalculoPendiente.objects.update_or_create(
-            familia_id=familia_id,
-            defaults={'dirty_from': rp.dirty_from},
-        )
-    else:
-        RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
+    """Tras crear/editar/borrar datos: recalcula snapshots del mes afectado."""
+    recalcular_familia_meses(familia_id, [mes_afectado])
 
 
 def meses_afectados_por_movimiento(
@@ -431,45 +390,16 @@ def meses_afectados_por_ingreso_comun(
 
 
 def dispatch_recalculo_multiples_meses(familia_id: int, meses: set[date]) -> None:
-    """Varios meses (p. ej. cambio de fecha): mezcla async + sync como dispatch simple."""
+    """Varios meses afectados (p. ej. cambio de fecha): recálculo inmediato puntual."""
     if not meses:
         return
-    rp_existing = RecalculoPendiente.objects.filter(familia_id=familia_id).first()
-    meses_norm = {primer_dia_mes(m) for m in meses}
-
-    for m in meses_norm:
-        if not debe_recalculo_sincrono(m):
-            merge_recalculo_pendiente(familia_id, m)
-    if rp_existing:
-        merge_recalculo_pendiente(familia_id, rp_existing.dirty_from)
-
-    sync_meses = [m for m in meses_norm if debe_recalculo_sincrono(m)]
-    if not sync_meses:
-        return
-
-    m0 = min(sync_meses)
-    recalcular_familia_desde(familia_id, m0)
-    rp = RecalculoPendiente.objects.filter(familia_id=familia_id).first()
-    if rp and rp.dirty_from < m0:
-        RecalculoPendiente.objects.update_or_create(
-            familia_id=familia_id,
-            defaults={'dirty_from': rp.dirty_from},
-        )
-    else:
-        RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
+    recalcular_familia_meses(familia_id, meses)
 
 
 def procesar_recalculos_pendientes(limit_familias: int | None = None) -> int:
-    """Procesa RecalculoPendiente (comando management). Retorna familias procesadas."""
-    qs = RecalculoPendiente.objects.order_by('familia_id')
-    if limit_familias:
-        qs = qs[:limit_familias]
-    n = 0
-    for rp in qs:
-        recalcular_familia_desde(rp.familia_id, rp.dirty_from)
-        rp.delete()
-        n += 1
-    return n
+    """Compatibilidad: ya no existe cola diferida, no hay trabajo pendiente."""
+    _ = limit_familias
+    return 0
 
 
 def nombre_usuario_liquidacion(usuario) -> str:

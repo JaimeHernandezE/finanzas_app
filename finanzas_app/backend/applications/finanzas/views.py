@@ -32,7 +32,6 @@ from .models import (
     Cuota,
     IngresoComun,
     Presupuesto,
-    RecalculoPendiente,
     SueldoEstimadoProrrateoMensual,
 )
 from . import services_recalculo
@@ -1894,7 +1893,7 @@ def sueldos_estimados_prorrateo(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def recalculo_estado(request):
-    """GET estado de recálculo pendiente (snapshots históricos)."""
+    """GET estado de recálculo de snapshots históricos."""
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
@@ -1954,8 +1953,6 @@ def recalculo_historico(request):
         usuario.pk, familia_id
     )
     reparacion_cuotas = services_recalculo.reparar_cuotas_credito_familia(familia_id)
-    RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
-
     return Response(
         {
             'ok': True,
@@ -2198,10 +2195,9 @@ def importar_cuenta_personal_planilla(request):
             )
 
         if not dry_run and creados and meses_importados and usuario.familia_id:
-            services_recalculo.recalcular_familia_desde(
-                usuario.familia_id, min(meses_importados)
+            services_recalculo.recalcular_familia_meses(
+                usuario.familia_id, meses_importados
             )
-            RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
 
         logger.info(
             "importar_cuenta_personal_planilla id=%s usuario_id=%s ok movimientos_creados=%s dry_run=%s",
@@ -2468,10 +2464,9 @@ def importar_honorarios_planilla(request):
             )
 
         if not dry_run and creados and meses_importados and usuario.familia_id:
-            services_recalculo.recalcular_familia_desde(
-                usuario.familia_id, min(meses_importados)
+            services_recalculo.recalcular_familia_meses(
+                usuario.familia_id, meses_importados
             )
-            RecalculoPendiente.objects.filter(familia_id=usuario.familia_id).delete()
 
         logger.info(
             "importar_honorarios_planilla id=%s usuario_id=%s ok movimientos_creados=%s dry_run=%s",
@@ -2641,10 +2636,9 @@ def importar_sueldos_planilla(request):
         )
 
     if not dry_run and creados and meses_importados:
-        services_recalculo.recalcular_familia_desde(
-            usuario_auth.familia_id, min(meses_importados)
+        services_recalculo.recalcular_familia_meses(
+            usuario_auth.familia_id, meses_importados
         )
-        RecalculoPendiente.objects.filter(familia_id=usuario_auth.familia_id).delete()
 
     return Response(
         {
@@ -2869,19 +2863,18 @@ def importar_gastos_comunes_planilla(request):
             )
 
         if not dry_run and creados and meses_importados and usuario.familia_id:
-            # Para importaciones grandes, evitar recálculo síncrono en request web:
-            # dejamos el recálculo marcado como pendiente para proceso diferido.
+            # Recalcula solo los meses importados para mantener snapshots consistentes.
             try:
-                services_recalculo.merge_recalculo_pendiente(
-                    usuario.familia_id, min(meses_importados)
+                services_recalculo.recalcular_familia_meses(
+                    usuario.familia_id, meses_importados
                 )
             except Exception:
                 logger.exception(
-                    "Error marcando recálculo pendiente post importación id=%s usuario_id=%s familia_id=%s desde_mes=%s",
+                    "Error recalculando snapshots post importación id=%s usuario_id=%s familia_id=%s meses=%s",
                     debug_id,
                     getattr(usuario, 'id', None),
                     getattr(usuario, 'familia_id', None),
-                    min(meses_importados),
+                    sorted(meses_importados),
                 )
                 raise
 
@@ -2899,7 +2892,7 @@ def importar_gastos_comunes_planilla(request):
                 'movimientos_creados': creados,
                 'categorias_familiares_creadas': categorias_creadas,
                 'ambito_objetivo': 'COMUN',
-                'recalculo': 'pendiente',
+                'recalculo': 'inmediato',
                 'import_debug_id': debug_id,
             },
             status=status.HTTP_200_OK,

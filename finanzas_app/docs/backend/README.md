@@ -105,11 +105,10 @@ Relación de cada modelo con su responsabilidad y su integración con:
 | `Cuota` | Cuota individual de movimiento en crédito (`mes_facturacion`, `estado`, `incluir`). | Creación automática por `post_save` de `Movimiento`. | Reparación y reconciliación de cuotas (`reparar_cuotas_credito_familia`) preservando pagadas. | `recalculo_mensual_admin_tz` (vía service), `seed_demo` (limpieza). |
 | `Presupuesto` | Meta mensual por categoría (familiar/personal). | Sin signal propio. | No participa directo en snapshots de `services_recalculo.py` actuales. | `rollover_presupuestos_mensuales`, `seed_demo`. |
 | `IngresoComun` | Ingreso declarado al fondo común (base del prorrateo). | Sincroniza y mantiene `Movimiento` espejo; invalida resumen y dispara recálculo; borra movimiento vinculado al eliminarse. | Base de liquidación común, resumen histórico y efectivo disponible. | `seed_demo`, `recalculo_mensual_admin_tz`. |
-| `SaldoMensualSnapshot` | Cache mensual por usuario/cuenta con ingresos, egresos y efectivo neto (sin crédito). | Se actualiza por dispatch de recálculo tras cambios en `Movimiento`/`IngresoComun`. | `recalcular_mes_saldos_personales_*`, `saldo_efectivo_cuentas_desde_snapshot`. | `recalcular_pendientes`, `recalculo_mensual_admin_tz`, `seed_demo`. |
-| `LiquidacionComunMensualSnapshot` | Cache agregado mensual para liquidación común por usuario/tipo de línea. | Se actualiza por dispatch de recálculo. | `recalcular_mes_liquidacion_comun`, `liquidacion_datos_desde_snapshot_o_query`. | `recalcular_pendientes`, `recalculo_mensual_admin_tz`, `seed_demo`. |
+| `SaldoMensualSnapshot` | Cache mensual por usuario/cuenta con ingresos, egresos y efectivo neto (sin crédito). | Se actualiza por dispatch de recálculo tras cambios en `Movimiento`/`IngresoComun`. | `recalcular_mes_saldos_personales_*`, `saldo_efectivo_cuentas_desde_snapshot`. | `recalculo_mensual_admin_tz`, `seed_demo`. |
+| `LiquidacionComunMensualSnapshot` | Cache agregado mensual para liquidación común por usuario/tipo de línea. | Se actualiza por dispatch de recálculo. | `recalcular_mes_liquidacion_comun`, `liquidacion_datos_desde_snapshot_o_query`. | `recalculo_mensual_admin_tz`, `seed_demo`. |
 | `ResumenHistoricoMesSnapshot` | Payload persistido del resumen familiar mensual (prorrateo, compensación y transferencias). | Invalidación puntual ante cambios en `Movimiento` común e `IngresoComun`. | `calcular_resumen_mes`, `resumen_historico_familia`, `backfill_resumen_historico_snapshots`. | `backfill_resumen_historico`, `recalculo_mensual_admin_tz`, `seed_demo`. |
 | `SueldoEstimadoProrrateoMensual` | Base editable de sueldos para compensación proyectada por mes. | Sin signal propio. | Consumido por vistas de proyección (no por snapshots de recálculo actuales). | `seed_demo` (limpieza al reset demo). |
-| `RecalculoPendiente` | Cola persistida de recálculo diferido por familia (`dirty_from`). | Se crea/actualiza/elimina de forma indirecta desde dispatch de recálculo invocado por signals. | `merge_recalculo_pendiente`, `dispatch_recalculo_*`, `procesar_recalculos_pendientes`, `get_recalculo_estado`. | `recalcular_pendientes`, `recalculo_mensual_admin_tz`, `seed_demo`. |
 
 ## Commands operativos (finanzas)
 
@@ -121,7 +120,6 @@ docker-compose exec web python manage.py <comando>
 
 - `importar_movimientos_csv <archivo> --usuario-id=<id> [--familia-id=<id>] [--dry-run]`
 - `rollover_presupuestos_mensuales [--mes YYYY-MM-01] [--familia-id=<id>] [--dry-run]`
-- `recalcular_pendientes [--limit <n>]`
 - `backfill_resumen_historico [--familia-id <id>]`
 - `recalculo_mensual_admin_tz [--admin-id <id>] [--force]`
 - `seed_demo`, `seed_demo_minimal`, `ensure_demo_seed`, `seed_demo_if_empty`

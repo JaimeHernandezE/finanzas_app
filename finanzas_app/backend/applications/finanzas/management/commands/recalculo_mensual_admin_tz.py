@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.db.models import Min
 from django.utils import timezone
 
-from applications.finanzas.models import IngresoComun, Movimiento, RecalculoPendiente
+from applications.finanzas.models import IngresoComun, Movimiento
 from applications.finanzas import services_recalculo
 
 
@@ -74,7 +74,6 @@ class Command(BaseCommand):
         n_resumen = services_recalculo.backfill_resumen_historico_snapshots(familia_id)
         n_saldos = services_recalculo.backfill_saldos_personales_usuario(admin.pk, familia_id)
         cuotas = services_recalculo.reparar_cuotas_credito_familia(familia_id)
-        RecalculoPendiente.objects.filter(familia_id=familia_id).delete()
 
         self.stdout.write(
             self.style.SUCCESS(

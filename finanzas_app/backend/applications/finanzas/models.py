@@ -612,20 +612,3 @@ class SueldoEstimadoProrrateoMensual(models.Model):
         return f'Sueldo est. prorrateo u={self.usuario_id} {self.mes:%Y-%m}'
 
 
-class RecalculoPendiente(models.Model):
-    """
-    Marca que hay recálculo pendiente desde dirty_from (primer día de mes)
-    para una familia. Un solo registro por familia.
-    """
-    familia = models.OneToOneField(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        related_name='recalculo_pendiente',
-    )
-    dirty_from = models.DateField(
-        help_text='Recalcular snapshots desde este mes (inclusive) hasta el actual.',
-    )
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f'Pendiente desde {self.dirty_from} — {self.familia_id}'

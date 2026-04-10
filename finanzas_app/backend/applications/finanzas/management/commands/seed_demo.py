@@ -34,7 +34,6 @@ from applications.finanzas.models import (
     MetodoPago,
     Movimiento,
     Presupuesto,
-    RecalculoPendiente,
     ResumenHistoricoMesSnapshot,
     SaldoMensualSnapshot,
     SueldoEstimadoProrrateoMensual,
@@ -228,7 +227,6 @@ def _wipe_familia_demo():
     ResumenHistoricoMesSnapshot.objects.filter(familia_id=fid).delete()
     LiquidacionComunMensualSnapshot.objects.filter(familia_id=fid).delete()
     SaldoMensualSnapshot.objects.filter(familia_id=fid).delete()
-    RecalculoPendiente.objects.filter(familia_id=fid).delete()
     if uids:
         SueldoEstimadoProrrateoMensual.objects.filter(usuario_id__in=uids).delete()
 
@@ -580,7 +578,6 @@ class Command(BaseCommand):
         services_recalculo.recalcular_familia_desde(fid, mes_inicio)
         self.stdout.write('seed_demo: backfill resumen histórico…')
         services_recalculo.backfill_resumen_historico_snapshots(fid)
-        RecalculoPendiente.objects.filter(familia_id=fid).delete()
         Movimiento.objects.filter(
             familia_id=fid, fecha__year=ref.year, fecha__month=ref.month
         ).delete()
