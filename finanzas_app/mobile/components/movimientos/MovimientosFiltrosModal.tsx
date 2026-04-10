@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   estadoGrupoCategoria,
   filasCategoriasOrdenadas,
@@ -67,6 +68,7 @@ export function MovimientosFiltrosModal({
   onToggleMetodo,
   onLimpiar,
 }: Props) {
+  const insets = useSafeAreaInsets()
   const anos = rangoAniosSelect(anioMaximo, SPAN_ANIOS_EN_REJILLA)
   const filasCat = filasCategoriasOrdenadas(categorias)
 
@@ -112,7 +114,11 @@ export function MovimientosFiltrosModal({
               </TouchableOpacity>
             </View>
 
-            <ScrollView className="px-5 py-4" keyboardShouldPersistTaps="handled">
+            <ScrollView
+              className="px-5 py-4"
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 12) }}
+            >
               <Text className="text-xs text-muted font-semibold uppercase mb-2">Periodo</Text>
               <View className="flex-row flex-wrap gap-2 mb-3">
                 {(
@@ -315,7 +321,10 @@ export function MovimientosFiltrosModal({
               })}
             </ScrollView>
 
-            <View className="flex-row gap-3 px-5 py-4 border-t border-border">
+            <View
+              className="flex-row gap-3 px-5 pt-4 border-t border-border"
+              style={{ paddingBottom: Math.max(insets.bottom, 16) }}
+            >
               <TouchableOpacity
                 onPress={onLimpiar}
                 className="flex-1 border border-border rounded-xl py-3 items-center"

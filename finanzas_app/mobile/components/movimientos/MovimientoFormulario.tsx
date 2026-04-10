@@ -21,7 +21,8 @@ import {
   ScrollView as RNScrollView,
   Keyboard,
 } from 'react-native'
-import { useLocalSearchParams, useRouter } from 'expo-router'
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
@@ -173,12 +174,22 @@ function todayDisplay(): string {
   return isoToDisplay(new Date().toISOString().slice(0, 10))
 }
 
-/** Mientras el usuario escribe dd/mm/aaaa, auto-inserta barras */
-function autoFormatFecha(text: string): string {
-  const digits = text.replace(/\D/g, '').slice(0, 8)
-  if (digits.length <= 2) return digits
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+function dateToIsoLocal(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function displayToDate(display: string): Date | null {
+  const iso = displayToIso(display)
+  if (!iso) return null
+  const [yRaw, mRaw, dRaw] = iso.split('-')
+  const y = Number(yRaw)
+  const m = Number(mRaw)
+  const d = Number(dRaw)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null
+  return new Date(y, m - 1, d)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -266,6 +277,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const [vinculoIngresoComun, setVinculoIngresoComun] = useState(false)
     const [loadingDetalle, setLoadingDetalle] = useState(false)
     const [showCategoriaPicker, setShowCategoriaPicker] = useState(false)
+    const [showDatePicker, setShowDatePicker] = useState(false)
     const [busquedaCategoria, setBusquedaCategoria] = useState('')
     /** PK de metodo_pago del GET (edición); se sincroniza con `metodos` cuando el catálogo carga — igual que MovimientoEditarPage en web. */
     const [baseMetodoPagoId, setBaseMetodoPagoId] = useState<number | null>(null)
@@ -433,6 +445,25 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }
     }, [esStandalone, cuentaFija])
 
+    useFocusEffect(
+      useCallback(() => {
+        if (!esStandalone || cuentaFija == null || Boolean(editar)) return
+        setEditingId(null)
+        setVinculoIngresoComun(false)
+        setCreditoTarjetaFijaId(null)
+        setForm({
+          ...formInicial(),
+          ambito: 'PERSONAL',
+          cuenta: cuentaFija,
+        })
+        setTipo('EGRESO')
+        setMetodoTipo('DEBITO')
+        setErrorGeneral(null)
+        setBaseMetodoPagoId(null)
+        setShowForm(true)
+      }, [esStandalone, cuentaFija, editar]),
+    )
+
     useEffect(() => {
       if (esStandalone) return
       if (nuevo === '1') {
@@ -583,6 +614,14 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setTimeout(() => {
         formScrollRef.current?.scrollToEnd({ animated: true })
       }, 220)
+    }
+
+    const fechaPickerValue = useMemo(() => displayToDate(form.fecha) ?? new Date(), [form.fecha])
+
+    function onFechaPickerChange(event: DateTimePickerEvent, selectedDate?: Date) {
+      setShowDatePicker(false)
+      if (event.type === 'dismissed' || !selectedDate) return
+      setField('fecha', isoToDisplay(dateToIsoLocal(selectedDate)))
     }
 
     // Ámbito en overlay: solo lectura salvo modo tarjeta fija (desde Tarjetas).
@@ -1078,14 +1117,24 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
 
         {/* Fecha */}
         <Text className="text-xs text-muted font-semibold mb-1">Fecha</Text>
-        <TextInput
-          value={form.fecha}
-          onChangeText={(v) => setField('fecha', autoFormatFecha(v))}
-          placeholder="DD/MM/AAAA"
-          keyboardType="numeric"
-          maxLength={10}
-          className="border border-border rounded-lg px-3 py-2.5 text-dark mb-4"
-        />
+        <TouchableOpacity
+          onPress={() => setShowDatePicker(true)}
+          className="border border-border rounded-lg px-3 py-2.5 bg-white mb-4"
+          accessibilityRole="button"
+          accessibilityLabel="Seleccionar fecha"
+        >
+          <Text className={form.fecha ? 'text-dark' : 'text-muted'}>
+            {form.fecha || 'Seleccionar fecha'}
+          </Text>
+        </TouchableOpacity>
+        {showDatePicker && (
+          <DateTimePicker
+            value={fechaPickerValue}
+            mode="date"
+            display="default"
+            onChange={onFechaPickerChange}
+          />
+        )}
 
         {/* Monto */}
         <Text className="text-xs text-muted font-semibold mb-1">Monto (CLP) *</Text>
