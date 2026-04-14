@@ -58,6 +58,7 @@ interface MovimientoCredito {
 }
 
 type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
+type EstadoFacturacion = 'A_FACTURAR' | 'FACTURADO' | 'PAGADO' | 'VENCIDO'
 
 interface CargoAdicional {
   id: number
@@ -78,9 +79,24 @@ function montoNum(v: string | number | null | undefined): number {
 
 function fechaCorta(iso: string): string {
   if (!iso) return '-'
+  const partes = iso.split('-').map(Number)
+  if (partes.length >= 3 && partes.every(Number.isFinite)) {
+    const [y, m, d] = partes
+    const local = new Date(y, m - 1, d)
+    return local.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+  }
   const d = new Date(iso)
   if (!Number.isFinite(d.getTime())) return iso
   return d.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+}
+
+function clampDiaMes(anio: number, mesIndex: number, dia: number): number {
+  return Math.min(dia, new Date(anio, mesIndex + 1, 0).getDate())
+}
+
+function fechaIso(anio: number, mesIndex: number, dia: number): string {
+  const d = clampDiaMes(anio, mesIndex, dia)
+  return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
 type DetalleMovMap = Map<number, { fecha: string; cat: string; com: string }>
@@ -352,20 +368,31 @@ export default function TarjetaPagarScreen() {
     }
     return map
   }, [cuotasTarjeta])
+  const deudaActivaPorMovimiento = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const c of cuotasTarjeta) {
+      if (c.estado === 'PAGADO' || c.movimiento == null) continue
+      const movId = Number(c.movimiento)
+      if (!Number.isFinite(movId)) continue
+      const previo = map.get(movId) ?? 0
+      map.set(movId, previo + montoNum(c.monto))
+    }
+    return map
+  }, [cuotasTarjeta])
 
   const utilizadoPersonalVisible = useMemo(() => {
     return movPersonal
-      .filter((m) => m.tarjeta === tarjetaIdEfectivo && estadoPorMovimiento.has(m.id))
+      .filter((m) => m.tarjeta === tarjetaIdEfectivo && deudaActivaPorMovimiento.has(m.id))
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
       .slice(0, 10)
-  }, [movPersonal, tarjetaIdEfectivo, estadoPorMovimiento])
+  }, [movPersonal, tarjetaIdEfectivo, deudaActivaPorMovimiento])
 
   const utilizadoComunVisible = useMemo(() => {
     return movComun
-      .filter((m) => m.tarjeta === tarjetaIdEfectivo && estadoPorMovimiento.has(m.id))
+      .filter((m) => m.tarjeta === tarjetaIdEfectivo && deudaActivaPorMovimiento.has(m.id))
       .sort((a, b) => b.fecha.localeCompare(a.fecha))
       .slice(0, 10)
-  }, [movComun, tarjetaIdEfectivo, estadoPorMovimiento])
+  }, [movComun, tarjetaIdEfectivo, deudaActivaPorMovimiento])
 
   const utilizadoPersonalPorCuenta = useMemo(() => {
     const map = new Map<string, { cuentaNombre: string; total: number; movimientos: MovimientoCredito[] }>()
@@ -373,12 +400,12 @@ export default function TarjetaPagarScreen() {
       const cuentaNombre = (m.cuenta_nombre ?? 'Sin cuenta').trim()
       const key = String(m.cuenta ?? 'sin-cuenta')
       const entry = map.get(key) ?? { cuentaNombre, total: 0, movimientos: [] }
-      entry.total += montoNum(m.monto)
+      entry.total += deudaActivaPorMovimiento.get(m.id) ?? 0
       entry.movimientos.push(m)
       map.set(key, entry)
     }
     return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
-  }, [utilizadoPersonalVisible])
+  }, [utilizadoPersonalVisible, deudaActivaPorMovimiento])
 
   const totalCuotasPorMovimiento = useMemo(() => {
     const map = new Map<number, number>()
@@ -397,8 +424,8 @@ export default function TarjetaPagarScreen() {
     [cuotasTarjeta],
   )
   const totalDeudaActivaPersonal = useMemo(
-    () => utilizadoPersonalVisible.reduce((s, m) => s + montoNum(m.monto), 0),
-    [utilizadoPersonalVisible],
+    () => utilizadoPersonalVisible.reduce((s, m) => s + (deudaActivaPorMovimiento.get(m.id) ?? 0), 0),
+    [utilizadoPersonalVisible, deudaActivaPorMovimiento],
   )
   const totalDeudaActivaComun = Math.max(0, totalDeudaActiva - totalDeudaActivaPersonal)
 
@@ -428,7 +455,92 @@ export default function TarjetaPagarScreen() {
     () => cuotas.filter((c) => !cuotaIncluida(c)).length,
     [cuotas, cuotaIncluida],
   )
-  const estadoFacturado = cuotas.some((c) => c.estado !== 'PAGADO') ? 'PENDIENTE' : 'PAGADO'
+  const cicloFacturacionTexto = useMemo(() => {
+    if (tarjetaSeleccionada?.dia_facturacion == null) return null
+    const df = tarjetaSeleccionada.dia_facturacion
+    const dv = tarjetaSeleccionada.dia_vencimiento
+    const inicioMesAnterior = new Date(anio, mes - 1, 1)
+    const cierreMesActual = new Date(anio, mes, 1)
+    const inicio = fechaCorta(
+      fechaIso(inicioMesAnterior.getFullYear(), inicioMesAnterior.getMonth(), df + 1),
+    )
+    const fin = fechaCorta(
+      fechaIso(cierreMesActual.getFullYear(), cierreMesActual.getMonth(), df),
+    )
+    let vencimientoTexto = ''
+    if (dv != null) {
+      const vencMes = dv < df ? mes + 1 : mes
+      const vencAnio = dv < df && mes === 11 ? anio + 1 : anio
+      const fechaVencimiento = fechaCorta(fechaIso(vencAnio, vencMes, dv))
+      vencimientoTexto = ` · Vence el ${fechaVencimiento}`
+    }
+    return `Ciclo: del ${inicio} al ${fin}${vencimientoTexto}`
+  }, [tarjetaSeleccionada?.dia_facturacion, tarjetaSeleccionada?.dia_vencimiento, anio, mes])
+  const estadoFacturacionData = useMemo(() => {
+    const df = tarjetaSeleccionada?.dia_facturacion
+    const dv = tarjetaSeleccionada?.dia_vencimiento
+    const mesSeleccionadoIdx = anio * 12 + mes
+    const cuotasPagadasMes = cuotas.filter(c => c.estado === 'PAGADO').length
+    const cuotasPendientesMes = cuotas.some(c => c.estado !== 'PAGADO')
+    const pendientesPrevios = cuotasTarjeta.some((c) => {
+      if (c.estado === 'PAGADO') return false
+      const idx = toMonthIndex(c.mes_facturacion)
+      return idx != null && idx < mesSeleccionadoIdx
+    })
+    const hayPendiente = cuotasPendientesMes || pendientesPrevios
+
+    if (!df) {
+      if (cuotasPagadasMes > 0 && !hayPendiente) {
+        return { estado: 'PAGADO' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
+      }
+      return { estado: hayPendiente ? 'FACTURADO' as EstadoFacturacion : 'A_FACTURAR' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
+    }
+
+    const hoy = new Date()
+    const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+    const cierreSel = new Date(anio, mes, clampDiaMes(anio, mes, df))
+    if (cuotasPagadasMes > 0 && !hayPendiente) {
+      return { estado: 'PAGADO' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
+    }
+
+    if (!hayPendiente) {
+      return { estado: hoySinHora <= cierreSel ? 'A_FACTURAR' as EstadoFacturacion : 'FACTURADO' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+
+    const prevIdxs = cuotasTarjeta
+      .filter(c => c.estado !== 'PAGADO')
+      .map(c => toMonthIndex(c.mes_facturacion))
+      .filter((v): v is number => v != null && v < mesSeleccionadoIdx)
+    const cicloObjetivoIdx = cuotasPendientesMes
+      ? mesSeleccionadoIdx
+      : (prevIdxs.length > 0 ? Math.max(...prevIdxs) : mesSeleccionadoIdx)
+    const cicloAnio = Math.floor(cicloObjetivoIdx / 12)
+    const cicloMes = cicloObjetivoIdx % 12
+    const cierreCiclo = new Date(cicloAnio, cicloMes, clampDiaMes(cicloAnio, cicloMes, df))
+    if (!pendientesPrevios && hoySinHora <= cierreCiclo) {
+      return { estado: 'A_FACTURAR' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+    if (dv == null) {
+      return { estado: 'FACTURADO' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+    const vencMes = dv < df ? cicloMes + 1 : cicloMes
+    const vencAnio = dv < df && cicloMes === 11 ? cicloAnio + 1 : cicloAnio
+    const fechaVencimiento = new Date(vencAnio, vencMes, clampDiaMes(vencAnio, vencMes, dv))
+    return {
+      estado: hoySinHora > fechaVencimiento ? 'VENCIDO' as EstadoFacturacion : 'FACTURADO' as EstadoFacturacion,
+      cuotasPagadas: 0,
+    }
+  }, [tarjetaSeleccionada?.dia_facturacion, tarjetaSeleccionada?.dia_vencimiento, anio, mes, cuotas, cuotasTarjeta])
+  const etiquetaFacturacion = estadoFacturacionData.estado === 'A_FACTURAR'
+    ? 'A facturar'
+    : estadoFacturacionData.estado === 'PAGADO'
+      ? 'Pagado'
+      : estadoFacturacionData.estado === 'VENCIDO'
+        ? 'Vencido'
+        : 'Facturado'
+  const etiquetaFacturacionDetalle = estadoFacturacionData.estado === 'PAGADO'
+    ? `Pagado (${estadoFacturacionData.cuotasPagadas} cuota${estadoFacturacionData.cuotasPagadas === 1 ? '' : 's'})`
+    : etiquetaFacturacion
 
   function toggleIncluir(cuota: Cuota) {
     if (cuota.estado === 'PAGADO') return
@@ -579,13 +691,9 @@ export default function TarjetaPagarScreen() {
             )}
           </View>
 
-          {tarjetaSeleccionada.dia_facturacion != null && (
+          {cicloFacturacionTexto != null && (
             <Text className="text-muted text-xs mb-4">
-              Ciclo: del {tarjetaSeleccionada.dia_facturacion + 1} del mes anterior al{' '}
-              {tarjetaSeleccionada.dia_facturacion} de este mes
-              {tarjetaSeleccionada.dia_vencimiento != null
-                ? ` · Vence el ${tarjetaSeleccionada.dia_vencimiento} del mes siguiente`
-                : ''}
+              {cicloFacturacionTexto}
             </Text>
           )}
 
@@ -620,7 +728,7 @@ export default function TarjetaPagarScreen() {
                 }`}
               >
                 <Text className={`text-xs font-semibold ${vistaActiva === v ? 'text-white' : 'text-muted'}`}>
-                  {v === 'UTILIZADO' ? 'Utilizado' : 'Facturado'}
+                  {v === 'UTILIZADO' ? 'Utilizado' : etiquetaFacturacion}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -725,7 +833,9 @@ export default function TarjetaPagarScreen() {
                                       {estado === 'ACTIVO' ? 'Activo' : 'Pagado'}
                                     </Text>
                                   </View>
-                                  <Text className="text-dark text-xs font-semibold">{formatMonto(montoNum(m.monto))}</Text>
+                                  <Text className="text-dark text-xs font-semibold">
+                                    {formatMonto(deudaActivaPorMovimiento.get(m.id) ?? 0)}
+                                  </Text>
                                 </View>
                               </TouchableOpacity>
                             )
@@ -771,7 +881,9 @@ export default function TarjetaPagarScreen() {
                                     {estado === 'ACTIVO' ? 'Activo' : 'Pagado'}
                                   </Text>
                                 </View>
-                                <Text className="text-dark text-xs font-semibold">{formatMonto(montoNum(m.monto))}</Text>
+                                <Text className="text-dark text-xs font-semibold">
+                                  {formatMonto(deudaActivaPorMovimiento.get(m.id) ?? 0)}
+                                </Text>
                               </View>
                             </TouchableOpacity>
                           )
@@ -802,13 +914,27 @@ export default function TarjetaPagarScreen() {
                     <Text className="text-xs text-muted font-semibold uppercase">Cuotas del mes</Text>
                     <View
                       className="px-3 py-1 rounded-full"
-                      style={{ backgroundColor: estadoFacturado === 'PENDIENTE' ? '#fff7ed' : '#f0fdf4' }}
+                      style={{
+                        backgroundColor:
+                          estadoFacturacionData.estado === 'VENCIDO'
+                            ? '#fef2f2'
+                            : estadoFacturacionData.estado === 'A_FACTURAR'
+                              ? '#fff7ed'
+                              : '#f0fdf4',
+                      }}
                     >
                       <Text
                         className="text-xs font-semibold"
-                        style={{ color: estadoFacturado === 'PENDIENTE' ? '#f59e0b' : '#22c55e' }}
+                        style={{
+                          color:
+                            estadoFacturacionData.estado === 'VENCIDO'
+                              ? '#b91c1c'
+                              : estadoFacturacionData.estado === 'A_FACTURAR'
+                                ? '#f59e0b'
+                                : '#22c55e',
+                        }}
                       >
-                        {estadoFacturado === 'PENDIENTE' ? 'Pendiente' : 'Pagado'}
+                        {etiquetaFacturacionDetalle}
                       </Text>
                     </View>
                   </View>

@@ -64,6 +64,7 @@ interface MovimientoAsociado {
 }
 
 type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
+type EstadoFacturacion = 'A_FACTURAR' | 'FACTURADO' | 'PAGADO' | 'VENCIDO'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -840,34 +841,112 @@ export default function PagarTarjetaPage() {
     }
     return map
   }, [cuotasTarjeta])
+  const deudaActivaPorMovimiento = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const c of cuotasTarjeta) {
+      if (c.estado === 'PAGADO' || !c.movimiento) continue
+      const movId = Number(c.movimiento)
+      if (!Number.isFinite(movId)) continue
+      const previo = map.get(movId) ?? 0
+      map.set(movId, previo + Number(c.monto || 0))
+    }
+    return map
+  }, [cuotasTarjeta])
   const utilizadoPersonalVisible = useMemo(
-    () => movimientosPersonalesTarjeta.filter(m => estadoPorMovimiento.has(m.id)),
-    [movimientosPersonalesTarjeta, estadoPorMovimiento],
+    () => movimientosPersonalesTarjeta.filter(m => deudaActivaPorMovimiento.has(m.id)),
+    [movimientosPersonalesTarjeta, deudaActivaPorMovimiento],
   )
   const utilizadoComunVisible = useMemo(
-    () => movimientosComunesTarjeta.filter(m => estadoPorMovimiento.has(m.id)),
-    [movimientosComunesTarjeta, estadoPorMovimiento],
+    () => movimientosComunesTarjeta.filter(m => deudaActivaPorMovimiento.has(m.id)),
+    [movimientosComunesTarjeta, deudaActivaPorMovimiento],
   )
-  const estadoFacturado = cuotas.some(c => c.estado !== 'PAGADO') ? 'PENDIENTE' : 'PAGADO'
   const cicloFacturacionTexto = useMemo(() => {
     if (!tarjeta?.dia_facturacion) return null
     const df = tarjeta.dia_facturacion
     const dv = tarjeta.dia_vencimiento
-    if (!dv || df === dv) {
-      return (
-        `Ciclo: del ${df + 1} del mes anterior al ${df} de este mes` +
-        (dv ? ` · Vence el ${dv} del mes siguiente` : '')
+    const inicioMesAnterior = new Date(anio, mes - 1, 1)
+    const cierreMesActual = new Date(anio, mes, 1)
+    const inicio = fechaCorta(
+      fechaIso(inicioMesAnterior.getFullYear(), inicioMesAnterior.getMonth(), df + 1),
+    )
+    const fin = fechaCorta(
+      fechaIso(cierreMesActual.getFullYear(), cierreMesActual.getMonth(), df),
+    )
+    let vencimientoTexto = ''
+    if (dv) {
+      const vencMes = dv < df ? mes + 1 : mes
+      const vencAnio = dv < df && mes === 11 ? anio + 1 : anio
+      const fechaVencimiento = fechaCorta(
+        fechaIso(vencAnio, vencMes, dv),
       )
+      vencimientoTexto = ` · Vence el ${fechaVencimiento}`
+    }
+    return `Ciclo: del ${inicio} al ${fin}${vencimientoTexto}`
+  }, [tarjeta?.dia_facturacion, tarjeta?.dia_vencimiento, anio, mes])
+  const estadoFacturacionData = useMemo(() => {
+    const df = tarjeta?.dia_facturacion
+    const dv = tarjeta?.dia_vencimiento
+    const cuotasPagadasMes = cuotas.filter(c => c.estado === 'PAGADO').length
+    const cuotasPendientesMes = cuotas.some(c => c.estado !== 'PAGADO')
+    const pendientesPrevios = cuotasTarjeta.some((c) => {
+      if (c.estado === 'PAGADO') return false
+      const idx = toMonthIndex(c.mes_facturacion)
+      return idx != null && idx < mesSeleccionadoIdx
+    })
+    const hayPendiente = cuotasPendientesMes || pendientesPrevios
+
+    if (!df) {
+      if (cuotasPagadasMes > 0 && !hayPendiente) {
+        return { estado: 'PAGADO' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
+      }
+      return { estado: hayPendiente ? 'FACTURADO' as EstadoFacturacion : 'A_FACTURAR' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
     }
 
-    const startOffset = df > dv ? -2 : -1
-    const endOffset = df > dv ? -1 : 0
-    const startDate = new Date(anio, mes + startOffset, 1)
-    const endDate = new Date(anio, mes + endOffset, 1)
-    const inicio = fechaCorta(fechaIso(startDate.getFullYear(), startDate.getMonth(), df + 1))
-    const fin = fechaCorta(fechaIso(endDate.getFullYear(), endDate.getMonth(), df))
-    return `Ciclo: del ${inicio} al ${fin} · Vence el ${dv}`
-  }, [tarjeta?.dia_facturacion, tarjeta?.dia_vencimiento, anio, mes])
+    const hoy = new Date()
+    const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())
+    const cierreSel = new Date(anio, mes, clampDiaMes(anio, mes, df))
+    if (cuotasPagadasMes > 0 && !hayPendiente) {
+      return { estado: 'PAGADO' as EstadoFacturacion, cuotasPagadas: cuotasPagadasMes }
+    }
+
+    if (!hayPendiente) {
+      return { estado: hoySinHora <= cierreSel ? 'A_FACTURAR' as EstadoFacturacion : 'FACTURADO' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+
+    const prevIdxs = cuotasTarjeta
+      .filter(c => c.estado !== 'PAGADO')
+      .map(c => toMonthIndex(c.mes_facturacion))
+      .filter((v): v is number => v != null && v < mesSeleccionadoIdx)
+    const cicloObjetivoIdx = cuotasPendientesMes
+      ? mesSeleccionadoIdx
+      : (prevIdxs.length > 0 ? Math.max(...prevIdxs) : mesSeleccionadoIdx)
+    const cicloAnio = Math.floor(cicloObjetivoIdx / 12)
+    const cicloMes = cicloObjetivoIdx % 12
+    const cierreCiclo = new Date(cicloAnio, cicloMes, clampDiaMes(cicloAnio, cicloMes, df))
+    if (!pendientesPrevios && hoySinHora <= cierreCiclo) {
+      return { estado: 'A_FACTURAR' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+    if (!dv) {
+      return { estado: 'FACTURADO' as EstadoFacturacion, cuotasPagadas: 0 }
+    }
+    const vencMes = dv < df ? cicloMes + 1 : cicloMes
+    const vencAnio = dv < df && cicloMes === 11 ? cicloAnio + 1 : cicloAnio
+    const fechaVencimiento = new Date(vencAnio, vencMes, clampDiaMes(vencAnio, vencMes, dv))
+    return {
+      estado: hoySinHora > fechaVencimiento ? 'VENCIDO' as EstadoFacturacion : 'FACTURADO' as EstadoFacturacion,
+      cuotasPagadas: 0,
+    }
+  }, [tarjeta?.dia_facturacion, tarjeta?.dia_vencimiento, anio, mes, cuotas, cuotasTarjeta, mesSeleccionadoIdx])
+  const etiquetaFacturacion = estadoFacturacionData.estado === 'A_FACTURAR'
+    ? 'A facturar'
+    : estadoFacturacionData.estado === 'PAGADO'
+      ? 'Pagado'
+      : estadoFacturacionData.estado === 'VENCIDO'
+        ? 'Vencido'
+        : 'Facturado'
+  const etiquetaFacturacionDetalle = estadoFacturacionData.estado === 'PAGADO'
+    ? `Pagado (${estadoFacturacionData.cuotasPagadas} cuota${estadoFacturacionData.cuotasPagadas === 1 ? '' : 's'})`
+    : etiquetaFacturacion
   const totalCuotasPorMovimiento = useMemo(() => {
     const map = new Map<number, number>()
     for (const c of cuotasTarjeta) {
@@ -885,14 +964,8 @@ export default function PagarTarjetaPage() {
     [cuotasTarjeta],
   )
   const totalDeudaActivaPersonal = useMemo(
-    () =>
-      cuotasTarjeta
-        .filter(c => c.estado !== 'PAGADO')
-        .reduce((acc, c) => {
-          const mov = c.movimiento ? ((movPersonalData ?? []) as MovimientoAsociado[]).find(m => m.id === c.movimiento) : null
-          return acc + (mov ? Number(c.monto || 0) : 0)
-        }, 0),
-    [cuotasTarjeta, movPersonalData],
+    () => utilizadoPersonalVisible.reduce((acc, mov) => acc + (deudaActivaPorMovimiento.get(mov.id) ?? 0), 0),
+    [utilizadoPersonalVisible, deudaActivaPorMovimiento],
   )
   const totalDeudaActivaComun = Math.max(0, totalDeudaActiva - totalDeudaActivaPersonal)
   const personalesPorCuenta = useMemo(() => {
@@ -901,12 +974,12 @@ export default function PagarTarjetaPage() {
       const cuentaNombre = mov.cuenta_nombre || 'Sin cuenta'
       const key = String(mov.cuenta ?? 'sin-cuenta')
       const entry = map.get(key) ?? { cuentaNombre, total: 0, movimientos: [] }
-      entry.total += Number(mov.monto || 0)
+      entry.total += deudaActivaPorMovimiento.get(mov.id) ?? 0
       entry.movimientos.push(mov)
       map.set(key, entry)
     }
     return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre))
-  }, [utilizadoPersonalVisible])
+  }, [utilizadoPersonalVisible, deudaActivaPorMovimiento])
 
   if (cuotasLoading || cuotasTarjetaLoading || movPersonalLoading || movComunLoading) return <Cargando />
   if (cuotasError || cuotasTarjetaError || movPersonalError || movComunError) {
@@ -1010,7 +1083,7 @@ export default function PagarTarjetaPage() {
             className={`${styles.segBtn} ${vistaActiva === 'FACTURADO' ? styles.segBtnActive : ''}`}
             onClick={() => setVistaActiva('FACTURADO')}
           >
-            Facturado
+            {etiquetaFacturacion}
           </button>
         </div>
         <div className={styles.filterBarSpacer} />
@@ -1067,7 +1140,7 @@ export default function PagarTarjetaPage() {
                         <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
                           {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
                         </span>
-                        <span className={styles.movMonto}>{formatMonto(Number(mov.monto || 0))}</span>
+                        <span className={styles.movMonto}>{formatMonto(deudaActivaPorMovimiento.get(mov.id) ?? 0)}</span>
                       </div>
                     ))}
                   </div>
@@ -1109,7 +1182,7 @@ export default function PagarTarjetaPage() {
                     <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
                       {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
                     </span>
-                    <span className={styles.movMonto}>{formatMonto(Number(mov.monto || 0))}</span>
+                    <span className={styles.movMonto}>{formatMonto(deudaActivaPorMovimiento.get(mov.id) ?? 0)}</span>
                   </div>
                 ))
               )}
@@ -1121,13 +1194,18 @@ export default function PagarTarjetaPage() {
       {vistaActiva === 'FACTURADO' && (
         <>
           <div className={styles.sectionHeader}>
-            <span className={styles.sectionTitle}>FACTURADO</span>
+            <span className={styles.sectionTitle}>{etiquetaFacturacion.toUpperCase()}</span>
             <span
               className={`${styles.badgeFacturado} ${
-                estadoFacturado === 'PAGADO' ? styles.badgeFacturadoPagado : styles.badgeFacturadoPendiente
+                estadoFacturacionData.estado === 'VENCIDO'
+                  ? styles.badgeFacturadoPendiente
+                  : estadoFacturacionData.estado === 'FACTURADO' || estadoFacturacionData.estado === 'PAGADO'
+                    ? styles.badgeFacturadoPagado
+                    : styles.badgeFacturadoPendiente
               }`}
+              style={estadoFacturacionData.estado === 'VENCIDO' ? { color: '#b91c1c', borderColor: '#fecaca', background: '#fef2f2' } : undefined}
             >
-              {estadoFacturado === 'PAGADO' ? 'Pagado' : 'Pendiente'}
+              {etiquetaFacturacionDetalle}
             </span>
           </div>
 

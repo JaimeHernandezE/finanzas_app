@@ -60,6 +60,13 @@ export default function TarjetasPage() {
   const [diaVencimiento, setDiaVencimiento] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [editandoId, setEditandoId] = useState<number | null>(null)
+  const [editNombre, setEditNombre] = useState('')
+  const [editBanco, setEditBanco] = useState('')
+  const [editDiaFacturacion, setEditDiaFacturacion] = useState('')
+  const [editDiaVencimiento, setEditDiaVencimiento] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
 
   const deudaPorTarjeta = useMemo(() => {
     const movToTarjeta = new Map<number, number>()
@@ -120,6 +127,59 @@ export default function TarjetasPage() {
     }
   }
 
+  const abrirEdicion = (tarjeta: TarjetaRow) => {
+    setEditandoId(tarjeta.id)
+    setEditNombre(tarjeta.nombre)
+    setEditBanco(tarjeta.banco ?? '')
+    setEditDiaFacturacion(tarjeta.dia_facturacion != null ? String(tarjeta.dia_facturacion) : '')
+    setEditDiaVencimiento(tarjeta.dia_vencimiento != null ? String(tarjeta.dia_vencimiento) : '')
+    setEditError(null)
+  }
+
+  const cancelarEdicion = () => {
+    setEditandoId(null)
+    setEditNombre('')
+    setEditBanco('')
+    setEditDiaFacturacion('')
+    setEditDiaVencimiento('')
+    setEditError(null)
+  }
+
+  const handleGuardarEdicion = async () => {
+    if (editandoId == null) return
+    const n = editNombre.trim()
+    const b = editBanco.trim()
+    if (!n || !b) {
+      setEditError('Nombre y banco son obligatorios.')
+      return
+    }
+    setEditError(null)
+    setEditSaving(true)
+    try {
+      await catalogosApi.updateTarjeta(editandoId, {
+        nombre: n,
+        banco: b,
+        dia_facturacion: editDiaFacturacion ? Number(editDiaFacturacion) : null,
+        dia_vencimiento: editDiaVencimiento ? Number(editDiaVencimiento) : null,
+      })
+      await refetch()
+      cancelarEdicion()
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: Record<string, string[] | string> } }
+      const d = ax.response?.data
+      if (d && typeof d === 'object') {
+        const msgs = Object.values(d).flatMap(v =>
+          Array.isArray(v) ? v : [String(v)],
+        )
+        setEditError(msgs.join(' ') || 'No se pudo actualizar la tarjeta.')
+      } else {
+        setEditError('No se pudo actualizar la tarjeta.')
+      }
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   if (loading || loadingCuotas || loadingMovimientosCredito) return <Cargando />
   if (error || errorCuotas || errorMovimientosCredito) {
     return <ErrorCarga mensaje={error || errorCuotas || errorMovimientosCredito || 'Error al cargar tarjetas.'} />
@@ -153,27 +213,89 @@ export default function TarjetasPage() {
         ) : (
           tarjetas.map(t => (
             <div key={t.id} className={styles.tarjetaCard}>
-              <div className={styles.tarjetaInfo}>
-                <span className={styles.tarjetaNombre}>{t.nombre}</span>
-                <span className={styles.tarjetaBanco}>{t.banco}</span>
-                {t.dia_facturacion && (
-                  <span className={styles.tarjetaCiclo}>
-                    Cierre: día {t.dia_facturacion}
-                    {t.dia_vencimiento ? ` · Vence: día ${t.dia_vencimiento}` : ''}
-                  </span>
-                )}
-              </div>
-              <div className={styles.tarjetaActions}>
-                <div className={styles.tarjetaUtilizado}>
-                  <span className={styles.tarjetaUtilizadoLabel}>Utilizado</span>
-                  <strong className={styles.tarjetaUtilizadoMonto}>
-                    {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
-                  </strong>
+              {editandoId === t.id ? (
+                <div className={styles.tarjetaEdit}>
+                  <div className={styles.formRow}>
+                    <Input
+                      label="Nombre en estado de cuenta"
+                      placeholder="Ej: Visa Gold"
+                      value={editNombre}
+                      onChange={e => setEditNombre(e.target.value)}
+                    />
+                    <Input
+                      label="Banco"
+                      placeholder="Ej: Banco de Chile"
+                      value={editBanco}
+                      onChange={e => setEditBanco(e.target.value)}
+                    />
+                  </div>
+                  <div className={styles.formRow}>
+                    <Input
+                      label="Día de facturación (opcional)"
+                      type="number"
+                      min={1}
+                      max={31}
+                      placeholder="Ej: 15"
+                      value={editDiaFacturacion}
+                      onChange={e => setEditDiaFacturacion(e.target.value)}
+                    />
+                    <Input
+                      label="Día de vencimiento (opcional)"
+                      type="number"
+                      min={1}
+                      max={31}
+                      placeholder="Ej: 5"
+                      value={editDiaVencimiento}
+                      onChange={e => setEditDiaVencimiento(e.target.value)}
+                    />
+                  </div>
+                  {editError && <p className={styles.errorMsg}>{editError}</p>}
+                  <div className={styles.formActions}>
+                    <Button type="button" variant="ghost" onClick={cancelarEdicion} disabled={editSaving}>
+                      Cancelar
+                    </Button>
+                    <Button type="button" onClick={handleGuardarEdicion} loading={editSaving}>
+                      Guardar cambios
+                    </Button>
+                  </div>
                 </div>
-                <Link to={`/tarjetas/pagar?tarjeta=${t.id}`} className={styles.linkPagar}>
-                  Estado de cuenta
-                </Link>
-              </div>
+              ) : (
+                <>
+                  <div className={styles.tarjetaInfo}>
+                    <span className={styles.tarjetaNombre}>{t.nombre}</span>
+                    <span className={styles.tarjetaBanco}>{t.banco}</span>
+                    {t.dia_facturacion && (
+                      <span className={styles.tarjetaCiclo}>
+                        Cierre: día {t.dia_facturacion}
+                        {t.dia_vencimiento ? ` · Vence: día ${t.dia_vencimiento}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div className={styles.tarjetaActions}>
+                    <div className={styles.tarjetaUtilizado}>
+                      <span className={styles.tarjetaUtilizadoLabel}>Utilizado</span>
+                      <strong className={styles.tarjetaUtilizadoMonto}>
+                        {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
+                      </strong>
+                    </div>
+                    <div className={styles.tarjetaActionButtons}>
+                      <Link
+                        to={`/tarjetas/pagar?tarjeta=${t.id}`}
+                        className={`${styles.linkPagar} ${styles.linkPagarCard}`}
+                      >
+                        Estado de cuenta
+                      </Link>
+                      <button
+                        type="button"
+                        className={styles.btnEditarTarjeta}
+                        onClick={() => abrirEdicion(t)}
+                      >
+                        Editar
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           ))
         )}

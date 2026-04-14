@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
@@ -185,6 +185,13 @@ export default function DashboardScreen() {
     await refetchAll()
     setRefreshing(false)
   }
+  useFocusEffect(
+    useCallback(() => {
+      // Refresca métricas al volver al dashboard (incluye Deuda tarjetas).
+      void refetchAll()
+      return undefined
+    }, [refetchAll]),
+  )
 
   const cuentasPersonales = useMemo(() => {
     const list = (qCuentas.data ?? []).filter((c) => c.es_propia)

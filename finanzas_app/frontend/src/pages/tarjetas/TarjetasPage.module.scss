@@ -88,14 +88,48 @@
   border-radius: $radius-lg;
 }
 
+.tarjetaEdit {
+  width: 100%;
+}
+
 .tarjetaInfo {
   min-width: 0;
 }
 
 .tarjetaActions {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: $space-2;
+}
+
+.tarjetaActionButtons {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: $space-2;
+  min-width: 164px;
+}
+
+.linkPagarCard {
+  width: 100%;
+  justify-content: center;
+}
+
+.btnEditarTarjeta {
+  border: 1px solid $color-border;
+  background: $color-bg-white;
+  color: $color-text;
+  border-radius: $radius-base;
+  padding: $space-2 $space-3;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+  transition: background-color $transition-fast;
+  &:hover {
+    background: $color-bg-subtle;
+  }
 }
 
 .tarjetaUtilizado {

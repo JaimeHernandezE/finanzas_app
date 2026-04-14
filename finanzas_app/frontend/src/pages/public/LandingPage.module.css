@@ -40,6 +40,18 @@
   color: #f7f7f5;
 }
 
+.demoRibbon {
+  margin-left: 10px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #0f0f0f;
+  background: #c8f060;
+  padding: 5px 10px;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+
 .navLogin {
   font-size: 14px;
   font-weight: 600;
@@ -120,6 +132,59 @@
   box-shadow: 0 8px 24px rgba(200, 240, 96, 0.25);
 }
 
+.demoCta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.demoCtaHint {
+  font-size: 14px;
+  color: rgba(247, 247, 245, 0.5);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.demoCtaBtns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  width: 100%;
+}
+@media (max-width: 480px) {
+  .demoCtaBtns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.demoCtaBtn {
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 14px 20px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 240, 96, 0.45);
+  background: rgba(200, 240, 96, 0.12);
+  color: #c8f060;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.demoCtaBtn:hover {
+  background: rgba(200, 240, 96, 0.2);
+  border-color: rgba(200, 240, 96, 0.65);
+  transform: translateY(-1px);
+}
+
+.demoCtaMeta {
+  font-size: 12px;
+  color: rgba(247, 247, 245, 0.4);
+  margin: 0;
+  text-align: center;
+}
+
 .features {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -178,4 +243,13 @@
   font-size: 12px;
   color: rgba(247, 247, 245, 0.5);
   margin: 0;
+}
+.footer .footerDemo {
+  margin-top: 10px;
+  font-size: 11px;
+  color: rgba(200, 240, 96, 0.55);
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.4;
 }/*# sourceMappingURL=LandingPage.module.css.map */

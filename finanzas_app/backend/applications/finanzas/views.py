@@ -103,17 +103,11 @@ def _mes_facturacion_para_mes_facturado(
     dia_vencimiento: int | None,
 ) -> date:
     """
-    Mapea el mes que se está pagando/facturando al mes_facturacion almacenado en Cuota.
-
-    Regla:
-    - Si dia_facturacion > dia_vencimiento: el facturado del mes X usa mes_facturacion X-1.
-    - Si dia_facturacion < dia_vencimiento: el facturado del mes X usa mes_facturacion X.
-    - Si faltan datos de ciclo, se mantiene el comportamiento histórico (X).
+    En el modelo actual de ciclo, el estado de cuenta que cierra en mes X
+    consume cuotas con mes_facturacion X (independiente del día de vencimiento).
     """
-    if not dia_facturacion or not dia_vencimiento:
-        return mes_facturado
-    if dia_facturacion > dia_vencimiento:
-        return mes_facturado + relativedelta(months=-1)
+    _ = dia_facturacion
+    _ = dia_vencimiento
     return mes_facturado
 
 
@@ -782,34 +776,27 @@ def cuotas(request):
 @permission_classes([AllowAny])
 def cuotas_deuda_pendiente(request):
     """
-    Suma de cuotas de tarjeta del usuario autenticado con mes de facturación
-    igual al mes calendario actual (facturación del mes en curso), pendientes
-    de pago (PENDIENTE o FACTURADO) e incluidas en el estado de cuenta.
+    Suma de cuotas no pagadas del mes actual (facturado/a facturar del mes)
+    de todas las tarjetas personales del usuario autenticado.
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
 
     hoy = timezone.localdate()
-    mes_facturado = date(hoy.year, hoy.month, 1)
-    meses_candidatos = {
-        mes_facturado,
-        mes_facturado + relativedelta(months=-1),
-    }
-
     qs = Cuota.objects.filter(
-        movimiento__usuario=usuario,
-        mes_facturacion__in=meses_candidatos,
+        movimiento__tarjeta__usuario=usuario,
         incluir=True,
         estado__in=('PENDIENTE', 'FACTURADO'),
-    ).select_related('movimiento__tarjeta')
+        mes_facturacion__year=hoy.year,
+        mes_facturacion__month=hoy.month,
+    )
     if usuario.familia_id:
         qs = qs.filter(movimiento__familia_id=usuario.familia_id)
 
-    total = Decimal('0')
+    total = Decimal('0.00')
     for cuota in qs:
-        if _cuota_corresponde_a_mes_facturado(cuota, mes_facturado):
-            total += cuota.monto
+        total += cuota.monto
     return Response({'total': str(total)})
 
 

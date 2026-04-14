@@ -446,7 +446,7 @@ class TestCuotasEndpoint:
         metodo_credito,
         tarjeta,
     ):
-        """Con facturación > vencimiento, el mes X consulta mes_facturacion X-1."""
+        """El ciclo considera cuotas del mes de cierre (independiente del vencimiento)."""
         tarjeta.dia_facturacion = 20
         tarjeta.dia_vencimiento = 7
         tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
@@ -477,7 +477,7 @@ class TestCuotasEndpoint:
         )
 
         res = client.get(
-            f'/api/finanzas/cuotas/?tarjeta={tarjeta.id}&mes=4&anio=2026',
+            f'/api/finanzas/cuotas/?tarjeta={tarjeta.id}&mes=3&anio=2026',
             **auth_header,
         )
         assert res.status_code == 200
@@ -494,7 +494,7 @@ class TestCuotasEndpoint:
         metodo_credito,
         tarjeta,
     ):
-        """Con facturación < vencimiento, el mes X consulta mes_facturacion X."""
+        """El ciclo considera cuotas del mes de cierre también con vencimiento posterior."""
         tarjeta.dia_facturacion = 20
         tarjeta.dia_vencimiento = 30
         tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
@@ -564,7 +564,7 @@ class TestCuotasEndpoint:
         assert res.status_code == 200
         assert len(res.json()) == 0
 
-    def test_cuotas_deuda_pendiente_respeta_regla_facturacion_vencimiento(
+    def test_cuotas_deuda_pendiente_suma_solo_cuotas_del_mes_actual(
         self,
         client,
         auth_header,
@@ -575,50 +575,118 @@ class TestCuotasEndpoint:
         metodo_credito,
         tarjeta,
     ):
-        """Total pendiente del mes usa ventana correcta cuando facturación > vencimiento."""
-        tarjeta.dia_facturacion = 20
-        tarjeta.dia_vencimiento = 7
-        tarjeta.save(update_fields=['dia_facturacion', 'dia_vencimiento'])
+        """Suma solo cuotas no pagadas del mes actual del usuario."""
+        from applications.finanzas.models import Tarjeta
 
-        Movimiento.objects.create(
+        tarjeta_a = Tarjeta.objects.create(
+            usuario=usuario,
+            nombre='TC A',
+            banco='Banco A',
+            dia_facturacion=5,
+            dia_vencimiento=25,
+        )
+        tarjeta_b = Tarjeta.objects.create(
+            usuario=usuario,
+            nombre='TC B',
+            banco='Banco B',
+            dia_facturacion=20,
+            dia_vencimiento=7,
+        )
+
+        mov_1 = Movimiento.objects.create(
             usuario=usuario,
             familia=familia,
-            fecha='2026-02-21',
+            fecha='2026-03-03',
             tipo='EGRESO',
             ambito='PERSONAL',
             categoria=categoria_egreso,
-            monto='100000.00',
+            monto='80000.00',
             metodo_pago=metodo_credito,
-            tarjeta=tarjeta,
+            tarjeta=tarjeta_a,
             num_cuotas=1,
         )
-        Movimiento.objects.create(
+        mov_2 = Movimiento.objects.create(
             usuario=usuario,
             familia=familia,
-            fecha='2026-03-20',
-            tipo='EGRESO',
-            ambito='PERSONAL',
-            categoria=categoria_egreso,
-            monto='200000.00',
-            metodo_pago=metodo_credito,
-            tarjeta=tarjeta,
-            num_cuotas=1,
-        )
-        # Queda fuera del estado de cuenta de abril (se facturaría en mayo).
-        Movimiento.objects.create(
-            usuario=usuario,
-            familia=familia,
-            fecha='2026-04-05',
+            fecha='2026-05-10',
             tipo='EGRESO',
             ambito='PERSONAL',
             categoria=categoria_egreso,
             monto='50000.00',
             metodo_pago=metodo_credito,
-            tarjeta=tarjeta,
+            tarjeta=tarjeta_b,
+            num_cuotas=1,
+        )
+        mov_3 = Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-06-08',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='90000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta_b,
             num_cuotas=1,
         )
 
+        # Deja una cuota pagada para validar exclusión.
+        cuota_pagada = Cuota.objects.get(movimiento=mov_3, numero=1)
+        cuota_pagada.estado = 'PAGADO'
+        cuota_pagada.mes_facturacion = date(2026, 4, 1)
+        cuota_pagada.save(update_fields=['estado', 'mes_facturacion'])
+
+        cuota_1 = Cuota.objects.get(movimiento=mov_1, numero=1)
+        cuota_2 = Cuota.objects.get(movimiento=mov_2, numero=1)
+        cuota_1.mes_facturacion = date(2026, 4, 1)  # Debe incluirse
+        cuota_2.mes_facturacion = date(2026, 5, 1)  # Debe excluirse
+        cuota_1.save(update_fields=['mes_facturacion'])
+        cuota_2.save(update_fields=['mes_facturacion'])
+
         monkeypatch.setattr('applications.finanzas.views.timezone.localdate', lambda: date(2026, 4, 10))
+
         res = client.get('/api/finanzas/cuotas/deuda-pendiente/', **auth_header)
         assert res.status_code == 200
-        assert Decimal(res.json()['total']) == Decimal('300000.00')
+        assert Decimal(res.json()['total']) == Decimal('80000.00')
+
+    def test_cuotas_deuda_pendiente_no_incluye_tarjetas_de_otros_usuarios(
+        self,
+        client,
+        auth_header,
+        monkeypatch,
+        usuario_2,
+        familia,
+        categoria_egreso,
+        metodo_credito,
+    ):
+        """No suma cuotas de tarjetas que pertenezcan a otro usuario."""
+        from applications.finanzas.models import Tarjeta
+
+        tarjeta_usuario_2 = Tarjeta.objects.create(
+            usuario=usuario_2,
+            nombre='TC Usuario 2',
+            banco='Banco Z',
+            dia_facturacion=12,
+            dia_vencimiento=30,
+        )
+        Movimiento.objects.create(
+            usuario=usuario_2,
+            familia=familia,
+            fecha='2026-04-15',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='70000.00',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta_usuario_2,
+            num_cuotas=1,
+        )
+
+        cuota_otro = Cuota.objects.get(movimiento__tarjeta=tarjeta_usuario_2, numero=1)
+        cuota_otro.mes_facturacion = date(2026, 4, 1)
+        cuota_otro.save(update_fields=['mes_facturacion'])
+        monkeypatch.setattr('applications.finanzas.views.timezone.localdate', lambda: date(2026, 4, 10))
+
+        res = client.get('/api/finanzas/cuotas/deuda-pendiente/', **auth_header)
+        assert res.status_code == 200
+        assert Decimal(res.json()['total']) == Decimal('0.00')

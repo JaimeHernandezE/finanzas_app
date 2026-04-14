@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { ActivityIndicator, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
 import { catalogosApi } from '@finanzas/shared/api/catalogos'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
@@ -119,6 +119,7 @@ export default function TarjetasScreen() {
     data: cuotasData,
     loading: loadingCuotas,
     error: errorCuotas,
+    refetch: refetchCuotas,
   } = useApi<CuotaResumen[]>(
     () => movimientosApi.getCuotas({}) as Promise<{ data: CuotaResumen[] }>,
     [],
@@ -127,6 +128,7 @@ export default function TarjetasScreen() {
     data: movimientosCreditoData,
     loading: loadingMovimientosCredito,
     error: errorMovimientosCredito,
+    refetch: refetchMovimientosCredito,
   } = useApi<MovimientoCreditoResumen[]>(
     () =>
       movimientosApi.getMovimientos({
@@ -170,6 +172,15 @@ export default function TarjetasScreen() {
     if (!tarjetas[0]) return
     setTarjetaSeleccionadaId(tarjetas[0].id)
   }, [tarjetas, tarjetaSeleccionadaId])
+  useFocusEffect(
+    useCallback(() => {
+      // Recalcula utilizados al volver desde registrar/editar movimientos o pagos.
+      void refetchTarjetas()
+      void refetchCuotas()
+      void refetchMovimientosCredito()
+      return undefined
+    }, [refetchTarjetas, refetchCuotas, refetchMovimientosCredito]),
+  )
 
   function cancelarForm() {
     setAgregando(false)
