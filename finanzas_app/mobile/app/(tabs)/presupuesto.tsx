@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import {
   finanzasApi,
@@ -52,6 +52,7 @@ function colorBarra(pct: number): string {
 
 export default function PresupuestoScreen() {
   const { formatMonto } = useConfig()
+  const router = useRouter()
 
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
@@ -379,6 +380,16 @@ export default function PresupuestoScreen() {
     )
   }
 
+  function irListadoCategoria(categoriaId: number) {
+    if (ambito === 'FAMILIAR') {
+      router.push(`/(tabs)/gastos?categoria=${categoriaId}` as never)
+      return
+    }
+    const cuentaDestino = cuentaPersonalId ?? cuentasPropias[0]?.id ?? null
+    if (cuentaDestino == null) return
+    router.push(`/cuenta/${cuentaDestino}?categoria=${categoriaId}` as never)
+  }
+
   return (
     <MobileShell title="Presupuesto">
       <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: 120 }}>
@@ -543,7 +554,12 @@ export default function PresupuestoScreen() {
                             ) : (
                               <>
                                 <View className="flex-row items-center justify-between mb-1.5">
-                                  <Text className="text-dark font-medium text-sm flex-1 mr-2">{fila.categoria_nombre}</Text>
+                                  <TouchableOpacity
+                                    onPress={() => irListadoCategoria(fila.categoria_id)}
+                                    className="flex-1 mr-2"
+                                  >
+                                    <Text className="text-dark font-medium text-sm">{fila.categoria_nombre}</Text>
+                                  </TouchableOpacity>
                                   <View className="flex-row items-center gap-2">
                                     <TouchableOpacity
                                       onPress={() => {
@@ -649,7 +665,12 @@ export default function PresupuestoScreen() {
                                     ) : (
                                       <>
                                         <View className="flex-row items-center justify-between mb-1.5">
-                                          <Text className="text-dark font-medium text-sm flex-1 mr-2">{fila.categoria_nombre}</Text>
+                                          <TouchableOpacity
+                                            onPress={() => irListadoCategoria(fila.categoria_id)}
+                                            className="flex-1 mr-2"
+                                          >
+                                            <Text className="text-dark font-medium text-sm">{fila.categoria_nombre}</Text>
+                                          </TouchableOpacity>
                                           <View className="flex-row items-center gap-2">
                                             <TouchableOpacity
                                               onPress={() => {

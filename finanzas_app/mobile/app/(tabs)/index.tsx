@@ -521,6 +521,12 @@ export default function DashboardScreen() {
     )
   }
 
+  function irListadoFiltradoCategoria(categoriaId: number) {
+    const cuentaDestino = cuentaTab ?? cuentasPersonales[0]?.id ?? null
+    if (cuentaDestino == null) return
+    router.push(`/cuenta/${cuentaDestino}?categoria=${categoriaId}` as never)
+  }
+
   return (
     <MobileShell title="Dashboard">
       <ScrollView
@@ -699,7 +705,12 @@ export default function DashboardScreen() {
                     const pct = cat.pct
                     const esHija = !cat.esAgregadoPadre && cat.categoriaPadreId != null
                     return (
-                      <View key={cat.categoriaId} className={esHija ? 'pl-5' : ''}>
+                      <TouchableOpacity
+                        key={cat.categoriaId}
+                        className={esHija ? 'pl-5' : ''}
+                        onPress={() => irListadoFiltradoCategoria(cat.categoriaId)}
+                        activeOpacity={0.75}
+                      >
                         <View className="flex-row items-center justify-between mb-1">
                           <Text className="text-sm text-dark font-medium flex-1 mr-2" numberOfLines={1}>
                             {cat.categoria}
@@ -727,7 +738,7 @@ export default function DashboardScreen() {
                             Excedido en {formatMonto(cat.gastado - cat.presupuestado)}
                           </Text>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     )
                   })}
                 </View>

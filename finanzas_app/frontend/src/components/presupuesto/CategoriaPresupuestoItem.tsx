@@ -49,7 +49,7 @@ export default function CategoriaPresupuestoItem({
   const color = colorBarra(gastado, presupuestado)
   const barWidth = presupuestado > 0 ? Math.min(pct, 100) : gastado > 0 ? 100 : 0
   const excedido = presupuestado > 0 && gastado > presupuestado ? gastado - presupuestado : 0
-  const clickable = !editable && !!onClick
+  const clickable = !!onClick && !isEditing
 
   return (
     <div
@@ -75,7 +75,10 @@ export default function CategoriaPresupuestoItem({
           <button
             type="button"
             className={styles.btnEdit}
-            onClick={onStartEdit}
+            onClick={(e) => {
+              e.stopPropagation()
+              onStartEdit?.()
+            }}
             aria-label="Editar monto"
           >
             ✎
@@ -98,7 +101,10 @@ export default function CategoriaPresupuestoItem({
           <button
             type="button"
             className={styles.btnFormConfirm}
-            onClick={onEditConfirm}
+            onClick={(e) => {
+              e.stopPropagation()
+              onEditConfirm?.()
+            }}
             aria-label="Confirmar"
           >
             ✓
@@ -106,7 +112,10 @@ export default function CategoriaPresupuestoItem({
           <button
             type="button"
             className={styles.btnFormCancel}
-            onClick={onEditCancel}
+            onClick={(e) => {
+              e.stopPropagation()
+              onEditCancel?.()
+            }}
             aria-label="Cancelar"
           >
             ✕

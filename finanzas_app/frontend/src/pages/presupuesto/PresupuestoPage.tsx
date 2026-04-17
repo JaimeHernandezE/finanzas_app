@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
 import { movimientosApi } from '@/api/movimientos'
 import { useApi } from '@/hooks/useApi'
@@ -177,6 +177,7 @@ function ItemSinPresupuesto({
 }
 
 export default function PresupuestoPage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const hoy = new Date()
   const mesParam = Number(searchParams.get('mes'))
@@ -543,6 +544,17 @@ export default function PresupuestoPage() {
     })
   }
 
+  const irListadoCategoria = useCallback((categoriaId: number) => {
+    const params = new URLSearchParams({ categoria: String(categoriaId) })
+    if (ambito === 'FAMILIAR') {
+      navigate(`/gastos/comunes?${params.toString()}`)
+      return
+    }
+    const cuentaDestino = cuentaPersonalId ?? cuentasPropias[0]?.id ?? null
+    if (cuentaDestino == null) return
+    navigate(`/gastos/cuenta/${cuentaDestino}?${params.toString()}`)
+  }, [ambito, cuentaPersonalId, cuentasPropias, navigate])
+
   if (loading) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />
 
@@ -712,6 +724,7 @@ export default function PresupuestoPage() {
                   setEditingKey(null)
                   setEditMontoValue('')
                 }}
+                onClick={() => irListadoCategoria(cat.categoriaId)}
               />
             )
           }
@@ -762,6 +775,7 @@ export default function PresupuestoPage() {
                             setEditingKey(null)
                             setEditMontoValue('')
                           }}
+                          onClick={() => irListadoCategoria(cat.categoriaId)}
                         />
                       </div>
                     )

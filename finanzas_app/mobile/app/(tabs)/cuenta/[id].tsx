@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -128,7 +128,7 @@ function groupByDate(movimientos: Movimiento[]) {
 }
 
 export default function CuentaPersonalScreen() {
-  const { id: idParam } = useLocalSearchParams<{ id: string }>()
+  const { id: idParam, categoria: categoriaParamRaw } = useLocalSearchParams<{ id: string; categoria?: string }>()
   const router = useRouter()
   const { user } = useAuth()
   const { formatMonto } = useConfig()
@@ -160,6 +160,7 @@ export default function CuentaPersonalScreen() {
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const categoriaParamAplicadaRef = useRef<string>('')
 
   const { data: catData } = useCategorias({
     ambito: 'PERSONAL',
@@ -177,6 +178,17 @@ export default function CuentaPersonalScreen() {
       categoria_padre: c.categoria_padre ?? null,
     }))
   }, [catData])
+
+  useEffect(() => {
+    if (!categoriaParamRaw) return
+    if (categoriaParamAplicadaRef.current === categoriaParamRaw) return
+    const categoriaId = Number(categoriaParamRaw)
+    if (!Number.isFinite(categoriaId)) return
+    const categoriaObjetivo = categorias.find((c) => c.id === categoriaId)
+    if (!categoriaObjetivo) return
+    setFiltrosCategorias(toggleCategoriaConJerarquia([], categoriaObjetivo, categorias))
+    categoriaParamAplicadaRef.current = categoriaParamRaw
+  }, [categoriaParamRaw, categorias])
 
   const paramsPeriodo = useMemo(
     () => movimientosParamsPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta),

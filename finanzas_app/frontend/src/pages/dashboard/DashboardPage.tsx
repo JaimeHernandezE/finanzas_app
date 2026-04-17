@@ -962,6 +962,13 @@ export default function DashboardPage() {
     navigate(`/gastos/${id}/editar?returnTo=${encodeURIComponent(returnTo)}`)
   }
 
+  function irListadoFiltradoCategoria(categoriaId: number) {
+    const cuentaDestino = cuentaTab ?? cuentasPropias[0]?.id ?? null
+    if (cuentaDestino == null) return
+    const params = new URLSearchParams({ categoria: String(categoriaId) })
+    navigate(`/gastos/cuenta/${cuentaDestino}?${params.toString()}`)
+  }
+
   if (
     loading ||
     loadingEfectivo ||
@@ -1081,16 +1088,7 @@ export default function DashboardPage() {
                     ? styles.catPresupuestoHija
                     : undefined
                 }
-                onClick={() => {
-                  const params = new URLSearchParams({
-                    categoria: String(cat.categoriaId),
-                    ambito: 'PERSONAL',
-                    mes: String(mes + 1),
-                    anio: String(anio),
-                  })
-                  if (cuentaTab != null) params.set('cuenta', String(cuentaTab))
-                  navigate(`/presupuesto?${params.toString()}`)
-                }}
+                onClick={() => irListadoFiltradoCategoria(cat.categoriaId)}
               />
             ))}
           </div>

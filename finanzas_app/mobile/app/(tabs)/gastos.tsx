@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
@@ -113,6 +113,7 @@ function groupByDate(movimientos: Movimiento[]) {
 export default function GastosScreen() {
   const { formatMonto } = useConfig()
   const { user } = useAuth()
+  const { categoria: categoriaParamRaw } = useLocalSearchParams<{ categoria?: string }>()
   const formRef = useRef<MovimientoFormularioRef>(null)
   const insets = useSafeAreaInsets()
 
@@ -128,6 +129,7 @@ export default function GastosScreen() {
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const categoriaParamAplicadaRef = useRef<string>('')
 
   const { data: catData } = useCategorias({ ambito: 'FAMILIAR' })
   const categorias = useMemo((): CategoriaFiltroFila[] => {
@@ -142,6 +144,17 @@ export default function GastosScreen() {
       categoria_padre: c.categoria_padre ?? null,
     }))
   }, [catData])
+
+  useEffect(() => {
+    if (!categoriaParamRaw) return
+    if (categoriaParamAplicadaRef.current === categoriaParamRaw) return
+    const categoriaId = Number(categoriaParamRaw)
+    if (!Number.isFinite(categoriaId)) return
+    const categoriaObjetivo = categorias.find((c) => c.id === categoriaId)
+    if (!categoriaObjetivo) return
+    setFiltrosCategorias(toggleCategoriaConJerarquia([], categoriaObjetivo, categorias))
+    categoriaParamAplicadaRef.current = categoriaParamRaw
+  }, [categoriaParamRaw, categorias])
 
   const paramsPeriodo = useMemo(
     () => movimientosParamsPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta),

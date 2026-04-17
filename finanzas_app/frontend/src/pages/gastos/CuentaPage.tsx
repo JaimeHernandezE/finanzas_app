@@ -1,5 +1,5 @@
-import { useState, useMemo, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
@@ -387,6 +387,7 @@ function DeleteModal({
 export default function CuentaPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { formatMonto } = useConfig()
   const { data: cuentasData, loading: cuentasLoading, error: cuentasError } =
     useCuentasPersonales()
@@ -423,6 +424,8 @@ export default function CuentaPage() {
     cuenta: id ? Number(id) : undefined,
   })
   const categorias = (categoriasData ?? []) as CategoriaFiltroFila[]
+  const categoriaParamRaw = searchParams.get('categoria') ?? ''
+  const categoriaParamAplicadaRef = useRef<string>('')
 
   const paramsPeriodo = useMemo(
     () => movimientosParamsPeriodo(modoPeriodo, mes, anio, rangoDesde, rangoHasta),
@@ -517,6 +520,17 @@ export default function CuentaPage() {
       return true
     })
   }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
+
+  useEffect(() => {
+    if (!categoriaParamRaw) return
+    if (categoriaParamAplicadaRef.current === categoriaParamRaw) return
+    const categoriaId = Number(categoriaParamRaw)
+    if (!Number.isFinite(categoriaId)) return
+    const categoriaObjetivo = categorias.find((c) => c.id === categoriaId)
+    if (!categoriaObjetivo) return
+    setFiltrosCategorias(toggleCategoriaConJerarquia([], categoriaObjetivo, categorias))
+    categoriaParamAplicadaRef.current = categoriaParamRaw
+  }, [categoriaParamRaw, categorias])
 
   const grupos = groupByDate(movimientosFiltrados)
 
