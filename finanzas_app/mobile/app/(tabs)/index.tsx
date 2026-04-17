@@ -44,6 +44,17 @@ interface CuentaPersonalApi {
   es_propia: boolean
 }
 
+interface PresupuestoCuentaResumen {
+  cuentaId: number | null
+  cuentaNombre: string
+  total: number
+}
+
+interface PresupuestosSaldoProyectado {
+  comunTotal: number
+  personales: PresupuestoCuentaResumen[]
+}
+
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
@@ -62,6 +73,25 @@ function toPesos(n: unknown): number {
 
 function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
+}
+
+function sueldoProyectadoNetoMes(
+  sueldoEstimado: number,
+  ingresoDeclaradoMes: string | undefined,
+): number {
+  const base = Math.round(Number(sueldoEstimado) || 0)
+  const declarado = Math.round(Number(ingresoDeclaradoMes) || 0)
+  return Math.max(0, base - declarado)
+}
+
+function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undefined): number {
+  return (filas ?? [])
+    .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
+    .reduce((sum, f) => {
+      const presupuestado = toPesos(f.monto_presupuestado)
+      const gastado = toPesos(f.gastado)
+      return sum + Math.max(presupuestado, gastado)
+    }, 0)
 }
 
 function fechaCorta(iso: string): string {
@@ -204,6 +234,49 @@ export default function DashboardScreen() {
     })
   }, [qCuentas.data])
 
+  const qPresupuestosSaldo = useQuery<PresupuestosSaldoProyectado>({
+    queryKey: ['presupuestosSaldoProyectado', mes + 1, anio, cuentasPersonales.map((c) => c.id).join(',')],
+    queryFn: async () => {
+      const comunRes = await finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito: 'FAMILIAR',
+      })
+      const comunTotal = totalPresupuestoComprometido(comunRes.data ?? [])
+
+      const personales: PresupuestoCuentaResumen[] = []
+      if (!cuentasPersonales.length) {
+        const personalGlobalRes = await finanzasApi.getPresupuestoMes({
+          mes: mes + 1,
+          anio,
+          ambito: 'PERSONAL',
+        })
+        const total = totalPresupuestoComprometido(personalGlobalRes.data ?? [])
+        if (total > 0) {
+          personales.push({ cuentaId: null, cuentaNombre: 'Personal', total })
+        }
+      } else {
+        const personalesRes = await Promise.all(
+          cuentasPersonales.map(async (cuenta) => {
+            const resp = await finanzasApi.getPresupuestoMes({
+              mes: mes + 1,
+              anio,
+              ambito: 'PERSONAL',
+              cuenta: cuenta.id,
+            })
+            return {
+              cuentaId: cuenta.id,
+              cuentaNombre: cuenta.nombre,
+              total: totalPresupuestoComprometido(resp.data ?? []),
+            }
+          }),
+        )
+        personales.push(...personalesRes.filter((p) => p.total > 0))
+      }
+      return { comunTotal, personales }
+    },
+  })
+
   // Auto-seleccionar primera cuenta
   useEffect(() => {
     if (!cuentasPersonales.length) { setCuentaTab(null); return }
@@ -254,43 +327,56 @@ export default function DashboardScreen() {
     qSueldos.isLoading,
   ])
 
-  const saldoCompensacionDetalle = useMemo(() => {
-    const vacio = { compensacion: 0 }
+  const prorrateoDetalle = useMemo(() => {
+    const vacio = { proporcion: 0, baseUsuario: 0 }
     const compensacion = qCompensacion.data as any
     if (!esActual || qCompensacion.error || !compensacion?.miembros?.length || !user) return vacio
     const n = compensacion.miembros.length
-    const netoFam = toPesos(compensacion.neto_familiar_comun)
     const totalEstimado = compensacion.miembros.reduce(
-      (sum: number, m: any) => sum + (sueldosProrrateo[m.usuario_id] ?? 0),
+      (sum: number, m: any) =>
+        sum + sueldoProyectadoNetoMes(
+          sueldosProrrateo[m.usuario_id] ?? 0,
+          m.ingreso_declarado_mes,
+        ),
       0,
     )
     const self = compensacion.miembros.find((m: any) => m.usuario_id === user.id)
     if (!self) return vacio
-    const netoUsuario = toPesos(self.neto_comun_mes)
-    const miEstimado = sueldosProrrateo[user.id] ?? 0
-    let esperado = 0
+    const miBaseNeta = sueldoProyectadoNetoMes(
+      sueldosProrrateo[user.id] ?? 0,
+      self.ingreso_declarado_mes,
+    )
+    let proporcion = 0
     if (totalEstimado > 0) {
-      esperado = (miEstimado / totalEstimado) * netoFam
+      proporcion = miBaseNeta / totalEstimado
     } else if (n > 0) {
-      esperado = netoFam / n
+      proporcion = 1 / n
     }
-    return { compensacion: Math.round(esperado) - Math.round(netoUsuario) }
+    return { proporcion, baseUsuario: miBaseNeta }
   }, [esActual, qCompensacion.data, qCompensacion.error, user, sueldosProrrateo])
 
   const sueldoProyectado = useMemo(() => {
-    if (!user) return 0
-    return Math.round(sueldosProrrateo[user.id] ?? 0)
-  }, [sueldosProrrateo, user])
+    if (!esActual || !user) return 0
+    return prorrateoDetalle.baseUsuario
+  }, [esActual, prorrateoDetalle.baseUsuario, user])
 
   const efectivo = useMemo(
     () => Math.round(Number(qEfectivo.data?.efectivo) || 0),
     [qEfectivo.data],
   )
-  const compensacionEstimada = saldoCompensacionDetalle.compensacion
+  const presupuestoComunProrrateado = useMemo(() => {
+    const totalComun = toPesos(qPresupuestosSaldo.data?.comunTotal)
+    return Math.round(totalComun * prorrateoDetalle.proporcion)
+  }, [qPresupuestosSaldo.data?.comunTotal, prorrateoDetalle.proporcion])
+
+  const totalPresupuestosPersonales = useMemo(
+    () => (qPresupuestosSaldo.data?.personales ?? []).reduce((sum, p) => sum + toPesos(p.total), 0),
+    [qPresupuestosSaldo.data?.personales],
+  )
+
   const saldo = useMemo(() => {
-    if (!esActual) return efectivo - deudaTc
-    return sueldoProyectado + efectivo - deudaTc + compensacionEstimada
-  }, [esActual, sueldoProyectado, efectivo, deudaTc, compensacionEstimada])
+    return sueldoProyectado + efectivo - presupuestoComunProrrateado - totalPresupuestosPersonales
+  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, totalPresupuestosPersonales])
 
   // Movimientos filtrados por la cuenta seleccionada (para categorías y lista)
   const movimientosCuenta = useMemo(() => {
@@ -387,6 +473,7 @@ export default function DashboardScreen() {
     qDeuda.isLoading ||
     qLiquidacion.isLoading ||
     qLiquidacionAnterior.isLoading ||
+    qPresupuestosSaldo.isLoading ||
     (esActual && qSueldos.isLoading)
   )
   // Indicador discreto de sincronía en segundo plano

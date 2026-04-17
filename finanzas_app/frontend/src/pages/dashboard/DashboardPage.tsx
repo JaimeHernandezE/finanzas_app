@@ -35,6 +35,17 @@ interface LiquidacionApi {
   gastos_comunes: Array<{ usuario_id: number; total: string }>
 }
 
+interface PresupuestoCuentaResumen {
+  cuentaId: number | null
+  cuentaNombre: string
+  total: number
+}
+
+interface PresupuestosSaldoProyectado {
+  comunTotal: number
+  personales: PresupuestoCuentaResumen[]
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +63,16 @@ function toPesos(n: unknown): number {
 
 function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
+}
+
+function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undefined): number {
+  return (filas ?? [])
+    .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
+    .reduce((sum, f) => {
+      const presupuestado = toPesos(f.monto_presupuestado)
+      const gastado = toPesos(f.gastado)
+      return sum + Math.max(presupuestado, gastado)
+    }, 0)
 }
 
 /**
@@ -334,14 +355,10 @@ function EfectivoMetricCard({
 function SaldoProyectadoCard({
   label,
   saldo,
-  esActual,
   sueldoProyectado,
   efectivo,
-  deudaTc,
-  compensacion,
-  netoFamiliarComun,
-  netoComunUsuario,
-  esperadoProrrateo,
+  formula,
+  prorrateoPresupuestoComun,
   miembros,
   sueldosDigitos,
   onSueldoChange,
@@ -350,14 +367,10 @@ function SaldoProyectadoCard({
 }: {
   label: string
   saldo: number
-  esActual: boolean
   sueldoProyectado: number
   efectivo: number
-  deudaTc: number
-  compensacion: number
-  netoFamiliarComun: number
-  netoComunUsuario: number
-  esperadoProrrateo: number
+  formula: { letra: string; etiqueta: string; monto: number }[]
+  prorrateoPresupuestoComun: number
   miembros: { usuario_id: number; nombre: string }[]
   sueldosDigitos: Record<number, string>
   onSueldoChange: (usuarioId: number, soloDigitos: string) => void
@@ -393,110 +406,75 @@ function SaldoProyectadoCard({
       <span
         className={styles.metricValor}
         style={{ color: v < 0 ? '#ff4d4d' : '#c8f060' }}
-        title={
-          esActual
-            ? 'Saldo = sueldo proyectado + efectivo disponible − deuda tarjetas + compensación (D). Pulsa ? para el detalle.'
-            : 'Saldo ≈ efectivo disponible − deuda tarjetas (resumen no es el mes en curso). Pulsa ? para más.'
-        }
+        title="Saldo = A + B − C − D − … según presupuestos."
       >
         {textoValor}
       </span>
 
       {detalleAbierto && (
         <div id={idPanel} className={styles.metricDetallePanelSaldo} role="region" aria-live="polite">
-          {!esActual && (
-            <>
-              <div className={styles.metricTooltipTitle}>Cómo se calcula (mes pasado)</div>
-              <p className={styles.saldoDetalleNota}>
-                El efectivo disponible y el desglose del mes en curso siguen siendo los de <strong>hoy</strong>;
-                por eso el saldo proyectado completo (con compensación y neto del mes) solo tiene sentido con el
-                resumen en el <strong>mes en curso</strong>.
-              </p>
-              <ul className={styles.saldoDetalleLista}>
-                <li>
-                  <strong>Saldo</strong> ≈ efectivo disponible actual − deuda en tarjetas (cuotas pendientes).
-                </li>
-              </ul>
-            </>
-          )}
-          {esActual && (
-            <>
-              <div className={styles.metricTooltipTitle}>Cómo se calcula el saldo proyectado</div>
-              <p className={styles.saldoDetalleIntro}>
-                Sueldo proyectado (base estimada menos sueldos ya declarados al fondo común en el mes en curso)
-                más efectivo disponible menos deudas tarjetas más la compensación según prorrateo con esas bases
-                netas.
-              </p>
-              <p className={styles.saldoDetalleFormula}>
-                <strong>Saldo = A + B − C + D</strong>
-              </p>
-              <div className={styles.metricDesgloseSectionTitle}>Aporte</div>
-              <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>
-                  A — Sueldo proyectado (estimado − ya declarado en el mes)
-                </span>
-                <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
-                  +{formatMonto(Math.abs(sueldoProyectado))}
-                </span>
-              </div>
-              <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>B — Efectivo disponible</span>
-                <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
-                  +{formatMonto(Math.abs(efectivo))}
-                </span>
-              </div>
-              <div className={styles.metricDesgloseSectionTitle}>Egresos</div>
-              <div className={styles.metricTooltipRow}>
-                <span className={styles.metricTooltipKey}>C — Deuda tarjetas</span>
+          <div className={styles.metricTooltipTitle}>Cómo se calcula el saldo proyectado</div>
+          <p className={styles.saldoDetalleIntro}>
+            Se calcula como <strong>A + B − C − D − ...</strong>, donde los egresos son
+            presupuestos comprometidos (si una categoría está excedida, usa gasto real).
+          </p>
+          <p className={styles.saldoDetalleFormula}>
+            <strong>
+              Saldo = {formula.filter((t) => t.letra === 'A' || t.letra === 'B').map((t) => t.letra).join(' + ')}
+              {' '}
+              −
+              {' '}
+              {formula.filter((t) => t.letra !== 'A' && t.letra !== 'B').map((t) => t.letra).join(' − ')}
+            </strong>
+          </p>
+          <div className={styles.metricDesgloseSectionTitle}>Aportes</div>
+          <div className={styles.metricTooltipRow}>
+            <span className={styles.metricTooltipKey}>A — Sueldo proyectado (estimado − declarado mes)</span>
+            <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
+              +{formatMonto(Math.abs(sueldoProyectado))}
+            </span>
+          </div>
+          <div className={styles.metricTooltipRow}>
+            <span className={styles.metricTooltipKey}>B — Efectivo disponible</span>
+            <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
+              +{formatMonto(Math.abs(efectivo))}
+            </span>
+          </div>
+          <div className={styles.metricDesgloseSectionTitle}>Egresos (presupuestos)</div>
+          {formula
+            .filter((t) => t.letra !== 'A' && t.letra !== 'B')
+            .map((t) => (
+              <div key={t.letra} className={styles.metricTooltipRow}>
+                <span className={styles.metricTooltipKey}>{t.letra} — {t.etiqueta}</span>
                 <span className={styles.metricTooltipVal} style={{ color: '#f87171' }}>
-                  −{formatMonto(Math.abs(deudaTc))}
+                  −{formatMonto(Math.abs(t.monto))}
                 </span>
               </div>
-              <div className={styles.metricDesgloseSectionTitle}>Compensación</div>
-              <ul className={styles.saldoDetalleLista}>
-                <li>
-                  <strong>Neto familiar común</strong> (Ingresos − egresos comunes):{' '}
-                  {formatMonto(Math.round(netoFamiliarComun))}.
-                </li>
-                <li>
-                  <strong>Tu neto común esperado</strong> (prorrateo según base estimada neta, ya descontado lo
-                  declarado al fondo común en el mes): {formatMonto(esperadoProrrateo)}.
-                </li>
-                <li>
-                  <strong>Tu neto común real</strong> (lo que has aportado o recibiste en común en el mes):{' '}
-                  {formatMonto(netoComunUsuario)}.
-                </li>
-              </ul>
-              <p className={styles.saldoDetalleHint}>
-                <strong>Compensación estimada</strong> = Neto común esperado − Neto común real →{' '}
-                {formatMonto(esperadoProrrateo)} − {formatMonto(netoComunUsuario)} ={' '}
-                <span style={{ color: compensacion >= 0 ? '#4ade80' : '#f87171' }}>
-                  {compensacion >= 0 ? '+' : '−'}
-                  {formatMonto(Math.abs(compensacion))}
-                </span>
-              </p>
-              {errorCompensacion && (
-                <p className={styles.saldoDetalleError}>{errorCompensacion}</p>
-              )}
-              {miembros.length > 0 && (
-                <div className={styles.saldoSueldosGrid}>
-                  {miembros.map((m) => (
-                    <label key={m.usuario_id} className={styles.saldoSueldoFila}>
-                      <span className={styles.saldoSueldoNombre}>
-                        Base prorrateo (mes ant.) — {m.nombre}
-                      </span>
-                      <InputMontoClp
-                        soloInput
-                        inputClassName={styles.saldoSueldoInput}
-                        value={sueldosDigitos[m.usuario_id] ?? ''}
-                        onChange={(soloDigitos) => onSueldoChange(m.usuario_id, soloDigitos)}
-                        aria-label={`Base prorrateo mes anterior ${m.nombre}`}
-                      />
-                    </label>
-                  ))}
-                </div>
-              )}
-            </>
+            ))}
+          <p className={styles.saldoDetalleHint}>
+            C usa presupuesto común prorrateado por sueldo estimado (
+            {Math.round(prorrateoPresupuestoComun * 100)}% de participación).
+          </p>
+          {errorCompensacion && (
+            <p className={styles.saldoDetalleError}>{errorCompensacion}</p>
+          )}
+          {miembros.length > 0 && (
+            <div className={styles.saldoSueldosGrid}>
+              {miembros.map((m) => (
+                <label key={m.usuario_id} className={styles.saldoSueldoFila}>
+                  <span className={styles.saldoSueldoNombre}>
+                    Base prorrateo (mes ant.) — {m.nombre}
+                  </span>
+                  <InputMontoClp
+                    soloInput
+                    inputClassName={styles.saldoSueldoInput}
+                    value={sueldosDigitos[m.usuario_id] ?? ''}
+                    onChange={(soloDigitos) => onSueldoChange(m.usuario_id, soloDigitos)}
+                    aria-label={`Base prorrateo mes anterior ${m.nombre}`}
+                  />
+                </label>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -674,6 +652,53 @@ export default function DashboardPage() {
         }),
     [cuentasData],
   )
+  const cuentasPropiasSig = useMemo(
+    () => cuentasPropias.map((c) => `${c.id}:${c.nombre}`).join('|'),
+    [cuentasPropias],
+  )
+  const { data: presupuestosSaldoRes, loading: loadingPresupuestosSaldo } = useApi<PresupuestosSaldoProyectado>(
+    async () => {
+      const comunRes = await finanzasApi.getPresupuestoMes({
+        mes: mes + 1,
+        anio,
+        ambito: 'FAMILIAR',
+      })
+      const comunTotal = totalPresupuestoComprometido(comunRes.data ?? [])
+
+      const personales: PresupuestoCuentaResumen[] = []
+      if (!cuentasPropias.length) {
+        const personalGlobalRes = await finanzasApi.getPresupuestoMes({
+          mes: mes + 1,
+          anio,
+          ambito: 'PERSONAL',
+        })
+        const total = totalPresupuestoComprometido(personalGlobalRes.data ?? [])
+        if (total > 0) {
+          personales.push({ cuentaId: null, cuentaNombre: 'Personal', total })
+        }
+      } else {
+        const personalesRes = await Promise.all(
+          cuentasPropias.map(async (cuenta) => {
+            const resp = await finanzasApi.getPresupuestoMes({
+              mes: mes + 1,
+              anio,
+              ambito: 'PERSONAL',
+              cuenta: cuenta.id,
+            })
+            return {
+              cuentaId: cuenta.id,
+              cuentaNombre: cuenta.nombre,
+              total: totalPresupuestoComprometido(resp.data ?? []),
+            }
+          }),
+        )
+        personales.push(...personalesRes.filter((p) => p.total > 0))
+      }
+
+      return { data: { comunTotal, personales } }
+    },
+    [mes, anio, cuentasPropiasSig],
+  )
   const [cuentaTab, setCuentaTab] = useState<number | null>(null)
 
   useEffect(() => {
@@ -789,15 +814,13 @@ export default function DashboardPage() {
     return () => window.clearTimeout(t)
   }, [sueldosDigitos, sueldosDirty, esActual, mes, anio, compensacionData])
 
-  const saldoCompensacionDetalle = useMemo(() => {
+  const prorrateoDetalle = useMemo(() => {
     const vacio = {
-      compensacion: 0,
-      netoComunUsuario: 0,
-      esperadoProrrateo: 0,
+      proporcion: 0,
+      baseUsuario: 0,
     }
     if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
     const n = compensacionData.miembros.length
-    const netoFam = toPesos(compensacionData.neto_familiar_comun)
     const totEst = compensacionData.miembros.reduce(
       (s, m) =>
         s +
@@ -809,28 +832,22 @@ export default function DashboardPage() {
     )
     const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
     if (!self) return vacio
-    const netoUs = toPesos(self.neto_comun_mes)
     const meu = sueldoProyectadoNetoMes(
       sueldosDigitos[user.id] ?? '',
       self.ingreso_declarado_mes,
     )
-    let esperado = 0
+    let proporcion = 0
     if (totEst > 0.005) {
-      esperado = (meu / totEst) * netoFam
+      proporcion = meu / totEst
     } else if (n > 0) {
-      esperado = netoFam / n
+      proporcion = 1 / n
     }
-    const netoR = Math.round(netoUs)
-    const espR = Math.round(esperado)
-    /** Aplicado al saldo: esperado − neto. Si pagaste más común que tu parte (neto más bajo), suma (devolución). */
     return {
-      compensacion: espR - netoR,
-      netoComunUsuario: netoR,
-      esperadoProrrateo: espR,
+      proporcion,
+      baseUsuario: meu,
     }
   }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
 
-  const compensacionEstimada = saldoCompensacionDetalle.compensacion
   const sueldoProyectado = useMemo(() => {
     if (!user || !esActual) return 0
     const self = compensacionData?.miembros?.find((m) => m.usuario_id === user.id)
@@ -840,12 +857,44 @@ export default function DashboardPage() {
     )
   }, [sueldosDigitos, user, esActual, compensacionData])
 
+  const presupuestoComunProrrateado = useMemo(() => {
+    const totalComun = toPesos(presupuestosSaldoRes?.comunTotal)
+    return Math.round(totalComun * prorrateoDetalle.proporcion)
+  }, [presupuestosSaldoRes, prorrateoDetalle.proporcion])
+
+  const presupuestosPersonalesOrdenados = useMemo(
+    () => [...(presupuestosSaldoRes?.personales ?? [])].sort((a, b) =>
+      a.cuentaNombre.localeCompare(b.cuentaNombre, 'es', { sensitivity: 'base' }),
+    ),
+    [presupuestosSaldoRes],
+  )
+
+  const totalPresupuestosPersonales = useMemo(
+    () => presupuestosPersonalesOrdenados.reduce((sum, p) => sum + toPesos(p.total), 0),
+    [presupuestosPersonalesOrdenados],
+  )
+
+  const desgloseSaldoFormula = useMemo(() => {
+    const terms: { letra: string; etiqueta: string; monto: number }[] = [
+      { letra: 'A', etiqueta: 'Sueldo proyectado', monto: sueldoProyectado },
+      { letra: 'B', etiqueta: 'Efectivo disponible', monto: efectivo },
+      { letra: 'C', etiqueta: 'Presupuesto común prorrateado', monto: presupuestoComunProrrateado },
+    ]
+    const alphabet = 'DEFGHIJKLMNOPQRSTUVWXYZ'
+    presupuestosPersonalesOrdenados.forEach((p, idx) => {
+      const letra = alphabet[idx] ?? `P${idx + 1}`
+      terms.push({
+        letra,
+        etiqueta: `Presupuesto personal — ${p.cuentaNombre}`,
+        monto: toPesos(p.total),
+      })
+    })
+    return terms
+  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, presupuestosPersonalesOrdenados])
+
   const saldo = useMemo(() => {
-    if (!esActual) {
-      return efectivo - deudaTc
-    }
-    return sueldoProyectado + efectivo - deudaTc + compensacionEstimada
-  }, [esActual, sueldoProyectado, efectivo, deudaTc, compensacionEstimada])
+    return sueldoProyectado + efectivo - presupuestoComunProrrateado - totalPresupuestosPersonales
+  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, totalPresupuestosPersonales])
 
   const movimientosCuentaSeleccionada = useMemo(() => {
     if (cuentaTab === null) return movimientos
@@ -919,6 +968,7 @@ export default function DashboardPage() {
     loadingDeuda ||
     loadingLiquidacion ||
     loadingLiquidacionAnterior ||
+    loadingPresupuestosSaldo ||
     (esActual && loadingSueldosProrrateo)
   ) return <Cargando />
   if (error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior) {
@@ -965,14 +1015,10 @@ export default function DashboardPage() {
         <SaldoProyectadoCard
           label="Saldo proyectado"
           saldo={saldo}
-          esActual={esActual}
           sueldoProyectado={sueldoProyectado}
           efectivo={efectivo}
-          deudaTc={deudaTc}
-          compensacion={compensacionEstimada}
-          netoFamiliarComun={toPesos(compensacionData?.neto_familiar_comun)}
-          netoComunUsuario={saldoCompensacionDetalle.netoComunUsuario}
-          esperadoProrrateo={saldoCompensacionDetalle.esperadoProrrateo}
+          formula={desgloseSaldoFormula}
+          prorrateoPresupuestoComun={prorrateoDetalle.proporcion}
           miembros={compensacionData?.miembros ?? []}
           sueldosDigitos={sueldosDigitos}
           onSueldoChange={(usuarioId, soloDigitos) => {
