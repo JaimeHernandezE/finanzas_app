@@ -15,6 +15,7 @@ import {
   type CuentaPersonalApi,
   type PresupuestoMesFila,
 } from '@finanzas/shared/api/finanzas'
+import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -27,6 +28,11 @@ function montoNum(v: string | number | null | undefined): number {
   if (v == null) return 0
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
+}
+
+function montoEntero(v: string | number | null | undefined): number {
+  const n = montoNum(v)
+  return Number.isFinite(n) ? Math.round(n) : 0
 }
 
 function mesStr(anio: number, mes: number): string {
@@ -83,7 +89,121 @@ export default function PresupuestoScreen() {
       }),
     [mes, anio, ambito, cuentaPersonalId],
   )
-  const filas = data ?? []
+  const { data: cuotasVigentesPorCategoria } = useApi<Record<number, number>>(
+    async () => {
+      try {
+        const cuotasResp = await movimientosApi.getCuotas({
+          mes: mes + 1,
+          anio,
+          estado: 'FACTURADO',
+        })
+        const cuotas = Array.isArray(cuotasResp.data) ? cuotasResp.data as Array<{
+          movimiento: number
+          monto: string | number
+        }> : []
+        if (!cuotas.length) return { data: {} }
+
+        const movimientoIds = [...new Set(
+          cuotas
+            .map((c) => Number(c.movimiento))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        )]
+        if (!movimientoIds.length) return { data: {} }
+
+        const detalleMovs = await Promise.all(
+          movimientoIds.map(async (id) => {
+            try {
+              const resp = await movimientosApi.getMovimiento(id)
+              return resp.data as {
+                id?: number
+                ambito?: 'PERSONAL' | 'COMUN' | 'FAMILIAR'
+                cuenta?: number | null
+                categoria?: number | null
+                tipo?: 'EGRESO' | 'INGRESO'
+              }
+            } catch {
+              return null
+            }
+          }),
+        )
+
+        const movPorId = new Map<number, {
+          ambito?: 'PERSONAL' | 'COMUN' | 'FAMILIAR'
+          cuenta?: number | null
+          categoria?: number | null
+          tipo?: 'EGRESO' | 'INGRESO'
+        }>()
+        for (const mov of detalleMovs) {
+          const id = Number(mov?.id)
+          if (!Number.isFinite(id) || id <= 0) continue
+          movPorId.set(id, mov ?? {})
+        }
+
+        const acumulado: Record<number, number> = {}
+        for (const cuota of cuotas) {
+          const mid = Number(cuota.movimiento)
+          if (!Number.isFinite(mid) || mid <= 0) continue
+          const mov = movPorId.get(mid)
+          if (!mov || mov.tipo !== 'EGRESO') continue
+
+          const esComun = mov.ambito === 'COMUN' || mov.ambito === 'FAMILIAR'
+          const coincideAmbito = ambito === 'FAMILIAR' ? esComun : mov.ambito === 'PERSONAL'
+          if (!coincideAmbito) continue
+
+          if (
+            ambito === 'PERSONAL' &&
+            cuentaPersonalId != null &&
+            Number(mov.cuenta ?? NaN) !== cuentaPersonalId
+          ) {
+            continue
+          }
+
+          const categoriaId = Number(mov.categoria)
+          if (!Number.isFinite(categoriaId) || categoriaId <= 0) continue
+          acumulado[categoriaId] = (acumulado[categoriaId] ?? 0) + montoEntero(cuota.monto)
+        }
+
+        return { data: acumulado }
+      } catch {
+        return { data: {} }
+      }
+    },
+    [mes, anio, ambito, cuentaPersonalId],
+  )
+
+  const filas = useMemo(() => {
+    const base = data ?? []
+    const extras = cuotasVigentesPorCategoria ?? {}
+    const extrasEntries = Object.entries(extras)
+      .map(([k, v]) => [Number(k), Number(v)] as const)
+      .filter(([cid, monto]) => Number.isFinite(cid) && cid > 0 && Number.isFinite(monto) && monto !== 0)
+    if (base.length === 0 || extrasEntries.length === 0) return base
+
+    const ajustadas = base.map((f) => ({ ...f }))
+    const porCategoria = new Map<number, PresupuestoMesFila>(ajustadas.map((f) => [f.categoria_id, f]))
+
+    for (const [categoriaId, extra] of extrasEntries) {
+      const fila = porCategoria.get(categoriaId)
+      if (!fila) continue
+      fila.gastado = montoEntero(fila.gastado) + Math.round(extra)
+    }
+
+    const hijosPorPadre = new Map<number, PresupuestoMesFila[]>()
+    for (const fila of ajustadas) {
+      if (fila.es_agregado_padre) continue
+      if (fila.categoria_padre_id == null) continue
+      const arr = hijosPorPadre.get(fila.categoria_padre_id) ?? []
+      arr.push(fila)
+      hijosPorPadre.set(fila.categoria_padre_id, arr)
+    }
+    for (const fila of ajustadas) {
+      if (!fila.es_agregado_padre) continue
+      const hijos = hijosPorPadre.get(fila.categoria_id) ?? []
+      fila.gastado = hijos.reduce((sum, h) => sum + montoEntero(h.gastado), 0)
+    }
+
+    return ajustadas
+  }, [data, cuotasVigentesPorCategoria])
 
   useEffect(() => {
     if (ambito !== 'PERSONAL') return
