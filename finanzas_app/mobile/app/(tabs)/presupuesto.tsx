@@ -77,6 +77,7 @@ export default function PresupuestoScreen() {
   const [formMonto, setFormMonto] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [mostrarDetalleGastado, setMostrarDetalleGastado] = useState(false)
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
@@ -90,121 +91,50 @@ export default function PresupuestoScreen() {
       }),
     [mes, anio, ambito, cuentaPersonalId],
   )
-  const { data: cuotasVigentesPorCategoria } = useApi<Record<number, number>>(
-    async () => {
-      try {
-        const cuotasResp = await movimientosApi.getCuotas({
-          mes: mes + 1,
-          anio,
-          estado: 'FACTURADO',
-        })
-        const cuotas = Array.isArray(cuotasResp.data) ? cuotasResp.data as Array<{
-          movimiento: number
-          monto: string | number
-        }> : []
-        if (!cuotas.length) return { data: {} }
+  const filas = useMemo(() => data ?? [], [data])
 
-        const movimientoIds = [...new Set(
-          cuotas
-            .map((c) => Number(c.movimiento))
-            .filter((id) => Number.isFinite(id) && id > 0),
-        )]
-        if (!movimientoIds.length) return { data: {} }
-
-        const detalleMovs = await Promise.all(
-          movimientoIds.map(async (id) => {
-            try {
-              const resp = await movimientosApi.getMovimiento(id)
-              return resp.data as {
-                id?: number
-                ambito?: 'PERSONAL' | 'COMUN' | 'FAMILIAR'
-                cuenta?: number | null
-                categoria?: number | null
-                tipo?: 'EGRESO' | 'INGRESO'
-              }
-            } catch {
-              return null
-            }
-          }),
-        )
-
-        const movPorId = new Map<number, {
-          ambito?: 'PERSONAL' | 'COMUN' | 'FAMILIAR'
-          cuenta?: number | null
-          categoria?: number | null
-          tipo?: 'EGRESO' | 'INGRESO'
-        }>()
-        for (const mov of detalleMovs) {
-          const id = Number(mov?.id)
-          if (!Number.isFinite(id) || id <= 0) continue
-          movPorId.set(id, mov ?? {})
-        }
-
-        const acumulado: Record<number, number> = {}
-        for (const cuota of cuotas) {
-          const mid = Number(cuota.movimiento)
-          if (!Number.isFinite(mid) || mid <= 0) continue
-          const mov = movPorId.get(mid)
-          if (!mov || mov.tipo !== 'EGRESO') continue
-
-          const esComun = mov.ambito === 'COMUN' || mov.ambito === 'FAMILIAR'
-          const coincideAmbito = ambito === 'FAMILIAR' ? esComun : mov.ambito === 'PERSONAL'
-          if (!coincideAmbito) continue
-
-          if (
-            ambito === 'PERSONAL' &&
-            cuentaPersonalId != null &&
-            Number(mov.cuenta ?? NaN) !== cuentaPersonalId
-          ) {
-            continue
-          }
-
-          const categoriaId = Number(mov.categoria)
-          if (!Number.isFinite(categoriaId) || categoriaId <= 0) continue
-          acumulado[categoriaId] = (acumulado[categoriaId] ?? 0) + montoEntero(cuota.monto)
-        }
-
-        return { data: acumulado }
-      } catch {
-        return { data: {} }
-      }
-    },
-    [mes, anio, ambito, cuentaPersonalId],
+  type MovimientoResumen = {
+    id: number
+    monto: string | number
+    metodo_pago_tipo?: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+    tarjeta_nombre?: string | null
+  }
+  type CuotaResumen = {
+    movimiento?: number | null
+    monto: string | number
+    estado?: 'PENDIENTE' | 'FACTURADO' | 'PAGADO' | string
+    incluir?: boolean
+  }
+  const ambitoMov = ambito === 'FAMILIAR' ? 'COMUN' : 'PERSONAL'
+  const { data: gastosMesData } = useApi<MovimientoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        mes: mes + 1,
+        anio,
+        tipo: 'EGRESO',
+        ambito: ambitoMov,
+        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
+      }) as Promise<{ data: MovimientoResumen[] }>,
+    [mes, anio, ambitoMov, cuentaPersonalId],
   )
-
-  const filas = useMemo(() => {
-    const base = data ?? []
-    const extras = cuotasVigentesPorCategoria ?? {}
-    const extrasEntries = Object.entries(extras)
-      .map(([k, v]) => [Number(k), Number(v)] as const)
-      .filter(([cid, monto]) => Number.isFinite(cid) && cid > 0 && Number.isFinite(monto) && monto !== 0)
-    if (base.length === 0 || extrasEntries.length === 0) return base
-
-    const ajustadas = base.map((f) => ({ ...f }))
-    const porCategoria = new Map<number, PresupuestoMesFila>(ajustadas.map((f) => [f.categoria_id, f]))
-
-    for (const [categoriaId, extra] of extrasEntries) {
-      const fila = porCategoria.get(categoriaId)
-      if (!fila) continue
-      fila.gastado = montoEntero(fila.gastado) + Math.round(extra)
-    }
-
-    const hijosPorPadre = new Map<number, PresupuestoMesFila[]>()
-    for (const fila of ajustadas) {
-      if (fila.es_agregado_padre) continue
-      if (fila.categoria_padre_id == null) continue
-      const arr = hijosPorPadre.get(fila.categoria_padre_id) ?? []
-      arr.push(fila)
-      hijosPorPadre.set(fila.categoria_padre_id, arr)
-    }
-    for (const fila of ajustadas) {
-      if (!fila.es_agregado_padre) continue
-      const hijos = hijosPorPadre.get(fila.categoria_id) ?? []
-      fila.gastado = hijos.reduce((sum, h) => sum + montoEntero(h.gastado), 0)
-    }
-
-    return ajustadas
-  }, [data, cuotasVigentesPorCategoria])
+  const { data: movCreditosData } = useApi<MovimientoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        tipo: 'EGRESO',
+        ambito: ambitoMov,
+        metodo: 'CREDITO',
+        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
+      }) as Promise<{ data: MovimientoResumen[] }>,
+    [ambitoMov, cuentaPersonalId],
+  )
+  const { data: cuotasMesData } = useApi<CuotaResumen[]>(
+    () =>
+      movimientosApi.getCuotas({
+        mes: mes + 1,
+        anio,
+      }) as Promise<{ data: CuotaResumen[] }>,
+    [mes, anio],
+  )
 
   useEffect(() => {
     if (ambito !== 'PERSONAL') return
@@ -246,9 +176,40 @@ export default function PresupuestoScreen() {
         .reduce((s, f) => s + montoNum(f.monto_presupuestado), 0),
     [filas],
   )
+  const gastoReal = useMemo(
+    () =>
+      ((gastosMesData ?? []) as MovimientoResumen[])
+        .filter((m) => m.metodo_pago_tipo !== 'CREDITO')
+        .reduce((sum, m) => sum + montoNum(m.monto), 0),
+    [gastosMesData],
+  )
+  const cuotasPendientesPorTarjeta = useMemo(() => {
+    const movTarjetaPorId = new Map<number, string>()
+    for (const mov of (movCreditosData ?? []) as MovimientoResumen[]) {
+      movTarjetaPorId.set(mov.id, String(mov.tarjeta_nombre || 'Tarjeta'))
+    }
+    const agg = new Map<string, number>()
+    for (const cuota of (cuotasMesData ?? []) as CuotaResumen[]) {
+      const estado = String(cuota.estado ?? '').toUpperCase()
+      const incluir = Boolean(cuota.incluir ?? true)
+      if (estado === 'PAGADO' || !incluir) continue
+      const movId = Number(cuota.movimiento ?? NaN)
+      if (!Number.isFinite(movId)) continue
+      const tarjeta = movTarjetaPorId.get(movId)
+      if (!tarjeta) continue
+      agg.set(tarjeta, (agg.get(tarjeta) ?? 0) + montoNum(cuota.monto))
+    }
+    return Array.from(agg.entries())
+      .map(([tarjeta, total]) => ({ tarjeta, total }))
+      .sort((a, b) => a.tarjeta.localeCompare(b.tarjeta, 'es'))
+  }, [movCreditosData, cuotasMesData])
+  const cuotasPendientesTotal = useMemo(
+    () => cuotasPendientesPorTarjeta.reduce((sum, row) => sum + row.total, 0),
+    [cuotasPendientesPorTarjeta],
+  )
   const totalGastado = useMemo(
-    () => filas.filter((f) => !f.es_agregado_padre).reduce((s, f) => s + f.gastado, 0),
-    [filas],
+    () => Math.round(gastoReal + cuotasPendientesTotal),
+    [gastoReal, cuotasPendientesTotal],
   )
   const disponible = totalPresupuestado - totalGastado
   const pctGlobal = porcentaje(totalGastado, totalPresupuestado)
@@ -479,8 +440,31 @@ export default function PresupuestoScreen() {
                     <Text className="text-dark font-bold text-sm">{formatMonto(totalPresupuestado)}</Text>
                   </View>
                   <View className="flex-1 bg-white border border-border rounded-xl p-3">
-                    <Text className="text-muted text-[10px] uppercase tracking-wide mb-1">Gastado</Text>
+                    <View className="flex-row items-center justify-between mb-1">
+                      <Text className="text-muted text-[10px] uppercase tracking-wide">Gastado</Text>
+                      <TouchableOpacity
+                        onPress={() => setMostrarDetalleGastado((v) => !v)}
+                        className="w-5 h-5 rounded-full border border-border items-center justify-center bg-white"
+                        accessibilityRole="button"
+                        accessibilityLabel={mostrarDetalleGastado ? 'Ocultar detalle de gastado' : 'Mostrar detalle de gastado'}
+                      >
+                        <Text className="text-muted text-[10px] font-semibold">?</Text>
+                      </TouchableOpacity>
+                    </View>
                     <Text className="text-dark font-bold text-sm">{formatMonto(totalGastado)}</Text>
+                    {mostrarDetalleGastado && (
+                      <View className="mt-2">
+                        <Text className="text-muted text-[10px]">Gasto real: {formatMonto(gastoReal)}</Text>
+                        <Text className="text-muted text-[10px] mt-0.5">
+                          Cuotas pendientes: {formatMonto(cuotasPendientesTotal)}
+                        </Text>
+                        {cuotasPendientesPorTarjeta.map((row) => (
+                          <Text key={row.tarjeta} className="text-muted text-[10px] mt-0.5">
+                            - {row.tarjeta}: {formatMonto(row.total)}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
                   </View>
                   <View className={`flex-1 rounded-xl p-3 border ${disponible >= 0 ? 'bg-white border-border' : 'bg-danger/10 border-danger/30'}`}>
                     <Text className="text-muted text-[10px] uppercase tracking-wide mb-1">

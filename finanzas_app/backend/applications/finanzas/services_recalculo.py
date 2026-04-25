@@ -12,6 +12,7 @@ from django.db.models import Count, Exists, Min, OuterRef, Sum
 from django.utils import timezone
 
 from .models import (
+    CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN,
     Cuota,
     CuentaPersonal,
     IngresoComun,
@@ -209,6 +210,8 @@ def _efectivo_neto_personal_qs(qs):
         if m.tipo == 'INGRESO':
             if m._tiene_ingreso_comun:
                 continue
+            if m.categoria.nombre == CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN:
+                continue
             ingresos += amt
         else:
             if m.categoria.es_inversion:
@@ -253,18 +256,47 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
             oculto=False,
         )
         .exclude(metodo_pago__tipo='CREDITO')
-        .exclude(categoria__es_inversion=True)
         .values('usuario_id')
         .annotate(total=Sum('monto'), cnt=Count('id'))
     )
+    cuotas_comunes_pendientes_qs = (
+        Cuota.objects.filter(
+            movimiento__familia_id=familia_id,
+            movimiento__ambito='COMUN',
+            movimiento__tipo='EGRESO',
+            movimiento__oculto=False,
+            movimiento__metodo_pago__tipo='CREDITO',
+            incluir=True,
+            mes_facturacion__month=mes_primer_dia.month,
+            mes_facturacion__year=mes_primer_dia.year,
+            estado='PENDIENTE',
+        )
+        .values('movimiento__usuario_id')
+        .annotate(total=Sum('monto'), cnt=Count('id'))
+    )
+
+    gastos_por_usuario: dict[int, dict[str, Decimal | int]] = {}
     for row in gastos_qs:
+        uid = row['usuario_id']
+        gastos_por_usuario[uid] = {
+            'total': row['total'] or Decimal('0'),
+            'cnt': row['cnt'] or 0,
+        }
+    for row in cuotas_comunes_pendientes_qs:
+        uid = row['movimiento__usuario_id']
+        previo = gastos_por_usuario.get(uid, {'total': Decimal('0'), 'cnt': 0})
+        gastos_por_usuario[uid] = {
+            'total': (previo['total'] or Decimal('0')) + (row['total'] or Decimal('0')),
+            'cnt': int(previo['cnt']) + int(row['cnt'] or 0),
+        }
+    for usuario_id, data in gastos_por_usuario.items():
         LiquidacionComunMensualSnapshot.objects.create(
             familia_id=familia_id,
             mes=mes_primer_dia,
-            usuario_id=row['usuario_id'],
+            usuario_id=usuario_id,
             tipo_linea='GASTO_COMUN_NO_CREDITO',
-            total=row['total'] or Decimal('0'),
-            items_contados=row['cnt'],
+            total=data['total'] or Decimal('0'),
+            items_contados=int(data['cnt']),
         )
 
 
@@ -532,7 +564,11 @@ def _total_comun_neto_familia_mes(familia_id: int, mes_pd: date) -> Decimal:
         fecha__year=mes_pd.year,
         fecha__month=mes_pd.month,
     ).exclude(metodo_pago__tipo='CREDITO')
-    ing = qs.filter(tipo='INGRESO').aggregate(t=Sum('monto'))['t']
+    ing = (
+        qs.filter(tipo='INGRESO')
+        .exclude(categoria__nombre=CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN)
+        .aggregate(t=Sum('monto'))['t']
+    )
     egr = (
         qs.filter(tipo='EGRESO')
         .exclude(categoria__es_inversion=True)
@@ -557,7 +593,11 @@ def _efectivo_comun_neto_usuario_mes(usuario_id: int, familia_id: int, mes_pd: d
         fecha__month=mes_pd.month,
     ).exclude(metodo_pago__tipo='CREDITO')
 
-    ing = qs.filter(tipo='INGRESO').aggregate(t=Sum('monto'))['t']
+    ing = (
+        qs.filter(tipo='INGRESO')
+        .exclude(categoria__nombre=CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN)
+        .aggregate(t=Sum('monto'))['t']
+    )
     egr = (
         qs.filter(tipo='EGRESO')
         .exclude(categoria__es_inversion=True)
@@ -890,7 +930,7 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
         'base_prorrateo': {
             'mes': mes_pd.month,
             'anio': mes_pd.year,
-            'nota': 'El neto familiar y las cuotas usan ingresos − egresos (COMÚN, sin crédito). Proporciones según ingresos comunes declarados del mismo mes.',
+            'nota': 'El neto familiar y las cuotas usan ingresos − egresos. Proporciones según ingresos comunes declarados del mismo mes.',
         },
     }
 

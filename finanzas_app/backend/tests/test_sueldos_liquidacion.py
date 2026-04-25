@@ -2,7 +2,7 @@
 
 import pytest
 from decimal import Decimal
-from applications.finanzas.models import IngresoComun
+from applications.finanzas.models import Cuota, IngresoComun, Movimiento
 
 
 # ── Tests de ingresos comunes ─────────────────────────────────────────────────
@@ -239,6 +239,75 @@ class TestLiquidacion:
         assert res.status_code == 200
         assert res.json()['ingresos'] == []
         assert res.json()['gastos_comunes'] == []
+
+    def test_incluye_cuota_credito_comun_pendiente_en_gastos(
+        self, client, auth_header, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+    ):
+        """Cuotas de crédito comunes pendientes cuentan en liquidación del mes facturado."""
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-05',
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto='300000.00',
+            comentario='Compra común en cuotas',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=3,
+        )
+
+        res = client.get('/api/finanzas/liquidacion/?mes=3&anio=2026', **auth_header)
+        assert res.status_code == 200
+        gastos = {g['nombre']: Decimal(g['total']) for g in res.json()['gastos_comunes']}
+        assert gastos['Jaime'] == Decimal('100000.00')
+
+    def test_no_duplica_cuota_pagada_si_ya_existe_pago_efectivo(
+        self,
+        client,
+        auth_header,
+        usuario,
+        familia,
+        categoria_egreso,
+        metodo_credito,
+        metodo_efectivo,
+        tarjeta,
+    ):
+        """Si la cuota ya está pagada, no se suma de nuevo además del pago efectivo."""
+        mov_credito = Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-05',
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto='300000.00',
+            comentario='Compra común en cuotas',
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=3,
+        )
+        cuota_mes = Cuota.objects.get(movimiento=mov_credito, numero=1)
+        cuota_mes.estado = 'PAGADO'
+        cuota_mes.save(update_fields=['estado'])
+
+        Movimiento.objects.create(
+            usuario=usuario,
+            familia=familia,
+            fecha='2026-03-20',
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto=cuota_mes.monto,
+            comentario='Pago tarjeta cuota 1/3',
+            metodo_pago=metodo_efectivo,
+        )
+
+        res = client.get('/api/finanzas/liquidacion/?mes=3&anio=2026', **auth_header)
+        assert res.status_code == 200
+        gastos = {g['nombre']: Decimal(g['total']) for g in res.json()['gastos_comunes']}
+        assert gastos['Jaime'] == Decimal('100000.00')
 
     def test_sin_token_retorna_401(self, client):
         res = client.get('/api/finanzas/liquidacion/?mes=3&anio=2026')

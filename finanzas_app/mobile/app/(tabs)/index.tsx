@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   LayoutChangeEvent,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -12,9 +13,9 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMovimientos } from '../../hooks/useMovimientos'
-import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, movimientosApi } from '@finanzas/shared/api'
+import { incluirIngresoMovimientoEnSueldoProyectadoMes } from '@finanzas/shared/utils/sueldoProyectadoIngresos'
 import type { PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
@@ -31,6 +32,7 @@ interface Movimiento {
   categoria_nombre: string
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   usuario?:         number | string
+  ingreso_comun?:   number | null
 }
 
 interface LiquidacionApi {
@@ -55,6 +57,21 @@ interface PresupuestosSaldoProyectado {
   personales: PresupuestoCuentaResumen[]
 }
 
+interface EfectivoDesgloseApi {
+  a?: number | string
+  b?: number | string
+  c?: number | string
+  d?: number | string
+  e?: number | string
+  e_personal?: number | string
+  e_comun?: number | string
+}
+
+interface EfectivoDisponibleApi {
+  efectivo: string
+  desglose?: EfectivoDesgloseApi | null
+}
+
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
@@ -75,13 +92,9 @@ function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
 }
 
-function sueldoProyectadoNetoMes(
-  sueldoEstimado: number,
-  ingresoDeclaradoMes: string | undefined,
-): number {
+function sueldoEstimadoMes(sueldoEstimado: number): number {
   const base = Math.round(Number(sueldoEstimado) || 0)
-  const declarado = Math.round(Number(ingresoDeclaradoMes) || 0)
-  return Math.max(0, base - declarado)
+  return Math.max(0, base)
 }
 
 function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undefined): number {
@@ -122,6 +135,8 @@ export default function DashboardScreen() {
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [cuentaTab, setCuentaTab] = useState<number | null>(null)
   const [showSelectorCuenta, setShowSelectorCuenta] = useState(false)
+  const [mostrarDetalleEfectivo, setMostrarDetalleEfectivo] = useState(false)
+  const [mostrarDetalleSaldo, setMostrarDetalleSaldo] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
   const [selectorY, setSelectorY] = useState(0)
 
@@ -132,6 +147,17 @@ export default function DashboardScreen() {
     solo_mios: true,
   })
   const movimientos = raw as Movimiento[]
+  const {
+    movimientos: movimientosComunesRaw,
+    loading: loadingMovimientosComunes,
+    error: errorMovimientosComunes,
+  } = useMovimientos({
+    mes: mes + 1,
+    anio,
+    ambito: 'COMUN',
+    solo_mios: true,
+  })
+  const movimientosComunes = (movimientosComunesRaw ?? []) as Movimiento[]
 
   const queryClient = useQueryClient()
   const isFetchingRQ = useIsFetching()
@@ -153,7 +179,7 @@ export default function DashboardScreen() {
 
   const qEfectivo = useQuery({
     queryKey: ['efectivoDisponible'],
-    queryFn: () => finanzasApi.getEfectivoDisponible().then((r: any) => r.data as { efectivo: string }),
+    queryFn: () => finanzasApi.getEfectivoDisponible().then((r: any) => r.data as EfectivoDisponibleApi),
   })
 
   const qCuentas = useQuery<CuentaPersonalApi[]>({
@@ -333,19 +359,12 @@ export default function DashboardScreen() {
     if (!esActual || qCompensacion.error || !compensacion?.miembros?.length || !user) return vacio
     const n = compensacion.miembros.length
     const totalEstimado = compensacion.miembros.reduce(
-      (sum: number, m: any) =>
-        sum + sueldoProyectadoNetoMes(
-          sueldosProrrateo[m.usuario_id] ?? 0,
-          m.ingreso_declarado_mes,
-        ),
+      (sum: number, m: any) => sum + sueldoEstimadoMes(sueldosProrrateo[m.usuario_id] ?? 0),
       0,
     )
     const self = compensacion.miembros.find((m: any) => m.usuario_id === user.id)
     if (!self) return vacio
-    const miBaseNeta = sueldoProyectadoNetoMes(
-      sueldosProrrateo[user.id] ?? 0,
-      self.ingreso_declarado_mes,
-    )
+    const miBaseNeta = sueldoEstimadoMes(sueldosProrrateo[user.id] ?? 0)
     let proporcion = 0
     if (totalEstimado > 0) {
       proporcion = miBaseNeta / totalEstimado
@@ -355,28 +374,135 @@ export default function DashboardScreen() {
     return { proporcion, baseUsuario: miBaseNeta }
   }, [esActual, qCompensacion.data, qCompensacion.error, user, sueldosProrrateo])
 
-  const sueldoProyectado = useMemo(() => {
-    if (!esActual || !user) return 0
-    return prorrateoDetalle.baseUsuario
-  }, [esActual, prorrateoDetalle.baseUsuario, user])
-
   const efectivo = useMemo(
     () => Math.round(Number(qEfectivo.data?.efectivo) || 0),
     [qEfectivo.data],
   )
+  const efectivoDesglose = useMemo(
+    () => qEfectivo.data?.desglose ?? null,
+    [qEfectivo.data],
+  )
+
+  const panelEfectivoDesglose = useMemo(() => {
+    if (!mostrarDetalleEfectivo || !efectivoDesglose) return null
+    const a = toPesos(efectivoDesglose.a)
+    const b = toPesos(efectivoDesglose.b)
+    const c = toPesos(efectivoDesglose.c)
+    const d = toPesos(efectivoDesglose.d)
+    const e = toPesos(efectivoDesglose.e)
+    const ePersonal = toPesos(efectivoDesglose.e_personal)
+    const eComun = toPesos(efectivoDesglose.e_comun)
+    const fmtAbs = (x: number) => formatMonto(Math.abs(x))
+    return (
+      <View className="mt-4 pt-4 border-t border-border gap-3">
+        <Text className="text-xs font-semibold text-dark">Desglose (A + B + C − D + E)</Text>
+        <Text className="text-[11px] text-muted uppercase">Aportes</Text>
+        <View className="flex-row items-start justify-between gap-2">
+          <Text className="text-xs text-muted flex-1">
+            A — Total ingresos (ingreso común histórico, sin mes actual)
+          </Text>
+          <Text className={`text-xs font-semibold shrink-0 ${a >= 0 ? 'text-success' : 'text-danger'}`}>
+            {a >= 0 ? '+' : '−'}
+            {fmtAbs(a)}
+          </Text>
+        </View>
+        <View className="flex-row items-start justify-between gap-2">
+          <Text className="text-xs text-muted flex-1">B — Sueldo declarado mes</Text>
+          <Text className={`text-xs font-semibold shrink-0 ${b >= 0 ? 'text-success' : 'text-danger'}`}>
+            {b >= 0 ? '+' : '−'}
+            {fmtAbs(b)}
+          </Text>
+        </View>
+        <Text className="text-[11px] text-muted uppercase pt-1">Luego los egresos</Text>
+        <View className="flex-row items-start justify-between gap-2">
+          <Text className="text-xs text-muted flex-1">
+            C — Egresos personales (neto mensual en cuentas, histórico)
+          </Text>
+          <Text className={`text-xs font-semibold shrink-0 ${c >= 0 ? 'text-success' : 'text-danger'}`}>
+            {c >= 0 ? '+' : '−'}
+            {fmtAbs(c)}
+          </Text>
+        </View>
+        <View className="flex-row items-start justify-between gap-2">
+          <Text className="text-xs text-muted flex-1">D — Egresos comunes (prorrateo acumulado)</Text>
+          <Text className="text-xs font-semibold text-danger shrink-0">−{fmtAbs(d)}</Text>
+        </View>
+        <View className="flex-row items-start justify-between gap-2">
+          <Text className="text-xs text-muted flex-1">E — Egresos mes actual (neto personal + común)</Text>
+          <Text className={`text-xs font-semibold shrink-0 ${e >= 0 ? 'text-success' : 'text-danger'}`}>
+            {e >= 0 ? '+' : '−'}
+            {fmtAbs(e)}
+          </Text>
+        </View>
+        <View className="pl-2 border-l border-border gap-1">
+          <View className="flex-row justify-between">
+            <Text className="text-[11px] text-muted">↳ Personal (sin duplicar sueldos)</Text>
+            <Text className="text-[11px] text-dark">
+              {ePersonal < 0 ? `−${fmtAbs(ePersonal)}` : fmtAbs(ePersonal)}
+            </Text>
+          </View>
+          <View className="flex-row justify-between">
+            <Text className="text-[11px] text-muted">↳ Común</Text>
+            <Text className="text-[11px] text-dark">
+              {eComun < 0 ? `−${fmtAbs(eComun)}` : fmtAbs(eComun)}
+            </Text>
+          </View>
+        </View>
+        <Text className="text-[10px] text-muted leading-snug">
+          Cálculo: A + B + C − D + E. C y E muestran el signo del neto; D siempre se resta.
+        </Text>
+      </View>
+    )
+  }, [mostrarDetalleEfectivo, efectivoDesglose, formatMonto])
+  const ingresosPersonalesMesActual = useMemo(() => {
+    if (!esActual) return 0
+    return movimientos
+      .filter(
+        (m) =>
+          m.ambito === 'PERSONAL' &&
+          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
+      )
+      .reduce((sum, m) => sum + toPesos(m.monto), 0)
+  }, [esActual, movimientos])
+  const ingresosComunesMesActual = useMemo(() => {
+    if (!esActual) return 0
+    return movimientosComunes
+      .filter(
+        (m) =>
+          m.ambito === 'COMUN' &&
+          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
+      )
+      .reduce((sum, m) => sum + toPesos(m.monto), 0)
+  }, [esActual, movimientosComunes])
+  const ingresosMesActual = ingresosPersonalesMesActual + ingresosComunesMesActual
+  const sueldoProyectado = useMemo(() => {
+    if (!esActual || !user) return 0
+    return prorrateoDetalle.baseUsuario + ingresosMesActual
+  }, [esActual, prorrateoDetalle.baseUsuario, user, ingresosMesActual])
+  const efectivoHastaMesAnterior = useMemo(() => {
+    if (!efectivoDesglose) return 0
+    return efectivo - toPesos(efectivoDesglose.b) - toPesos(efectivoDesglose.e)
+  }, [efectivo, efectivoDesglose])
   const presupuestoComunProrrateado = useMemo(() => {
     const totalComun = toPesos(qPresupuestosSaldo.data?.comunTotal)
     return Math.round(totalComun * prorrateoDetalle.proporcion)
   }, [qPresupuestosSaldo.data?.comunTotal, prorrateoDetalle.proporcion])
 
-  const totalPresupuestosPersonales = useMemo(
-    () => (qPresupuestosSaldo.data?.personales ?? []).reduce((sum, p) => sum + toPesos(p.total), 0),
+  const presupuestosPersonalesOrdenados = useMemo(
+    () =>
+      [...(qPresupuestosSaldo.data?.personales ?? [])].sort((a, b) =>
+        a.cuentaNombre.localeCompare(b.cuentaNombre, 'es', { sensitivity: 'base' }),
+      ),
     [qPresupuestosSaldo.data?.personales],
+  )
+  const totalPresupuestosPersonales = useMemo(
+    () => presupuestosPersonalesOrdenados.reduce((sum, p) => sum + toPesos(p.total), 0),
+    [presupuestosPersonalesOrdenados],
   )
 
   const saldo = useMemo(() => {
-    return sueldoProyectado + efectivo - presupuestoComunProrrateado - totalPresupuestosPersonales
-  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, totalPresupuestosPersonales])
+    return sueldoProyectado + efectivoHastaMesAnterior - presupuestoComunProrrateado - totalPresupuestosPersonales
+  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, totalPresupuestosPersonales])
 
   // Movimientos filtrados por la cuenta seleccionada (para categorías y lista)
   const movimientosCuenta = useMemo(() => {
@@ -462,6 +588,7 @@ export default function DashboardScreen() {
   }
 
   const hasError = error ||
+    errorMovimientosComunes ||
     (qEfectivo.error ? String(qEfectivo.error) : null) ||
     (qLiquidacion.error ? String(qLiquidacion.error) : null) ||
     (qLiquidacionAnterior.error ? String(qLiquidacionAnterior.error) : null)
@@ -469,6 +596,7 @@ export default function DashboardScreen() {
   // isLoading: primera carga sin datos en cache; refetch en background no activa pantalla completa.
   const isLoading = !refreshing && (
     loading ||
+    loadingMovimientosComunes ||
     qEfectivo.isLoading ||
     qDeuda.isLoading ||
     qLiquidacion.isLoading ||
@@ -596,10 +724,24 @@ export default function DashboardScreen() {
             {/* Tarjetas métricas */}
             <View className="gap-3 mb-6">
               <View className="bg-white rounded-2xl p-5">
-                <Text className="text-sm text-muted mb-1">Efectivo disponible</Text>
+                <View className="flex-row items-center justify-between mb-1">
+                  <View className="flex-1 pr-2">
+                    <Text className="text-sm text-muted">Efectivo disponible</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setMostrarDetalleEfectivo((v) => !v)}
+                    hitSlop={12}
+                    className="w-7 h-7 rounded-full bg-accent items-center justify-center shrink-0"
+                    accessibilityRole="button"
+                    accessibilityLabel={mostrarDetalleEfectivo ? 'Ocultar desglose de efectivo disponible' : 'Ver desglose de efectivo disponible'}
+                  >
+                    <Text className="text-xs font-bold text-dark">?</Text>
+                  </Pressable>
+                </View>
                 <Text className="text-[28px] font-bold text-dark">
                   {efectivo < 0 ? `−${formatMonto(Math.abs(efectivo))}` : formatMonto(efectivo)}
                 </Text>
+                {panelEfectivoDesglose}
               </View>
 
               <View className="bg-white rounded-2xl p-5">
@@ -616,10 +758,67 @@ export default function DashboardScreen() {
               </View>
 
               <View className="bg-dark rounded-2xl p-5">
-                <Text className="text-sm text-white/60 mb-1">Saldo proyectado</Text>
+                <View className="flex-row items-center justify-between mb-1">
+                  <View className="flex-1 pr-2">
+                    <Text className="text-sm text-white/60">Saldo proyectado</Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setMostrarDetalleSaldo((v) => !v)}
+                    hitSlop={12}
+                    className="w-7 h-7 rounded-full bg-white/15 border border-white/25 items-center justify-center shrink-0"
+                    accessibilityRole="button"
+                    accessibilityLabel={mostrarDetalleSaldo ? 'Ocultar desglose de saldo proyectado' : 'Ver desglose de saldo proyectado'}
+                  >
+                    <Text className="text-xs font-bold text-accent">?</Text>
+                  </Pressable>
+                </View>
                 <Text className={`text-[28px] font-bold ${saldo < 0 ? 'text-danger' : 'text-accent'}`}>
                   {saldo < 0 ? `−${formatMonto(Math.abs(saldo))}` : formatMonto(saldo)}
                 </Text>
+                {mostrarDetalleSaldo && (
+                  <View className="mt-4 pt-4 border-t border-white/15 gap-2">
+                    <Text className="text-xs font-semibold text-white/80">Cómo se calcula el saldo proyectado</Text>
+                    <Text className="text-[11px] text-white/50 leading-snug">
+                      Se calcula como A + B − C − D − …, con presupuestos comprometidos (si una categoría está excedida, usa gasto real).
+                    </Text>
+                    <Text className="text-[11px] text-white/45 uppercase pt-1">Aportes</Text>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text className="text-xs text-white/60 flex-1">A — Sueldo estimado + ingresos mes actual</Text>
+                      <Text className="text-xs font-semibold text-accent shrink-0">+{formatMonto(sueldoProyectado)}</Text>
+                    </View>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text className="text-xs text-white/60 flex-1">B — Efectivo hasta mes anterior</Text>
+                      <Text className={`text-xs font-semibold shrink-0 ${efectivoHastaMesAnterior < 0 ? 'text-danger' : 'text-accent'}`}>
+                        {efectivoHastaMesAnterior < 0 ? '−' : '+'}
+                        {formatMonto(Math.abs(efectivoHastaMesAnterior))}
+                      </Text>
+                    </View>
+                    <Text className="text-[11px] text-white/45 uppercase pt-1">Egresos (presupuestos)</Text>
+                    <View className="flex-row items-start justify-between gap-2">
+                      <Text className="text-xs text-white/60 flex-1">C — Presupuesto común prorrateado</Text>
+                      <Text className="text-xs font-semibold text-danger shrink-0">
+                        −{formatMonto(Math.abs(presupuestoComunProrrateado))}
+                      </Text>
+                    </View>
+                    {presupuestosPersonalesOrdenados.map((p, idx) => {
+                      const letra = 'DEFGHIJKLMNOPQRSTUVWXYZ'[idx] ?? `P${idx + 1}`
+                      return (
+                        <View key={`${p.cuentaId ?? 'personal'}-${p.cuentaNombre}`} className="flex-row items-start justify-between gap-2">
+                          <Text className="text-xs text-white/60 flex-1">
+                            {letra} — Presupuesto personal — {p.cuentaNombre}
+                          </Text>
+                          <Text className="text-xs font-semibold text-danger shrink-0">
+                            −{formatMonto(Math.abs(toPesos(p.total)))}
+                          </Text>
+                        </View>
+                      )
+                    })}
+                    <Text className="text-[10px] text-white/40 leading-snug pt-1">
+                      C usa presupuesto común prorrateado por sueldo estimado (
+                      {Math.round(prorrateoDetalle.proporcion * 100)}% de participación).
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
 

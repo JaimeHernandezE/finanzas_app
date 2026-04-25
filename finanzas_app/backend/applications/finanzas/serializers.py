@@ -330,7 +330,18 @@ class MovimientoListSerializer(serializers.ModelSerializer):
         ]
 
     def get_ingreso_comun(self, obj):
-        return getattr(obj, '_ingreso_comun_pk', None)
+        """
+        PK de IngresoComun vinculado al movimiento, o None.
+        Si el queryset no trae la anotación `_ingreso_comun_pk`, consulta la BD
+        (p. ej. respuestas puntuales sin `_qs_movimientos_con_ingreso_comun`).
+        """
+        if hasattr(obj, '_ingreso_comun_pk'):
+            return obj._ingreso_comun_pk
+        return (
+            IngresoComun.objects.filter(movimiento_id=obj.pk)
+            .values_list('pk', flat=True)
+            .first()
+        )
 
 
 class CuentaPersonalSerializer(serializers.ModelSerializer):

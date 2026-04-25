@@ -8,6 +8,7 @@ import type { PresupuestoMesFila } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import InputMontoClp from '@/components/ui/InputMontoClp/InputMontoClp'
 import { montoClpANumero } from '@/utils/montoClp'
+import { incluirIngresoMovimientoEnSueldoProyectadoMes } from '@/utils/sueldoProyectadoIngresos'
 import CategoriaPresupuestoItem from '@/components/presupuesto/CategoriaPresupuestoItem'
 import { useConfig } from '@/context/ConfigContext'
 import { useAuth } from '@/context/AuthContext'
@@ -218,7 +219,7 @@ function EfectivoMetricCard({
           <div className={styles.metricDesgloseSectionTitle}>Aportes</div>
           <div className={styles.metricDesgloseFila}>
             <div className={styles.metricDesgloseFilaHead}>
-              <span className={styles.metricTooltipKey}>A — Total sueldos (ingreso común, sin mes actual)</span>
+              <span className={styles.metricTooltipKey}>A — Total sueldos (histórico)</span>
               <span className={styles.metricDesgloseMonto}>
                 <span className={a >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
                   {a >= 0 ? '+' : '−'}
@@ -265,7 +266,7 @@ function EfectivoMetricCard({
           <div className={styles.metricDesgloseFila}>
             <div className={styles.metricDesgloseFilaHead}>
               <span className={styles.metricTooltipKey}>
-                C — Suma de los netos mensuales (ingresos − egresos) de todas tus cuentas personales
+                C — Gastos personales (histórico)
               </span>
               <span className={styles.metricDesgloseMonto}>
                 <span className={c >= 0 ? styles.metricDesgloseSignMas : styles.metricDesgloseSignMenos}>
@@ -290,7 +291,7 @@ function EfectivoMetricCard({
           </div>
           <div className={styles.metricDesgloseFila}>
             <div className={styles.metricDesgloseFilaHead}>
-              <span className={styles.metricTooltipKey}>D — Gastos comunes prorrateados</span>
+              <span className={styles.metricTooltipKey}>D — Gastos comunes (histórico)</span>
               <span className={styles.metricDesgloseMonto}>
                 <span className={styles.metricDesgloseSignMenos}>−</span>
                 <span className={styles.metricDesgloseValEgreso}>{formatMonto(Math.abs(d))}</span>
@@ -845,21 +846,13 @@ export default function DashboardPage() {
     }
   }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
 
-  const ingresoComunMesActual = useMemo(() => {
-    if (!user || !esActual) return 0
-    const self = compensacionData?.miembros?.find((m) => m.usuario_id === user.id)
-    return toPesos(self?.ingreso_declarado_mes)
-  }, [user, esActual, compensacionData])
-
   const ingresosPersonalesMesActual = useMemo(() => {
     if (!esActual) return 0
     return movimientos
       .filter(
         (m) =>
-          m.tipo === 'INGRESO' &&
           m.ambito === 'PERSONAL' &&
-          m.metodo_pago_tipo !== 'CREDITO' &&
-          m.ingreso_comun == null,
+          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
       )
       .reduce((sum, m) => sum + toPesos(m.monto), 0)
   }, [esActual, movimientos])
@@ -869,15 +862,13 @@ export default function DashboardPage() {
     return movimientosComunes
       .filter(
         (m) =>
-          m.tipo === 'INGRESO' &&
           m.ambito === 'COMUN' &&
-          m.metodo_pago_tipo !== 'CREDITO' &&
-          m.ingreso_comun == null,
+          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
       )
       .reduce((sum, m) => sum + toPesos(m.monto), 0)
   }, [esActual, movimientosComunes])
 
-  const ingresosMesActual = ingresoComunMesActual + ingresosPersonalesMesActual + ingresosComunesMesActual
+  const ingresosMesActual = ingresosPersonalesMesActual + ingresosComunesMesActual
 
   const efectivoHastaMesAnterior = useMemo(() => {
     if (!efectivoDesglose) return 0

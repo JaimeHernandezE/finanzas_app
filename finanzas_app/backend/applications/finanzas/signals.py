@@ -9,6 +9,7 @@ from django.dispatch import receiver
 from dateutil.relativedelta import relativedelta
 
 from .models import (
+    CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN,
     Categoria,
     CuentaPersonal,
     IngresoComun,
@@ -17,9 +18,6 @@ from .models import (
     Cuota,
 )
 from . import services_recalculo
-
-# Nombre estable de la categoría global para ingresos generados desde IngresoComun.
-CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN = 'Ingreso declarado (fondo común)'
 
 
 @receiver(post_save, sender=get_user_model())

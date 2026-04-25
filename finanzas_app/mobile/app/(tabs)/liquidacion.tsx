@@ -9,6 +9,7 @@ import {
 import { useFocusEffect } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { finanzasApi } from '@finanzas/shared/api/finanzas'
+import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -26,6 +27,12 @@ const MESES = [
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre',
 ]
 const COLORES_MIEMBRO = ['#c8f060','#60c8f0','#f060c8','#f0c860']
+
+function montoNum(v: string | number | null | undefined): number {
+  if (v == null) return 0
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : 0
+}
 
 function calcular(data: PeriodoData) {
   const totalIngresos = data.ingresos.reduce((s, i) => s + i.monto, 0)
@@ -48,6 +55,35 @@ function calcular(data: PeriodoData) {
   if (deudores.length > 0 && acreedores.length > 0)
     transferencias.push({ de: deudores[0].nombre, a: acreedores[0].nombre, monto: Math.round(Math.abs(deudores[0].diferencia)) })
   return { totalIngresos, proporciones, totalGastos, deberíaPagar, compensaciones, transferencias }
+}
+
+function calcularConTotalGastos(data: PeriodoData, totalGastos: number) {
+  const totalIngresos = data.ingresos.reduce((s, i) => s + i.monto, 0)
+  const proporciones = data.ingresos.map((i) => ({
+    ...i,
+    porcentaje: totalIngresos > 0 ? (i.monto / totalIngresos) * 100 : 0,
+  }))
+  const deberíaPagar = proporciones.map((p) => ({
+    usuarioId: p.usuarioId,
+    nombre: p.nombre,
+    porcentaje: p.porcentaje,
+    monto: totalGastos * (p.porcentaje / 100),
+  }))
+  const compensaciones = deberíaPagar.map((d) => {
+    const pagado = data.gastos.find((g) => g.usuarioId === d.usuarioId)?.montoRegistrado ?? 0
+    return { usuarioId: d.usuarioId, nombre: d.nombre, pagado, debería: d.monto, diferencia: pagado - d.monto }
+  })
+  const deudores = compensaciones.filter((c) => c.diferencia < -0.5).sort((a, b) => a.diferencia - b.diferencia)
+  const acreedores = compensaciones.filter((c) => c.diferencia > 0.5).sort((a, b) => b.diferencia - a.diferencia)
+  const transferencias: { de: string; a: string; monto: number }[] = []
+  if (deudores.length > 0 && acreedores.length > 0) {
+    transferencias.push({
+      de: deudores[0].nombre,
+      a: acreedores[0].nombre,
+      monto: Math.round(Math.abs(deudores[0].diferencia)),
+    })
+  }
+  return { deberíaPagar, compensaciones, transferencias }
 }
 
 function SeccionCard({ titulo, children }: { titulo: string; children: React.ReactNode }) {
@@ -95,10 +131,50 @@ export default function LiquidacionScreen() {
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
+  const [mostrarDetalleGastos, setMostrarDetalleGastos] = useState(false)
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
   const { data: raw, loading, error, refetch } = useApi(
     () => finanzasApi.getLiquidacion(mes + 1, anio),
+    [mes, anio],
+  )
+  type MovimientoResumen = {
+    id: number
+    monto: string | number
+    metodo_pago_tipo?: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+    tarjeta_nombre?: string | null
+  }
+  type CuotaResumen = {
+    movimiento?: number | null
+    monto: string | number
+    estado?: 'PENDIENTE' | 'FACTURADO' | 'PAGADO' | string
+    incluir?: boolean
+  }
+  const { data: gastosMesData } = useApi<MovimientoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        mes: mes + 1,
+        anio,
+        tipo: 'EGRESO',
+        ambito: 'COMUN',
+      }) as Promise<{ data: MovimientoResumen[] }>,
+    [mes, anio],
+  )
+  const { data: movCreditosData } = useApi<MovimientoResumen[]>(
+    () =>
+      movimientosApi.getMovimientos({
+        tipo: 'EGRESO',
+        ambito: 'COMUN',
+        metodo: 'CREDITO',
+      }) as Promise<{ data: MovimientoResumen[] }>,
+    [],
+  )
+  const { data: cuotasMesData } = useApi<CuotaResumen[]>(
+    () =>
+      movimientosApi.getCuotas({
+        mes: mes + 1,
+        anio,
+      }) as Promise<{ data: CuotaResumen[] }>,
     [mes, anio],
   )
 
@@ -120,6 +196,46 @@ export default function LiquidacionScreen() {
 
   const { totalIngresos, proporciones, totalGastos, deberíaPagar, compensaciones, transferencias } =
     useMemo(() => data ? calcular(data) : { totalIngresos:0, proporciones:[], totalGastos:0, deberíaPagar:[], compensaciones:[], transferencias:[] }, [data])
+  const gastoReal = useMemo(
+    () =>
+      ((gastosMesData ?? []) as MovimientoResumen[])
+        .filter((m) => m.metodo_pago_tipo !== 'CREDITO')
+        .reduce((sum, m) => sum + montoNum(m.monto), 0),
+    [gastosMesData],
+  )
+  const cuotasPendientesPorTarjeta = useMemo(() => {
+    const movTarjetaPorId = new Map<number, string>()
+    for (const mov of (movCreditosData ?? []) as MovimientoResumen[]) {
+      movTarjetaPorId.set(mov.id, String(mov.tarjeta_nombre || 'Tarjeta'))
+    }
+    const agg = new Map<string, number>()
+    for (const cuota of (cuotasMesData ?? []) as CuotaResumen[]) {
+      const estado = String(cuota.estado ?? '').toUpperCase()
+      const incluir = Boolean(cuota.incluir ?? true)
+      if (estado === 'PAGADO' || !incluir) continue
+      const movId = Number(cuota.movimiento ?? NaN)
+      if (!Number.isFinite(movId)) continue
+      const tarjeta = movTarjetaPorId.get(movId)
+      if (!tarjeta) continue
+      agg.set(tarjeta, (agg.get(tarjeta) ?? 0) + montoNum(cuota.monto))
+    }
+    return Array.from(agg.entries())
+      .map(([tarjeta, total]) => ({ tarjeta, total }))
+      .sort((a, b) => a.tarjeta.localeCompare(b.tarjeta, 'es'))
+  }, [movCreditosData, cuotasMesData])
+  const cuotasPendientesTotal = useMemo(
+    () => cuotasPendientesPorTarjeta.reduce((sum, row) => sum + row.total, 0),
+    [cuotasPendientesPorTarjeta],
+  )
+  const totalGastosAjustado = useMemo(
+    () => Math.round(gastoReal + cuotasPendientesTotal),
+    [gastoReal, cuotasPendientesTotal],
+  )
+  const { deberíaPagar: deberíaPagarAjustado, compensaciones: compensacionesAjustadas, transferencias: transferenciasAjustadas } =
+    useMemo(
+      () => (data ? calcularConTotalGastos(data, totalGastosAjustado) : { deberíaPagar: [], compensaciones: [], transferencias: [] }),
+      [data, totalGastosAjustado],
+    )
 
   const omitirPrimerFoco = useRef(true)
   useFocusEffect(useCallback(() => {
@@ -194,21 +310,47 @@ export default function LiquidacionScreen() {
 
             {/* 2. Gastos comunes del mes */}
             <SeccionCard titulo="Gastos comunes del mes">
+              <View className="flex-row items-start mb-2">
+                <Text className="text-muted text-[11px] flex-1 pr-2">
+                  Incluye gasto real (sin crédito) + cuotas pendientes del mes facturado.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setMostrarDetalleGastos((v) => !v)}
+                  className="w-5 h-5 rounded-full border border-border items-center justify-center bg-white mt-0.5"
+                  accessibilityRole="button"
+                  accessibilityLabel={mostrarDetalleGastos ? 'Ocultar detalle de gastos' : 'Mostrar detalle de gastos'}
+                >
+                  <Text className="text-muted text-[10px] font-semibold">?</Text>
+                </TouchableOpacity>
+              </View>
+              {mostrarDetalleGastos && (
+                <View className="mb-2">
+                  <Text className="text-muted text-[11px]">Gasto real: {formatMonto(gastoReal)}</Text>
+                  <Text className="text-muted text-[11px] mt-0.5">
+                    Cuotas pendientes: {formatMonto(cuotasPendientesTotal)}
+                  </Text>
+                  {cuotasPendientesPorTarjeta.map((row) => (
+                    <Text key={row.tarjeta} className="text-muted text-[11px] mt-0.5">
+                      - {row.tarjeta}: {formatMonto(row.total)}
+                    </Text>
+                  ))}
+                </View>
+              )}
               {data.gastos.map((g, i) => (
                 <BarraRow key={g.usuarioId} nombre={g.nombre} valor={g.montoRegistrado}
-                  max={totalGastos} color={COLORES_MIEMBRO[i % COLORES_MIEMBRO.length]}
+                  max={Math.max(totalGastosAjustado, totalGastos)} color={COLORES_MIEMBRO[i % COLORES_MIEMBRO.length]}
                   metaDerecha={`por ${g.nombre.split(' ')[0]}`} />
               ))}
-              <FilaTotal label="Total gastos" monto={totalGastos} />
+              <FilaTotal label="Total gastos" monto={totalGastosAjustado} />
             </SeccionCard>
 
             {/* 3. Prorrateo */}
             <SeccionCard titulo="Prorrateo">
-              {deberíaPagar.map((d) => (
+              {deberíaPagarAjustado.map((d) => (
                 <View key={d.usuarioId} className="flex-row items-center mb-2 gap-2">
                   <Text className="text-dark text-sm font-medium flex-1 mr-1 shrink">{d.nombre}</Text>
                   <Text className="text-muted text-xs flex-shrink-0 text-center" style={{ maxWidth: '46%' }}>
-                    {d.porcentaje.toFixed(1)}% × {formatMonto(totalGastos)}
+                    {d.porcentaje.toFixed(1)}% × {formatMonto(totalGastosAjustado)}
                   </Text>
                   <Text className="text-dark text-sm font-semibold flex-shrink-0">{formatMonto(d.monto)}</Text>
                 </View>
@@ -217,7 +359,7 @@ export default function LiquidacionScreen() {
 
             {/* 4. Compensación */}
             <SeccionCard titulo="Compensación">
-              {compensaciones.map((c) => {
+              {compensacionesAjustadas.map((c) => {
                 const esDeudor   = c.diferencia < -0.5
                 const esAcreedor = c.diferencia >  0.5
                 const colorTexto = esDeudor ? '#ef4444' : esAcreedor ? '#22c55e' : '#6b7280'
@@ -239,18 +381,18 @@ export default function LiquidacionScreen() {
               })}
 
               <View className="mt-1">
-                {transferencias.length > 0 ? (
+                {transferenciasAjustadas.length > 0 ? (
                   <View className="bg-dark rounded-xl px-4 py-3">
                     <Text className="text-white text-sm text-center leading-5">
-                      <Text className="font-bold">{transferencias[0].de}</Text>
+                      <Text className="font-bold">{transferenciasAjustadas[0].de}</Text>
                       {' le transfiere '}
-                      <Text className="font-bold text-accent">{formatMonto(transferencias[0].monto)}</Text>
+                      <Text className="font-bold text-accent">{formatMonto(transferenciasAjustadas[0].monto)}</Text>
                       {' a '}
-                      <Text className="font-bold">{transferencias[0].a}</Text>
+                      <Text className="font-bold">{transferenciasAjustadas[0].a}</Text>
                     </Text>
                     {esActual && (
                       <Text className="text-white/50 text-xs text-center mt-1">
-                        Proyección basada en {formatMonto(totalGastos)} registrados hasta hoy
+                        Proyección basada en {formatMonto(totalGastosAjustado)} registrados hasta hoy
                       </Text>
                     )}
                   </View>

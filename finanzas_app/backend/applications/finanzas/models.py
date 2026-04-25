@@ -407,6 +407,10 @@ class Presupuesto(models.Model):
         unique_together = [['familia', 'usuario', 'categoria', 'mes']]
 
 
+# Categoría global del movimiento generado desde IngresoComun (ver signals). Mismo texto en signals.
+CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN = 'Ingreso declarado (fondo común)'
+
+
 class IngresoComun(models.Model):
     """
     Registro de ingresos mensuales de cada miembro al fondo común familiar.

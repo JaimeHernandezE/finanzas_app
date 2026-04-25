@@ -90,6 +90,7 @@
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .tabla {
@@ -110,9 +111,11 @@
     font-size: 12px;
   }
 
+  th.num,
   td.num {
     text-align: right;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   tr:last-child td {

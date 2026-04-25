@@ -406,6 +406,34 @@ export default function TarjetaPagarScreen() {
     }
     return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
   }, [utilizadoPersonalVisible, deudaActivaPorMovimiento])
+  const movimientoMetaPorId = useMemo(() => {
+    const map = new Map<number, { cuentaKey: string; cuentaNombre: string }>()
+    const all = [...movPersonal, ...movComun]
+    for (const mov of all) {
+      if (mov.tarjeta !== tarjetaIdEfectivo) continue
+      const esPersonal = mov.ambito === 'PERSONAL'
+      const cuentaNombre = mov.cuenta_nombre || (esPersonal ? 'Sin cuenta (personal)' : 'Sin cuenta (familiar)')
+      const cuentaKey = mov.cuenta != null
+        ? String(mov.cuenta)
+        : (esPersonal ? 'sin-cuenta-personal' : 'sin-cuenta-familiar')
+      map.set(mov.id, { cuentaKey, cuentaNombre })
+    }
+    return map
+  }, [movPersonal, movComun, tarjetaIdEfectivo])
+  const cuotasFacturadasPorCuenta = useMemo(() => {
+    const map = new Map<string, { cuentaKey: string; cuentaNombre: string; total: number; cuotas: Cuota[] }>()
+    for (const cuota of cuotas) {
+      const movId = cuota.movimiento != null ? Number(cuota.movimiento) : NaN
+      const meta = Number.isFinite(movId) ? movimientoMetaPorId.get(movId) : undefined
+      const cuentaKey = meta?.cuentaKey ?? 'sin-cuenta-familiar'
+      const cuentaNombre = meta?.cuentaNombre ?? 'Sin cuenta (familiar)'
+      const entry = map.get(cuentaKey) ?? { cuentaKey, cuentaNombre, total: 0, cuotas: [] }
+      entry.total += montoNum(cuota.monto)
+      entry.cuotas.push(cuota)
+      map.set(cuentaKey, entry)
+    }
+    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
+  }, [cuotas, movimientoMetaPorId])
 
   const totalCuotasPorMovimiento = useMemo(() => {
     const map = new Map<number, number>()
@@ -939,125 +967,83 @@ export default function TarjetaPagarScreen() {
                     </View>
                   </View>
 
-                  <View className="bg-white border border-border rounded-xl overflow-hidden mb-4">
-                    {cuotas.map((cuota, idx) => {
-                      const isLast = idx === cuotas.length - 1
-                      const deshabilitado = cuota.estado === 'PAGADO'
-                      const incluida = cuotaIncluida(cuota)
-                      const movimientoId = cuota.movimiento != null ? Number(cuota.movimiento) : NaN
-                      const totalCuotasMovimiento =
-                        cuota.movimiento != null ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined
-                      const lineaMov = lineaCategoriaComentarioCuota(cuota, detallePorMovimientoId)
-                      const det = Number.isFinite(movimientoId) ? detallePorMovimientoId.get(movimientoId) : undefined
-                      return (
-                        <View
-                          key={cuota.id}
-                          className={`px-4 py-3 flex-row ${!isLast ? 'border-b border-border' : ''}`}
-                          style={{ alignItems: 'flex-start' }}
-                        >
-                          <TouchableOpacity
-                            onPress={() => {
-                              if (deshabilitado) return
-                              toggleIncluir(cuota)
-                            }}
-                            disabled={deshabilitado}
-                            className={`w-5 h-5 rounded border mr-3 mt-0.5 items-center justify-center ${
-                              incluida ? 'bg-dark border-dark' : 'border-border'
-                            }`}
-                          >
-                            {incluida ? (
-                              <Text className="text-white text-xs font-bold">✓</Text>
-                            ) : null}
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            disabled={!Number.isFinite(movimientoId)}
-                            onPress={() => {
-                              if (!Number.isFinite(movimientoId)) return
-                              irEditarMovimiento(movimientoId)
-                            }}
-                            className="flex-1 min-w-0 mr-2"
-                          >
-                            <Text className="text-dark font-medium text-sm" numberOfLines={1}>
-                              Cuota {cuota.numero}/{totalCuotasMovimiento ?? cuota.numero}
-                            </Text>
-                            <Text className="text-muted text-xs mt-0.5">
-                              {det?.fecha ? fechaCorta(det.fecha) : cuota.mes_facturacion}
-                            </Text>
-                            {lineaMov ? (
-                              <Text className="text-dark text-xs mt-1.5 leading-snug" numberOfLines={4}>
-                                {lineaMov}
-                              </Text>
-                            ) : (
-                              <Text className="text-muted text-[11px] mt-1.5 italic" numberOfLines={1}>
-                                Sin categoría ni comentario
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-
-                          <View className="items-end gap-1 shrink-0">
-                            <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(cuota.monto))}</Text>
-                            <Text className="text-muted text-[10px]">{cuota.estado}</Text>
-                          </View>
+                  <View className="mb-4">
+                    {cuotasFacturadasPorCuenta.map((grupo) => (
+                      <View key={grupo.cuentaKey} className="bg-white border border-border rounded-xl overflow-hidden mb-3">
+                        <View className="px-4 py-2.5 border-b border-border bg-surface flex-row items-center justify-between">
+                          <Text className="text-dark font-semibold text-sm">{grupo.cuentaNombre}</Text>
+                          <Text className="text-dark font-semibold text-sm">{formatMonto(grupo.total)}</Text>
                         </View>
-                      )
-                    })}
+                        {grupo.cuotas.map((cuota, idx) => {
+                          const isLast = idx === grupo.cuotas.length - 1
+                          const deshabilitado = cuota.estado === 'PAGADO'
+                          const incluida = cuotaIncluida(cuota)
+                          const movimientoId = cuota.movimiento != null ? Number(cuota.movimiento) : NaN
+                          const totalCuotasMovimiento =
+                            cuota.movimiento != null ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined
+                          const lineaMov = lineaCategoriaComentarioCuota(cuota, detallePorMovimientoId)
+                          const det = Number.isFinite(movimientoId) ? detallePorMovimientoId.get(movimientoId) : undefined
+                          return (
+                            <View
+                              key={cuota.id}
+                              className={`px-4 py-3 flex-row ${!isLast ? 'border-b border-border' : ''}`}
+                              style={{ alignItems: 'flex-start' }}
+                            >
+                              <TouchableOpacity
+                                onPress={() => {
+                                  if (deshabilitado) return
+                                  toggleIncluir(cuota)
+                                }}
+                                disabled={deshabilitado}
+                                className={`w-5 h-5 rounded border mr-3 mt-0.5 items-center justify-center ${
+                                  incluida ? 'bg-dark border-dark' : 'border-border'
+                                }`}
+                              >
+                                {incluida ? (
+                                  <Text className="text-white text-xs font-bold">✓</Text>
+                                ) : null}
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                disabled={!Number.isFinite(movimientoId)}
+                                onPress={() => {
+                                  if (!Number.isFinite(movimientoId)) return
+                                  irEditarMovimiento(movimientoId)
+                                }}
+                                className="flex-1 min-w-0 mr-2"
+                              >
+                                <Text className="text-dark font-medium text-sm" numberOfLines={1}>
+                                  Cuota {cuota.numero}/{totalCuotasMovimiento ?? cuota.numero}
+                                </Text>
+                                <Text className="text-muted text-xs mt-0.5">
+                                  {det?.fecha ? fechaCorta(det.fecha) : cuota.mes_facturacion}
+                                </Text>
+                                {lineaMov ? (
+                                  <Text className="text-dark text-xs mt-1.5 leading-snug" numberOfLines={4}>
+                                    {lineaMov}
+                                  </Text>
+                                ) : (
+                                  <Text className="text-muted text-[11px] mt-1.5 italic" numberOfLines={1}>
+                                    Sin categoría ni comentario
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+
+                              <View className="items-end gap-1 shrink-0">
+                                <Text className="text-dark font-semibold text-sm">{formatMonto(montoNum(cuota.monto))}</Text>
+                                <Text className="text-muted text-[10px]">{cuota.estado}</Text>
+                              </View>
+                            </View>
+                          )
+                        })}
+                      </View>
+                    ))}
                   </View>
 
                   <View className="bg-white border border-border rounded-xl p-4 mb-4">
                     <View className="flex-row items-center justify-between mb-3">
                       <Text className="text-xs text-muted font-semibold uppercase">Cargos adicionales</Text>
-                      {!formularioCargoVisible && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            setFormularioCargoVisible(true)
-                            setCargoDesc('')
-                            setCargoMonto('')
-                          }}
-                          className="px-3 py-2 rounded-lg bg-white border border-border"
-                        >
-                          <Text className="text-dark font-semibold text-sm">+ Agregar</Text>
-                        </TouchableOpacity>
-                      )}
                     </View>
-
-                    {formularioCargoVisible && (
-                      <View className="mb-3">
-                        <TextInput
-                          value={cargoDesc}
-                          onChangeText={setCargoDesc}
-                          placeholder="Descripcion (ej: Interes marzo)"
-                          placeholderTextColor="#888884"
-                          className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
-                        />
-                        <TextInput
-                          value={cargoMonto}
-                          onChangeText={(v) => setCargoMonto(v.replace(/\D/g, '').slice(0, 12))}
-                          keyboardType="numeric"
-                          placeholder="Monto"
-                          placeholderTextColor="#888884"
-                          className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
-                        />
-                        <View className="flex-row gap-2">
-                          <TouchableOpacity
-                            onPress={agregarCargoAdicional}
-                            className="flex-1 bg-dark rounded-lg py-2.5 items-center"
-                          >
-                            <Text className="text-white font-semibold text-sm">✓</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              setFormularioCargoVisible(false)
-                              setCargoDesc('')
-                              setCargoMonto('')
-                            }}
-                            className="flex-1 border border-border rounded-lg py-2.5 items-center"
-                          >
-                            <Text className="text-dark font-semibold text-sm">Cancelar</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
 
                     {cargosAdicionales.length === 0 ? (
                       <Text className="text-muted text-sm">Sin cargos adicionales.</Text>

@@ -63,6 +63,20 @@ interface MovimientoAsociado {
   deudaEstado?: 'ACTIVO' | 'PAGADO'
 }
 
+interface GrupoMovimientosPorCuenta {
+  cuentaKey: string
+  cuentaNombre: string
+  total: number
+  movimientos: MovimientoAsociado[]
+}
+
+interface GrupoCuotasPorCuenta {
+  cuentaKey: string
+  cuentaNombre: string
+  total: number
+  cuotas: Cuota[]
+}
+
 type VistaTarjeta = 'UTILIZADO' | 'FACTURADO'
 type EstadoFacturacion = 'A_FACTURAR' | 'FACTURADO' | 'PAGADO' | 'VENCIDO'
 
@@ -968,18 +982,68 @@ export default function PagarTarjetaPage() {
     [utilizadoPersonalVisible, deudaActivaPorMovimiento],
   )
   const totalDeudaActivaComun = Math.max(0, totalDeudaActiva - totalDeudaActivaPersonal)
-  const personalesPorCuenta = useMemo(() => {
-    const map = new Map<string, { cuentaNombre: string; total: number; movimientos: MovimientoAsociado[] }>()
-    for (const mov of utilizadoPersonalVisible) {
-      const cuentaNombre = mov.cuenta_nombre || 'Sin cuenta'
-      const key = String(mov.cuenta ?? 'sin-cuenta')
-      const entry = map.get(key) ?? { cuentaNombre, total: 0, movimientos: [] }
-      entry.total += deudaActivaPorMovimiento.get(mov.id) ?? 0
-      entry.movimientos.push(mov)
-      map.set(key, entry)
+  const movimientoMetaPorId = useMemo(() => {
+    const map = new Map<number, { cuentaKey: string; cuentaNombre: string }>()
+    const all = [
+      ...movimientosPersonalesTarjeta,
+      ...movimientosComunesTarjeta,
+    ]
+    for (const mov of all) {
+      const esPersonal = mov.ambito === 'PERSONAL'
+      map.set(mov.id, {
+        cuentaKey: mov.cuenta != null
+          ? String(mov.cuenta)
+          : (esPersonal ? 'sin-cuenta-personal' : 'sin-cuenta-familiar'),
+        cuentaNombre: mov.cuenta_nombre || (esPersonal ? 'Sin cuenta (personal)' : 'Sin cuenta (familiar)'),
+      })
     }
-    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre))
-  }, [utilizadoPersonalVisible, deudaActivaPorMovimiento])
+    return map
+  }, [movimientosPersonalesTarjeta, movimientosComunesTarjeta])
+  const agruparMovimientosPorCuenta = useMemo(
+    () => (movimientos: MovimientoAsociado[]): GrupoMovimientosPorCuenta[] => {
+      const map = new Map<string, GrupoMovimientosPorCuenta>()
+      for (const mov of movimientos) {
+        const esPersonal = mov.ambito === 'PERSONAL'
+        const cuentaNombre = mov.cuenta_nombre || (esPersonal ? 'Sin cuenta (personal)' : 'Sin cuenta (familiar)')
+        const cuentaKey = mov.cuenta != null
+          ? String(mov.cuenta)
+          : (esPersonal ? 'sin-cuenta-personal' : 'sin-cuenta-familiar')
+        const entry = map.get(cuentaKey) ?? { cuentaKey, cuentaNombre, total: 0, movimientos: [] }
+        entry.total += deudaActivaPorMovimiento.get(mov.id) ?? 0
+        entry.movimientos.push(mov)
+        map.set(cuentaKey, entry)
+      }
+      return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
+    },
+    [deudaActivaPorMovimiento],
+  )
+  const personalesPorCuenta = useMemo(
+    () => agruparMovimientosPorCuenta(utilizadoPersonalVisible),
+    [agruparMovimientosPorCuenta, utilizadoPersonalVisible],
+  )
+  const comunesPorCuenta = useMemo(
+    () => agruparMovimientosPorCuenta(utilizadoComunVisible),
+    [agruparMovimientosPorCuenta, utilizadoComunVisible],
+  )
+  const cuotasFacturadasPorCuenta = useMemo(() => {
+    const map = new Map<string, GrupoCuotasPorCuenta>()
+    for (const cuota of cuotasFiltradas) {
+      const movId = Number(cuota.movimiento ?? cuota.movimientoId ?? NaN)
+      const meta = Number.isFinite(movId) ? movimientoMetaPorId.get(movId) : undefined
+      const cuentaKey = meta?.cuentaKey ?? 'sin-cuenta-familiar'
+      const cuentaNombre = meta?.cuentaNombre ?? 'Sin cuenta (familiar)'
+      const entry = map.get(cuentaKey) ?? {
+        cuentaKey,
+        cuentaNombre,
+        total: 0,
+        cuotas: [],
+      }
+      entry.total += Number(cuota.monto || 0)
+      entry.cuotas.push(cuota)
+      map.set(cuentaKey, entry)
+    }
+    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
+  }, [cuotasFiltradas, movimientoMetaPorId])
 
   if (cuotasLoading || cuotasTarjetaLoading || movPersonalLoading || movComunLoading) return <Cargando />
   if (cuotasError || cuotasTarjetaError || movPersonalError || movComunError) {
@@ -1156,33 +1220,41 @@ export default function PagarTarjetaPage() {
               {utilizadoComunVisible.length === 0 ? (
                 <p className={styles.movGrupoVacio}>Sin movimientos comunes para este período.</p>
               ) : (
-                utilizadoComunVisible.map(mov => (
-                  <div
-                    key={mov.id}
-                    className={`${styles.movItem} ${styles.movItemClickable}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => irEditarMovimiento(mov.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        irEditarMovimiento(mov.id)
-                      }
-                    }}
-                    aria-label={`Editar movimiento ${mov.comentario || mov.categoria_nombre}`}
-                  >
-                    <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
-                    <div className={styles.movInfo}>
-                      <span className={styles.movDesc}>{mov.comentario || '—'}</span>
-                      <span className={styles.movCat}>
-                        {mov.categoria_nombre}
-                        {mov.autor_nombre ? ` · ${mov.autor_nombre}` : ''}
-                      </span>
+                comunesPorCuenta.map(grupo => (
+                  <div key={grupo.cuentaKey} className={styles.movSubGrupo}>
+                    <div className={styles.movSubGrupoHeader}>
+                      <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
+                      <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
                     </div>
-                    <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
-                      {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
-                    </span>
-                    <span className={styles.movMonto}>{formatMonto(deudaActivaPorMovimiento.get(mov.id) ?? 0)}</span>
+                    {grupo.movimientos.map(mov => (
+                      <div
+                        key={mov.id}
+                        className={`${styles.movItem} ${styles.movItemClickable}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => irEditarMovimiento(mov.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            irEditarMovimiento(mov.id)
+                          }
+                        }}
+                        aria-label={`Editar movimiento ${mov.comentario || mov.categoria_nombre}`}
+                      >
+                        <span className={styles.movFecha}>{fechaCorta(mov.fecha)}</span>
+                        <div className={styles.movInfo}>
+                          <span className={styles.movDesc}>{mov.comentario || '—'}</span>
+                          <span className={styles.movCat}>
+                            {mov.categoria_nombre}
+                            {mov.autor_nombre ? ` · ${mov.autor_nombre}` : ''}
+                          </span>
+                        </div>
+                        <span className={`${styles.movBadgeEstado} ${estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? styles.movBadgeActivo : styles.movBadgePagado}`}>
+                          {estadoPorMovimiento.get(mov.id) === 'ACTIVO' ? 'Activo' : 'Pagado'}
+                        </span>
+                        <span className={styles.movMonto}>{formatMonto(deudaActivaPorMovimiento.get(mov.id) ?? 0)}</span>
+                      </div>
+                    ))}
                   </div>
                 ))
               )}
@@ -1217,14 +1289,22 @@ export default function PagarTarjetaPage() {
             {cuotasFiltradas.length === 0 ? (
               <EmptyStateCuotas />
             ) : (
-              cuotasFiltradas.map(cuota => (
-                <CuotaRow
-                  key={cuota.id}
-                  cuota={cuota}
-                  totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
-                  onToggleIncluir={toggleIncluir}
-                  onOpenMovimiento={irEditarMovimiento}
-                />
+              cuotasFacturadasPorCuenta.map(grupo => (
+                <div key={grupo.cuentaKey} className={styles.movSubGrupo}>
+                  <div className={styles.movSubGrupoHeader}>
+                    <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
+                    <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
+                  </div>
+                  {grupo.cuotas.map(cuota => (
+                    <CuotaRow
+                      key={cuota.id}
+                      cuota={cuota}
+                      totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
+                      onToggleIncluir={toggleIncluir}
+                      onOpenMovimiento={irEditarMovimiento}
+                    />
+                  ))}
+                </div>
               ))
             )}
           </div>
@@ -1233,24 +1313,7 @@ export default function PagarTarjetaPage() {
           <div className={styles.cargosSection}>
             <div className={styles.sectionHeader}>
               <span className={styles.sectionTitle}>CARGOS ADICIONALES</span>
-              <div className={styles.sectionHeaderAction}>
-                {!formularioCargoVisible ? (
-                  <button
-                    type="button"
-                    className={styles.btnGhost}
-                    onClick={() => setFormularioCargoVisible(true)}
-                  >
-                    + Agregar
-                  </button>
-                ) : null}
-              </div>
             </div>
-            {formularioCargoVisible && (
-              <FormCargoInline
-                onConfirm={agregarCargo}
-                onCancel={() => setFormularioCargoVisible(false)}
-              />
-            )}
             {cargosAdicionales.map(cargo => (
               <div key={cargo.id} className={styles.cargoRow}>
                 <span className={styles.cargoDesc}>{cargo.descripcion}</span>

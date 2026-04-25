@@ -1017,10 +1017,20 @@ def presupuesto_mes(request):
             tipo='EGRESO',
             ambito='COMUN',
             oculto=False,
-            categoria__familia_id=usuario.familia_id,
-            categoria__usuario__isnull=True,
-            categoria__cuenta_personal__isnull=True,
-        ).exclude(metodo_pago__tipo='CREDITO')
+        ).exclude(
+            metodo_pago__tipo='CREDITO'
+        )
+        cuotas_qs = Cuota.objects.filter(
+            movimiento__familia_id=usuario.familia_id,
+            movimiento__ambito='COMUN',
+            movimiento__tipo='EGRESO',
+            movimiento__oculto=False,
+            movimiento__metodo_pago__tipo='CREDITO',
+            incluir=True,
+            mes_facturacion__month=mes,
+            mes_facturacion__year=anio,
+            estado='PENDIENTE',
+        )
     else:
         pres_qs = Presupuesto.objects.filter(
             familia_id=usuario.familia_id,
@@ -1038,14 +1048,37 @@ def presupuesto_mes(request):
             oculto=False,
             categoria__usuario=usuario,
         ).exclude(metodo_pago__tipo='CREDITO')
+        cuotas_qs = Cuota.objects.filter(
+            movimiento__familia_id=usuario.familia_id,
+            movimiento__usuario=usuario,
+            movimiento__ambito='PERSONAL',
+            movimiento__tipo='EGRESO',
+            movimiento__oculto=False,
+            movimiento__categoria__usuario=usuario,
+            movimiento__metodo_pago__tipo='CREDITO',
+            incluir=True,
+            mes_facturacion__month=mes,
+            mes_facturacion__year=anio,
+            estado='PENDIENTE',
+        )
         if cuenta_id is not None:
             mov_qs = mov_qs.filter(cuenta_id=cuenta_id, categoria__cuenta_personal_id=cuenta_id)
             pres_qs = pres_qs.filter(categoria__cuenta_personal_id=cuenta_id)
+            cuotas_qs = cuotas_qs.filter(
+                movimiento__cuenta_id=cuenta_id,
+                movimiento__categoria__cuenta_personal_id=cuenta_id,
+            )
 
     gastos_por_cat = {
         row['categoria_id']: row['t'] or 0
         for row in mov_qs.values('categoria_id').annotate(t=Sum('monto'))
     }
+    gastos_cuotas_por_cat = {
+        row['movimiento__categoria_id']: row['t'] or 0
+        for row in cuotas_qs.values('movimiento__categoria_id').annotate(t=Sum('monto'))
+    }
+    for categoria_id, total_cuotas in gastos_cuotas_por_cat.items():
+        gastos_por_cat[categoria_id] = (gastos_por_cat.get(categoria_id) or 0) + total_cuotas
     pres_map = {p.categoria_id: p for p in pres_qs}
     all_ids = set(pres_map.keys()) | set(gastos_por_cat.keys())
     nombres = {
@@ -1518,17 +1551,66 @@ def liquidacion(request):
             total=Sum('monto')
         ).order_by('usuario__first_name', 'usuario__last_name', 'usuario__id')
 
-        gastos_comunes = [
-            {
+        cuotas_comunes_pendientes_qs = Cuota.objects.filter(
+            movimiento__familia=usuario.familia,
+            movimiento__ambito='COMUN',
+            movimiento__tipo='EGRESO',
+            movimiento__oculto=False,
+            movimiento__metodo_pago__tipo='CREDITO',
+            incluir=True,
+            mes_facturacion__month=mes,
+            mes_facturacion__year=anio,
+            estado='PENDIENTE',
+        ).values(
+            'movimiento__usuario__id',
+            'movimiento__usuario__first_name',
+            'movimiento__usuario__last_name',
+            'movimiento__usuario__username',
+        ).annotate(
+            total=Sum('monto')
+        ).order_by(
+            'movimiento__usuario__first_name',
+            'movimiento__usuario__last_name',
+            'movimiento__usuario__id',
+        )
+
+        gastos_por_usuario: dict[int, dict[str, object]] = {}
+        for g in gastos_qs:
+            gastos_por_usuario[g['usuario__id']] = {
                 'usuario_id': g['usuario__id'],
                 'nombre': services_recalculo.nombre_para_liquidacion_valores(
                     g.get('usuario__first_name'),
                     g.get('usuario__last_name'),
                     g.get('usuario__username'),
                 ),
-                'total': str(g['total']),
+                'total_num': g['total'] or Decimal('0'),
             }
-            for g in gastos_qs
+        for c in cuotas_comunes_pendientes_qs:
+            usuario_id = c['movimiento__usuario__id']
+            existente = gastos_por_usuario.get(usuario_id)
+            if existente is None:
+                gastos_por_usuario[usuario_id] = {
+                    'usuario_id': usuario_id,
+                    'nombre': services_recalculo.nombre_para_liquidacion_valores(
+                        c.get('movimiento__usuario__first_name'),
+                        c.get('movimiento__usuario__last_name'),
+                        c.get('movimiento__usuario__username'),
+                    ),
+                    'total_num': c['total'] or Decimal('0'),
+                }
+            else:
+                existente['total_num'] = (existente['total_num'] or Decimal('0')) + (c['total'] or Decimal('0'))
+
+        gastos_comunes = [
+            {
+                'usuario_id': row['usuario_id'],
+                'nombre': row['nombre'],
+                'total': str(row['total_num']),
+            }
+            for row in sorted(
+                gastos_por_usuario.values(),
+                key=lambda r: str(r['nombre']),
+            )
         ]
 
     return Response({

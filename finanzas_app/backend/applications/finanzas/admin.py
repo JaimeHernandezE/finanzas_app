@@ -1,4 +1,5 @@
 from django.contrib import admin
+from decimal import Decimal, InvalidOperation
 from .models import (
     Categoria, CuentaPersonal, Cuota, IngresoComun,
     MetodoPago, Movimiento, Presupuesto, Tarjeta,
@@ -34,9 +35,24 @@ class CuentaPersonalAdmin(admin.ModelAdmin):
 @admin.register(Movimiento)
 class MovimientoAdmin(admin.ModelAdmin):
     list_display  = ['fecha', 'tipo', 'ambito', 'monto', 'categoria', 'usuario', 'oculto']
-    list_filter   = ['tipo', 'ambito', 'oculto', 'familia']
+    list_filter   = ['tipo', 'ambito', 'categoria', 'oculto', 'familia']
     search_fields = ['comentario']
     date_hierarchy = 'fecha'
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
+
+        raw = (search_term or '').strip()
+        if not raw:
+            return queryset, use_distinct
+
+        normalized = raw.replace('.', '').replace(' ', '').replace(',', '.')
+        try:
+            monto = Decimal(normalized)
+        except (InvalidOperation, ValueError):
+            return queryset, use_distinct
+
+        return queryset | self.model.objects.filter(monto=monto), use_distinct
 
 
 @admin.register(Cuota)
