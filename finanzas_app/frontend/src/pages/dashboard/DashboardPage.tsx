@@ -28,6 +28,7 @@ interface MovimientoApi {
   comentario: string
   categoria_nombre: string
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
+  ingreso_comun?: number | null
 }
 
 interface LiquidacionApi {
@@ -75,17 +76,10 @@ function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undef
     }, 0)
 }
 
-/**
- * Base de sueldo estimado (inputs del usuario) menos ingreso común ya declarado en ese mes.
- * Así el saldo proyectado no duplica lo que ya suma el efectivo disponible (B — sueldo declarado mes actual).
- */
-function sueldoProyectadoNetoMes(
-  sueldosDigitosStr: string,
-  ingresoDeclaradoMesStr: string | undefined,
-): number {
+/** Base de sueldo estimado para prorrateo y saldo proyectado. */
+function sueldoEstimadoMes(sueldosDigitosStr: string): number {
   const base = montoClpANumero(sueldosDigitosStr)
-  const decl = Math.round(Number(ingresoDeclaradoMesStr) || 0)
-  return Math.max(0, Math.round(base - decl))
+  return Math.max(0, Math.round(base))
 }
 
 const fechaCorta = (iso: string) => {
@@ -429,13 +423,13 @@ function SaldoProyectadoCard({
           </p>
           <div className={styles.metricDesgloseSectionTitle}>Aportes</div>
           <div className={styles.metricTooltipRow}>
-            <span className={styles.metricTooltipKey}>A — Sueldo proyectado (estimado − declarado mes)</span>
+            <span className={styles.metricTooltipKey}>A — Sueldo estimado + ingresos mes actual</span>
             <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
               +{formatMonto(Math.abs(sueldoProyectado))}
             </span>
           </div>
           <div className={styles.metricTooltipRow}>
-            <span className={styles.metricTooltipKey}>B — Efectivo disponible</span>
+            <span className={styles.metricTooltipKey}>B — Efectivo hasta mes anterior</span>
             <span className={styles.metricTooltipVal} style={{ color: '#4ade80' }}>
               +{formatMonto(Math.abs(efectivo))}
             </span>
@@ -463,14 +457,14 @@ function SaldoProyectadoCard({
               {miembros.map((m) => (
                 <label key={m.usuario_id} className={styles.saldoSueldoFila}>
                   <span className={styles.saldoSueldoNombre}>
-                    Base prorrateo (mes ant.) — {m.nombre}
+                    Base prorrateo — {m.nombre}
                   </span>
                   <InputMontoClp
                     soloInput
                     inputClassName={styles.saldoSueldoInput}
                     value={sueldosDigitos[m.usuario_id] ?? ''}
                     onChange={(soloDigitos) => onSueldoChange(m.usuario_id, soloDigitos)}
-                    aria-label={`Base prorrateo mes anterior ${m.nombre}`}
+                    aria-label={`Base prorrateo ${m.nombre}`}
                   />
                 </label>
               ))}
@@ -604,6 +598,17 @@ export default function DashboardPage() {
     solo_mios: true,
   })
   const movimientos = (movimientosRaw ?? []) as MovimientoApi[]
+  const {
+    movimientos: movimientosComunesRaw,
+    loading: loadingMovimientosComunes,
+    error: errorMovimientosComunes,
+  } = useMovimientos({
+    mes: mes + 1,
+    anio,
+    ambito: 'COMUN',
+    solo_mios: true,
+  })
+  const movimientosComunes = (movimientosComunesRaw ?? []) as MovimientoApi[]
   const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo } = useApi(
     () => finanzasApi.getEfectivoDisponible(),
     [],
@@ -822,20 +827,12 @@ export default function DashboardPage() {
     if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
     const n = compensacionData.miembros.length
     const totEst = compensacionData.miembros.reduce(
-      (s, m) =>
-        s +
-        sueldoProyectadoNetoMes(
-          sueldosDigitos[m.usuario_id] ?? '',
-          m.ingreso_declarado_mes,
-        ),
+      (s, m) => s + sueldoEstimadoMes(sueldosDigitos[m.usuario_id] ?? ''),
       0,
     )
     const self = compensacionData.miembros.find((m) => m.usuario_id === user.id)
     if (!self) return vacio
-    const meu = sueldoProyectadoNetoMes(
-      sueldosDigitos[user.id] ?? '',
-      self.ingreso_declarado_mes,
-    )
+    const meu = sueldoEstimadoMes(sueldosDigitos[user.id] ?? '')
     let proporcion = 0
     if (totEst > 0.005) {
       proporcion = meu / totEst
@@ -848,14 +845,49 @@ export default function DashboardPage() {
     }
   }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
 
-  const sueldoProyectado = useMemo(() => {
+  const ingresoComunMesActual = useMemo(() => {
     if (!user || !esActual) return 0
     const self = compensacionData?.miembros?.find((m) => m.usuario_id === user.id)
-    return sueldoProyectadoNetoMes(
-      sueldosDigitos[user.id] ?? '',
-      self?.ingreso_declarado_mes,
-    )
-  }, [sueldosDigitos, user, esActual, compensacionData])
+    return toPesos(self?.ingreso_declarado_mes)
+  }, [user, esActual, compensacionData])
+
+  const ingresosPersonalesMesActual = useMemo(() => {
+    if (!esActual) return 0
+    return movimientos
+      .filter(
+        (m) =>
+          m.tipo === 'INGRESO' &&
+          m.ambito === 'PERSONAL' &&
+          m.metodo_pago_tipo !== 'CREDITO' &&
+          m.ingreso_comun == null,
+      )
+      .reduce((sum, m) => sum + toPesos(m.monto), 0)
+  }, [esActual, movimientos])
+
+  const ingresosComunesMesActual = useMemo(() => {
+    if (!esActual) return 0
+    return movimientosComunes
+      .filter(
+        (m) =>
+          m.tipo === 'INGRESO' &&
+          m.ambito === 'COMUN' &&
+          m.metodo_pago_tipo !== 'CREDITO' &&
+          m.ingreso_comun == null,
+      )
+      .reduce((sum, m) => sum + toPesos(m.monto), 0)
+  }, [esActual, movimientosComunes])
+
+  const ingresosMesActual = ingresoComunMesActual + ingresosPersonalesMesActual + ingresosComunesMesActual
+
+  const efectivoHastaMesAnterior = useMemo(() => {
+    if (!efectivoDesglose) return 0
+    return efectivo - toPesos(efectivoDesglose.b) - toPesos(efectivoDesglose.e)
+  }, [efectivo, efectivoDesglose])
+
+  const sueldoProyectado = useMemo(() => {
+    if (!user || !esActual) return 0
+    return sueldoEstimadoMes(sueldosDigitos[user.id] ?? '') + ingresosMesActual
+  }, [sueldosDigitos, user, esActual, ingresosMesActual])
 
   const presupuestoComunProrrateado = useMemo(() => {
     const totalComun = toPesos(presupuestosSaldoRes?.comunTotal)
@@ -876,8 +908,8 @@ export default function DashboardPage() {
 
   const desgloseSaldoFormula = useMemo(() => {
     const terms: { letra: string; etiqueta: string; monto: number }[] = [
-      { letra: 'A', etiqueta: 'Sueldo proyectado', monto: sueldoProyectado },
-      { letra: 'B', etiqueta: 'Efectivo disponible', monto: efectivo },
+      { letra: 'A', etiqueta: 'Sueldo estimado + ingresos mes actual', monto: sueldoProyectado },
+      { letra: 'B', etiqueta: 'Efectivo hasta mes anterior', monto: efectivoHastaMesAnterior },
       { letra: 'C', etiqueta: 'Presupuesto común prorrateado', monto: presupuestoComunProrrateado },
     ]
     const alphabet = 'DEFGHIJKLMNOPQRSTUVWXYZ'
@@ -890,11 +922,11 @@ export default function DashboardPage() {
       })
     })
     return terms
-  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, presupuestosPersonalesOrdenados])
+  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, presupuestosPersonalesOrdenados])
 
   const saldo = useMemo(() => {
-    return sueldoProyectado + efectivo - presupuestoComunProrrateado - totalPresupuestosPersonales
-  }, [sueldoProyectado, efectivo, presupuestoComunProrrateado, totalPresupuestosPersonales])
+    return sueldoProyectado + efectivoHastaMesAnterior - presupuestoComunProrrateado - totalPresupuestosPersonales
+  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, totalPresupuestosPersonales])
 
   const movimientosCuentaSeleccionada = useMemo(() => {
     if (cuentaTab === null) return movimientos
@@ -971,6 +1003,7 @@ export default function DashboardPage() {
 
   if (
     loading ||
+    loadingMovimientosComunes ||
     loadingEfectivo ||
     loadingDeuda ||
     loadingLiquidacion ||
@@ -978,8 +1011,8 @@ export default function DashboardPage() {
     loadingPresupuestosSaldo ||
     (esActual && loadingSueldosProrrateo)
   ) return <Cargando />
-  if (error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior) {
-    return <ErrorCarga mensaje={error || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior || 'Error al cargar datos.'} />
+  if (error || errorMovimientosComunes || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior) {
+    return <ErrorCarga mensaje={error || errorMovimientosComunes || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior || 'Error al cargar datos.'} />
   }
 
   const recalculoPendiente = efectivoRes?.recalculo?.pendiente
@@ -1023,7 +1056,7 @@ export default function DashboardPage() {
           label="Saldo proyectado"
           saldo={saldo}
           sueldoProyectado={sueldoProyectado}
-          efectivo={efectivo}
+          efectivo={efectivoHastaMesAnterior}
           formula={desgloseSaldoFormula}
           prorrateoPresupuestoComun={prorrateoDetalle.proporcion}
           miembros={compensacionData?.miembros ?? []}

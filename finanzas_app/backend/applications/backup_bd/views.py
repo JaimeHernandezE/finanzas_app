@@ -18,9 +18,10 @@ from applications.usuarios.views import obtener_usuario_desde_token
 
 from .drive_pg import (
     backup_filename,
-    iter_pg_dump_gzip_chunks,
     restore_from_sql_gz_file,
+    run_pg_dump_plain_gz,
     run_backup_to_drive,
+    validate_sql_gz_backup_file,
 )
 
 
@@ -84,11 +85,36 @@ def descargar_dump(request):
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.sql.gz') as tmp:
+            tmp_path = tmp.name
+        run_pg_dump_plain_gz(url, tmp_path)
+        validate_sql_gz_backup_file(tmp_path)
+    except Exception as e:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def chunks():
+        try:
+            with open(tmp_path, 'rb') as f:
+                while True:
+                    chunk = f.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     fn = backup_filename()
-    resp = StreamingHttpResponse(
-        iter_pg_dump_gzip_chunks(url),
-        content_type='application/gzip',
-    )
+    resp = StreamingHttpResponse(chunks(), content_type='application/gzip')
     resp['Content-Disposition'] = f'attachment; filename="{fn}"'
     return resp
 

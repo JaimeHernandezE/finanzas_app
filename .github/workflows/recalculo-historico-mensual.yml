@@ -1,4 +1,4 @@
-name: Recálculo histórico mensual (admin TZ)
+name: Tareas inicio de mes (admin TZ)
 
 on:
   schedule:
@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
 
-      - name: Ejecutar recálculo mensual condicionado por TZ admin
+      - name: Ejecutar tareas mensuales condicionadas por TZ admin
         working-directory: finanzas_app/backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

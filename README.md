@@ -403,7 +403,7 @@ Esta sección detalla **para qué sirve cada modelo** de `applications/finanzas/
 - `python manage.py backfill_resumen_historico [--familia-id <id>]`  
   Recompone y persiste snapshots históricos mensuales.
 - `python manage.py recalculo_mensual_admin_tz [--admin-id <id>] [--force]`  
-  Job mensual de mantenimiento (recalcula snapshots + repara cuotas crédito).
+  Job de inicio de mes (rollover de presupuestos, recalcula snapshots y repara cuotas crédito).
 - `python manage.py seed_demo` / `seed_demo_minimal` / `ensure_demo_seed` / `seed_demo_if_empty`  
   Flujo de carga demo (mínimo, completo y autoarranque según entorno DEMO).
 

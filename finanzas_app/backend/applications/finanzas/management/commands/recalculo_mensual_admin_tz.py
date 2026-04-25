@@ -1,18 +1,22 @@
+from datetime import date
 from zoneinfo import ZoneInfo
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.db.models import Min
 from django.utils import timezone
 
 from applications.finanzas.models import IngresoComun, Movimiento
 from applications.finanzas import services_recalculo
+from applications.finanzas.management.commands.rollover_presupuestos_mensuales import copiar_mes_familia
 
 
 class Command(BaseCommand):
     help = (
-        'Ejecuta recálculo histórico + reparación de cuotas si la hora local del '
-        'administrador es día 1 a las 02:00.'
+        'Ejecuta tareas de inicio de mes si la hora local del administrador es '
+        'día 1 a las 02:00: rollover de presupuestos, recálculo histórico y '
+        'reparación de cuotas.'
     )
 
     def add_arguments(self, parser):
@@ -61,12 +65,27 @@ class Command(BaseCommand):
             return
 
         familia_id = admin.familia_id
+        mes_destino = date(ahora_local.year, ahora_local.month, 1)
+        with transaction.atomic():
+            presupuestos_creados, presupuestos_omitidos = copiar_mes_familia(
+                familia_id,
+                mes_destino,
+                dry_run=False,
+            )
+
         min_mov = Movimiento.objects.filter(familia_id=familia_id).aggregate(m=Min('fecha'))['m']
         min_ing = IngresoComun.objects.filter(familia_id=familia_id).aggregate(m=Min('mes'))['m']
         candidatos = [d for d in (min_mov, min_ing) if d is not None]
 
         if not candidatos:
-            self.stdout.write(self.style.SUCCESS('No hay datos históricos para recalcular.'))
+            self.stdout.write(
+                self.style.SUCCESS(
+                    'Rollover de presupuestos completado. '
+                    f'mes_destino={mes_destino.isoformat()} '
+                    f'presupuestos(creados={presupuestos_creados}, omitidos={presupuestos_omitidos}). '
+                    'No hay datos históricos para recalcular.'
+                )
+            )
             return
 
         mes_inicio = services_recalculo.primer_dia_mes(min(candidatos))
@@ -77,7 +96,9 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                'Recálculo mensual completado. '
+                'Tareas de inicio de mes completadas. '
+                f'mes_destino={mes_destino.isoformat()} '
+                f'presupuestos(creados={presupuestos_creados}, omitidos={presupuestos_omitidos}) '
                 f'desde={mes_inicio.isoformat()} resumen={n_resumen} saldos={n_saldos} '
                 f"cuotas(creadas={cuotas['cuotas_creadas']}, actualizadas={cuotas['cuotas_actualizadas']}, "
                 f"eliminadas={cuotas['cuotas_eliminadas']})"

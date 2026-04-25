@@ -72,6 +72,11 @@ _SCHEMAS_EXTERNOS_REINICIO = (
     'realtime',
     'supabase_functions',
 )
+_TABLAS_APP_CRITICAS = (
+    'usuarios_usuario',
+    'usuarios_familia',
+    'finanzas_movimiento',
+)
 
 
 def _mensaje_error_oauth_drive(exc: Exception) -> str:
@@ -317,6 +322,7 @@ def run_backup_to_drive() -> dict:
     try:
         verificar_carpeta_backup(service, folder_id)
         run_pg_dump_plain_gz(database_url, tmp_path)
+        validate_sql_gz_backup_file(tmp_path)
         upload_file_to_drive(service, folder_id, tmp_path, name)
         deleted = cleanup_keep_two_most_recent(service, folder_id)
         return {'ok': True, 'archivo': name, 'eliminados_en_drive': len(deleted)}
@@ -419,6 +425,25 @@ def _run_psql(database_url: str, psql_args: list[str]) -> None:
         )
 
 
+def _run_psql_stdout(database_url: str, psql_args: list[str]) -> str:
+    """Ejecuta psql y retorna stdout como texto; lanza RuntimeError si falla."""
+    completed = subprocess.run(
+        ['psql', database_url, '-v', 'ON_ERROR_STOP=1', *psql_args],
+        capture_output=True,
+        text=False,
+    )
+    if completed.returncode != 0:
+        err_b = completed.stderr or b''
+        out_b = completed.stdout or b''
+        err = err_b.decode('utf-8', errors='replace')
+        if not err.strip() and out_b:
+            err = out_b.decode('utf-8', errors='replace')
+        raise RuntimeError(
+            f'psql falló ({completed.returncode}): {err}'
+        )
+    return (completed.stdout or b'').decode('utf-8', errors='replace')
+
+
 def _reset_public_schema(database_url: str) -> None:
     """
     Elimina y recrea el esquema ``public`` y limpia esquemas externos comunes de
@@ -438,6 +463,107 @@ def _reset_public_schema(database_url: str) -> None:
     )
 
 
+def _assert_restauracion_app_completa(database_url: str) -> None:
+    """
+    Verifica que el dump restaurado corresponde a esta app.
+
+    ``psql`` puede finalizar correctamente aunque el archivo importado no incluya las
+    tablas de Django esperadas. Sin esta validación, la API reporta éxito y la app
+    queda rota en la siguiente request autenticada.
+    """
+    values_sql = ', '.join(f"('public.{tabla}')" for tabla in _TABLAS_APP_CRITICAS)
+    sql = (
+        'WITH esperadas(nombre) AS (VALUES '
+        f'{values_sql}'
+        ') '
+        'SELECT nombre FROM esperadas WHERE to_regclass(nombre) IS NULL ORDER BY nombre;'
+    )
+    out = _run_psql_stdout(database_url, ['-At', '-c', sql])
+    faltantes = [line.strip() for line in out.splitlines() if line.strip()]
+    if faltantes:
+        raise RuntimeError(
+            'Restauración incompleta: el respaldo no contiene tablas críticas de la app '
+            f'({", ".join(faltantes)}). Verifica que el archivo sea un respaldo completo '
+            'generado desde esta aplicación.'
+        )
+
+
+def _assert_sql_dump_app_completo(sql_path: str) -> None:
+    """
+    Rechaza respaldos que no parecen contener el esquema de esta app antes de
+    borrar ``public`` en la base destino.
+    """
+    with open(sql_path, 'rb') as f:
+        inicio = f.read(16)
+    if inicio.startswith(b'PGDMP'):
+        raise RuntimeError(
+            'El archivo descomprime a un dump PostgreSQL en formato custom/binario '
+            '(cabecera PGDMP), no a SQL plano. Esta pantalla importa solo respaldos '
+            '.sql.gz generados por esta aplicación con pg_dump -Fp. Exporta nuevamente '
+            'en formato SQL plano o restaura ese archivo manualmente con pg_restore.'
+        )
+    if b'\x00' in inicio:
+        raise RuntimeError(
+            'El archivo descomprime a contenido binario, no a SQL plano. Esta pantalla '
+            'importa solo respaldos .sql.gz generados por esta aplicación.'
+        )
+
+    pendientes = set(_TABLAS_APP_CRITICAS)
+    patrones = {
+        tabla: re.compile(
+            rb'^\s*(CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|COPY)\s+'
+            rb'(?:(?:public|"public")\.)?"?'
+            + re.escape(tabla.encode('utf-8'))
+            + rb'"?\b',
+            re.IGNORECASE,
+        )
+        for tabla in pendientes
+    }
+    tablas_detectadas: set[str] = set()
+    re_tabla = re.compile(
+        rb'^\s*(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|COPY)\s+'
+        rb'(?:(?:"?([A-Za-z_][A-Za-z0-9_]*)"?\.)?)"?([A-Za-z_][A-Za-z0-9_]*)"?\b',
+        re.IGNORECASE,
+    )
+    with open(sql_path, 'rb') as f:
+        for line in f:
+            m = re_tabla.match(line)
+            if m:
+                schema = (m.group(1) or b'public').decode('utf-8', errors='replace')
+                tabla = m.group(2).decode('utf-8', errors='replace')
+                if len(tablas_detectadas) < 20:
+                    tablas_detectadas.add(f'{schema}.{tabla}')
+            for tabla in list(pendientes):
+                if patrones[tabla].match(line):
+                    pendientes.remove(tabla)
+            if not pendientes:
+                return
+    faltantes = ', '.join(f'public.{tabla}' for tabla in sorted(pendientes))
+    detectadas = ', '.join(sorted(tablas_detectadas)) or 'ninguna tabla CREATE/COPY detectada'
+    raise RuntimeError(
+        'El archivo no parece ser un respaldo completo de esta aplicación: '
+        f'faltan tablas críticas en el SQL ({faltantes}). '
+        f'Tablas detectadas en el archivo: {detectadas}. '
+        'No se modificó la base de datos.'
+    )
+
+
+def validate_sql_gz_backup_file(gz_path: str) -> None:
+    """Valida que un .sql.gz generado por exportación contenga las tablas críticas."""
+    sql_path: str | None = None
+    try:
+        fd, sql_path = tempfile.mkstemp(suffix='.sql')
+        os.close(fd)
+        _decompress_sql_gz_to_path(gz_path, sql_path)
+        _assert_sql_dump_app_completo(sql_path)
+    finally:
+        if sql_path:
+            try:
+                os.unlink(sql_path)
+            except OSError:
+                pass
+
+
 def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
     """
     Restaura BD desde .sql.gz (plain SQL comprimido).
@@ -447,13 +573,14 @@ def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
     """
     sql_path: str | None = None
     try:
-        _reset_public_schema(database_url)
-
         fd, sql_path = tempfile.mkstemp(suffix='.sql')
         os.close(fd)
         _decompress_sql_gz_to_path(gz_path, sql_path)
+        _assert_sql_dump_app_completo(sql_path)
 
+        _reset_public_schema(database_url)
         _run_psql(database_url, ['-f', sql_path])
+        _assert_restauracion_app_completa(database_url)
     finally:
         if sql_path:
             try:
