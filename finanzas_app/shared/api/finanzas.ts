@@ -50,6 +50,46 @@ export interface SueldosEstimadosProrrateoResp {
   montos: Record<string, string>
 }
 
+export interface DashboardResumenDesgloseSaldoItem {
+  letra: string
+  etiqueta: string
+  monto: number
+}
+
+export interface DashboardResumenPresupuestoPersonal {
+  cuenta_id: number | null
+  cuenta_nombre: string
+  total_comprometido: string
+}
+
+/** GET /api/finanzas/dashboard-resumen/ */
+export interface DashboardResumenApi {
+  periodo: { mes: number; anio: number }
+  es_mes_calendario_actual: boolean
+  efectivo: {
+    efectivo: string
+    personal_historico: string
+    comun_movimientos_historico: string
+    prorrateo_gastos_comunes_acumulado: string
+    desglose: EfectivoDisponibleDesglose
+    recalculo: { pendiente: boolean; dirty_from: string | null }
+  }
+  compensacion: CompensacionProyectadaResp | null
+  sueldos_prorrateo_montos: Record<string, string>
+  prorrateo: { proporcion: string; base_usuario: string }
+  ingresos_mes_actual: string
+  sueldo_proyectado: string
+  presupuesto: {
+    comun_total_comprometido: string
+    personales: DashboardResumenPresupuestoPersonal[]
+  }
+  efectivo_hasta_mes_anterior: string
+  presupuesto_comun_prorrateado: string
+  total_presupuestos_personales: string
+  saldo_proyectado: string
+  desglose_saldo: DashboardResumenDesgloseSaldoItem[]
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),
@@ -107,6 +147,10 @@ export const finanzasApi = {
       desglose: EfectivoDisponibleDesglose
       recalculo: { pendiente: boolean; dirty_from: string | null }
     }>('/api/finanzas/efectivo-disponible/'),
+
+  /** Resumen agregado para el dashboard (efectivo, compensación, presupuestos, saldo) */
+  getDashboardResumen: (mes: number, anio: number) =>
+    client.get<DashboardResumenApi>('/api/finanzas/dashboard-resumen/', { params: { mes, anio } }),
 
   /** Compensación proyectada por prorrateo para el saldo proyectado */
   getCompensacionProyectada: (mes: number, anio: number) =>

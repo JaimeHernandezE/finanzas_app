@@ -64,6 +64,11 @@ urlpatterns = [
         name='cuenta-resumen-mensual',
     ),
     path('efectivo-disponible/', views.efectivo_disponible, name='efectivo-disponible'),
+    path('dashboard-resumen/', views.dashboard_resumen, name='dashboard-resumen'),
+    # Alias legacy: algunos clientes antiguos usan variantes de nombre.
+    path('dashboard/', views.dashboard_resumen, name='dashboard-resumen-legacy'),
+    path('resumen-dashboard/', views.dashboard_resumen, name='resumen-dashboard-legacy'),
+    path('dashboard_resumen/', views.dashboard_resumen, name='dashboard-resumen-legacy-underscore'),
     path(
         'compensacion-proyectada/',
         views.compensacion_proyectada_datos,

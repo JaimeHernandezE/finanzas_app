@@ -4,7 +4,7 @@ import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi, movimientosApi } from '@/api'
-import type { PresupuestoMesFila } from '@/api/finanzas'
+import type { DashboardResumenApi, PresupuestoMesFila } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import InputMontoClp from '@/components/ui/InputMontoClp/InputMontoClp'
 import { montoClpANumero } from '@/utils/montoClp'
@@ -65,16 +65,6 @@ function toPesos(n: unknown): number {
 
 function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
-}
-
-function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undefined): number {
-  return (filas ?? [])
-    .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
-    .reduce((sum, f) => {
-      const presupuestado = toPesos(f.monto_presupuestado)
-      const gastado = toPesos(f.gastado)
-      return sum + Math.max(presupuestado, gastado)
-    }, 0)
 }
 
 /** Base de sueldo estimado para prorrateo y saldo proyectado. */
@@ -610,18 +600,16 @@ export default function DashboardPage() {
     solo_mios: true,
   })
   const movimientosComunes = (movimientosComunesRaw ?? []) as MovimientoApi[]
-  const { data: efectivoRes, loading: loadingEfectivo, error: errorEfectivo } = useApi(
-    () => finanzasApi.getEfectivoDisponible(),
-    [],
-  )
+  const {
+    data: dashboardRes,
+    loading: loadingDashboard,
+    error: errorDashboard,
+    refetch: refetchDashboard,
+  } = useApi<DashboardResumenApi>(() => finanzasApi.getDashboardResumen(mes + 1, anio), [mes, anio])
 
   const { data: deudaRes, loading: loadingDeuda } = useApi(
     () => movimientosApi.getCuotasDeudaPendiente(),
     [],
-  )
-  const { data: liquidacionRes, loading: loadingLiquidacion, error: errorLiquidacion } = useApi<LiquidacionApi>(
-    () => finanzasApi.getLiquidacion(mes + 1, anio),
-    [mes, anio],
   )
   const { mesPrevio, anioPrevio } = useMemo(() => {
     if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
@@ -630,19 +618,6 @@ export default function DashboardPage() {
   const { data: liquidacionMesAnteriorRes, loading: loadingLiquidacionAnterior, error: errorLiquidacionAnterior } = useApi<LiquidacionApi>(
     () => finanzasApi.getLiquidacion(mesPrevio, anioPrevio),
     [mesPrevio, anioPrevio],
-  )
-  const { data: compensacionData, error: errorCompensacion } = useApi(
-    () => finanzasApi.getCompensacionProyectada(mes + 1, anio),
-    [mes, anio],
-  )
-  const { data: sueldosProrrateoRes, loading: loadingSueldosProrrateo } = useApi(
-    () =>
-      esActual
-        ? finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
-        : Promise.resolve({
-            data: { mes: mes + 1, anio, montos: {} as Record<string, string> },
-          }),
-    [mes, anio, esActual],
   )
   const { data: cuentasData } = useCuentasPersonales()
   const cuentasPropias = useMemo(
@@ -658,53 +633,18 @@ export default function DashboardPage() {
         }),
     [cuentasData],
   )
-  const cuentasPropiasSig = useMemo(
-    () => cuentasPropias.map((c) => `${c.id}:${c.nombre}`).join('|'),
-    [cuentasPropias],
-  )
-  const { data: presupuestosSaldoRes, loading: loadingPresupuestosSaldo } = useApi<PresupuestosSaldoProyectado>(
-    async () => {
-      const comunRes = await finanzasApi.getPresupuestoMes({
-        mes: mes + 1,
-        anio,
-        ambito: 'FAMILIAR',
-      })
-      const comunTotal = totalPresupuestoComprometido(comunRes.data ?? [])
-
-      const personales: PresupuestoCuentaResumen[] = []
-      if (!cuentasPropias.length) {
-        const personalGlobalRes = await finanzasApi.getPresupuestoMes({
-          mes: mes + 1,
-          anio,
-          ambito: 'PERSONAL',
-        })
-        const total = totalPresupuestoComprometido(personalGlobalRes.data ?? [])
-        if (total > 0) {
-          personales.push({ cuentaId: null, cuentaNombre: 'Personal', total })
-        }
-      } else {
-        const personalesRes = await Promise.all(
-          cuentasPropias.map(async (cuenta) => {
-            const resp = await finanzasApi.getPresupuestoMes({
-              mes: mes + 1,
-              anio,
-              ambito: 'PERSONAL',
-              cuenta: cuenta.id,
-            })
-            return {
-              cuentaId: cuenta.id,
-              cuentaNombre: cuenta.nombre,
-              total: totalPresupuestoComprometido(resp.data ?? []),
-            }
-          }),
-        )
-        personales.push(...personalesRes.filter((p) => p.total > 0))
-      }
-
-      return { data: { comunTotal, personales } }
-    },
-    [mes, anio, cuentasPropiasSig],
-  )
+  const presupuestosSaldoRes = useMemo((): PresupuestosSaldoProyectado | null => {
+    const p = dashboardRes?.presupuesto
+    if (!p) return null
+    return {
+      comunTotal: toPesos(p.comun_total_comprometido),
+      personales: p.personales.map((row) => ({
+        cuentaId: row.cuenta_id,
+        cuentaNombre: row.cuenta_nombre,
+        total: toPesos(row.total_comprometido),
+      })),
+    }
+  }, [dashboardRes])
   const [cuentaTab, setCuentaTab] = useState<number | null>(null)
 
   useEffect(() => {
@@ -743,16 +683,18 @@ export default function DashboardPage() {
     else setMes(m => m + 1)
   }
 
-  // Efectivo disponible: ver API efectivo-disponible (desglose A–E con botón ? en la tarjeta).
+  // Efectivo del resumen (mismo payload que efectivo-disponible; desglose A–E con botón ?).
   const efectivo = useMemo(() => {
-    const t = efectivoRes?.efectivo
+    const t = dashboardRes?.efectivo?.efectivo
     return Math.round(Number(t) || 0)
-  }, [efectivoRes])
-  const efectivoDesglose = efectivoRes?.desglose ?? null
+  }, [dashboardRes])
+  const efectivoDesglose = dashboardRes?.efectivo?.desglose ?? null
 
   const [sueldosDigitos, setSueldosDigitos] = useState<Record<number, string>>({})
   const [sueldosDirty, setSueldosDirty] = useState(false)
   const lastSueldosInitSig = useRef<string>('')
+  const compensacionData = dashboardRes?.compensacion ?? undefined
+  const usarSaldoServidor = !esActual || !sueldosDirty
 
   useEffect(() => {
     lastSueldosInitSig.current = ''
@@ -761,11 +703,11 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!esActual) return
     if (!compensacionData?.miembros?.length) return
-    if (loadingLiquidacionAnterior || loadingSueldosProrrateo) return
+    if (loadingLiquidacionAnterior || loadingDashboard) return
     const sigLiq = JSON.stringify(
       (liquidacionMesAnteriorRes?.ingresos ?? []).map((i) => [i.usuario_id, i.total]),
     )
-    const sigApi = JSON.stringify(sueldosProrrateoRes?.montos ?? {})
+    const sigApi = JSON.stringify(dashboardRes?.sueldos_prorrateo_montos ?? {})
     const sig = `${anio}-${mes}|${sigLiq}|${sigApi}`
     if (lastSueldosInitSig.current === sig) return
     lastSueldosInitSig.current = sig
@@ -775,7 +717,7 @@ export default function DashboardPage() {
         Math.round(Number(i.total) || 0),
       ]),
     )
-    const apiMontos = sueldosProrrateoRes?.montos ?? {}
+    const apiMontos = dashboardRes?.sueldos_prorrateo_montos ?? {}
     const next: Record<number, string> = {}
     for (const m of compensacionData.miembros) {
       const k = String(m.usuario_id)
@@ -796,9 +738,9 @@ export default function DashboardPage() {
     anio,
     compensacionData,
     liquidacionMesAnteriorRes,
-    sueldosProrrateoRes,
+    dashboardRes,
     loadingLiquidacionAnterior,
-    loadingSueldosProrrateo,
+    loadingDashboard,
   ])
 
   useEffect(() => {
@@ -812,20 +754,23 @@ export default function DashboardPage() {
       }
       finanzasApi
         .putSueldosEstimadosProrrateo(mes + 1, anio, montos)
-        .then(() => setSueldosDirty(false))
+        .then(() => {
+          setSueldosDirty(false)
+          void refetchDashboard()
+        })
         .catch(() => {
           /* el usuario puede reintentar editando */
         })
     }, 800)
     return () => window.clearTimeout(t)
-  }, [sueldosDigitos, sueldosDirty, esActual, mes, anio, compensacionData])
+  }, [sueldosDigitos, sueldosDirty, esActual, mes, anio, compensacionData, refetchDashboard])
 
   const prorrateoDetalle = useMemo(() => {
     const vacio = {
       proporcion: 0,
       baseUsuario: 0,
     }
-    if (!esActual || errorCompensacion || !compensacionData?.miembros?.length || !user) return vacio
+    if (!esActual || errorDashboard || !compensacionData?.miembros?.length || !user) return vacio
     const n = compensacionData.miembros.length
     const totEst = compensacionData.miembros.reduce(
       (s, m) => s + sueldoEstimadoMes(sueldosDigitos[m.usuario_id] ?? ''),
@@ -844,7 +789,18 @@ export default function DashboardPage() {
       proporcion,
       baseUsuario: meu,
     }
-  }, [esActual, errorCompensacion, compensacionData, user, sueldosDigitos])
+  }, [esActual, errorDashboard, compensacionData, user, sueldosDigitos])
+
+  const prorrateoParaTarjeta = useMemo(() => {
+    if (dashboardRes && usarSaldoServidor) {
+      const p = Number(dashboardRes.prorrateo.proporcion)
+      return {
+        proporcion: Number.isFinite(p) ? p : 0,
+        baseUsuario: toPesos(dashboardRes.prorrateo.base_usuario),
+      }
+    }
+    return prorrateoDetalle
+  }, [dashboardRes, usarSaldoServidor, prorrateoDetalle])
 
   const ingresosPersonalesMesActual = useMemo(() => {
     if (!esActual) return 0
@@ -871,19 +827,27 @@ export default function DashboardPage() {
   const ingresosMesActual = ingresosPersonalesMesActual + ingresosComunesMesActual
 
   const efectivoHastaMesAnterior = useMemo(() => {
+    if (dashboardRes) return toPesos(dashboardRes.efectivo_hasta_mes_anterior)
     if (!efectivoDesglose) return 0
     return efectivo - toPesos(efectivoDesglose.b) - toPesos(efectivoDesglose.e)
-  }, [efectivo, efectivoDesglose])
+  }, [dashboardRes, efectivo, efectivoDesglose])
 
   const sueldoProyectado = useMemo(() => {
-    if (!user || !esActual) return 0
+    if (!user) return 0
+    if (dashboardRes && usarSaldoServidor) {
+      return toPesos(dashboardRes.sueldo_proyectado)
+    }
+    if (!esActual) return 0
     return sueldoEstimadoMes(sueldosDigitos[user.id] ?? '') + ingresosMesActual
-  }, [sueldosDigitos, user, esActual, ingresosMesActual])
+  }, [dashboardRes, usarSaldoServidor, sueldosDigitos, user, esActual, ingresosMesActual])
 
   const presupuestoComunProrrateado = useMemo(() => {
+    if (dashboardRes && usarSaldoServidor) {
+      return toPesos(dashboardRes.presupuesto_comun_prorrateado)
+    }
     const totalComun = toPesos(presupuestosSaldoRes?.comunTotal)
     return Math.round(totalComun * prorrateoDetalle.proporcion)
-  }, [presupuestosSaldoRes, prorrateoDetalle.proporcion])
+  }, [dashboardRes, usarSaldoServidor, presupuestosSaldoRes, prorrateoDetalle.proporcion])
 
   const presupuestosPersonalesOrdenados = useMemo(
     () => [...(presupuestosSaldoRes?.personales ?? [])].sort((a, b) =>
@@ -898,6 +862,13 @@ export default function DashboardPage() {
   )
 
   const desgloseSaldoFormula = useMemo(() => {
+    if (dashboardRes && usarSaldoServidor && dashboardRes.desglose_saldo?.length) {
+      return dashboardRes.desglose_saldo.map((t) => ({
+        letra: t.letra,
+        etiqueta: t.etiqueta,
+        monto: t.monto,
+      }))
+    }
     const terms: { letra: string; etiqueta: string; monto: number }[] = [
       { letra: 'A', etiqueta: 'Sueldo estimado + ingresos mes actual', monto: sueldoProyectado },
       { letra: 'B', etiqueta: 'Efectivo hasta mes anterior', monto: efectivoHastaMesAnterior },
@@ -913,11 +884,28 @@ export default function DashboardPage() {
       })
     })
     return terms
-  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, presupuestosPersonalesOrdenados])
+  }, [
+    dashboardRes,
+    usarSaldoServidor,
+    sueldoProyectado,
+    efectivoHastaMesAnterior,
+    presupuestoComunProrrateado,
+    presupuestosPersonalesOrdenados,
+  ])
 
   const saldo = useMemo(() => {
+    if (dashboardRes && usarSaldoServidor) {
+      return toPesos(dashboardRes.saldo_proyectado)
+    }
     return sueldoProyectado + efectivoHastaMesAnterior - presupuestoComunProrrateado - totalPresupuestosPersonales
-  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, totalPresupuestosPersonales])
+  }, [
+    dashboardRes,
+    usarSaldoServidor,
+    sueldoProyectado,
+    efectivoHastaMesAnterior,
+    presupuestoComunProrrateado,
+    totalPresupuestosPersonales,
+  ])
 
   const movimientosCuentaSeleccionada = useMemo(() => {
     if (cuentaTab === null) return movimientos
@@ -995,18 +983,15 @@ export default function DashboardPage() {
   if (
     loading ||
     loadingMovimientosComunes ||
-    loadingEfectivo ||
+    loadingDashboard ||
     loadingDeuda ||
-    loadingLiquidacion ||
-    loadingLiquidacionAnterior ||
-    loadingPresupuestosSaldo ||
-    (esActual && loadingSueldosProrrateo)
+    loadingLiquidacionAnterior
   ) return <Cargando />
-  if (error || errorMovimientosComunes || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior) {
-    return <ErrorCarga mensaje={error || errorMovimientosComunes || errorEfectivo || errorLiquidacion || errorLiquidacionAnterior || 'Error al cargar datos.'} />
+  if (error || errorMovimientosComunes || errorDashboard || errorLiquidacionAnterior) {
+    return <ErrorCarga mensaje={error || errorMovimientosComunes || errorDashboard || errorLiquidacionAnterior || 'Error al cargar datos.'} />
   }
 
-  const recalculoPendiente = efectivoRes?.recalculo?.pendiente
+  const recalculoPendiente = dashboardRes?.efectivo?.recalculo?.pendiente
 
   return (
     <div className={styles.page}>
@@ -1049,14 +1034,14 @@ export default function DashboardPage() {
           sueldoProyectado={sueldoProyectado}
           efectivo={efectivoHastaMesAnterior}
           formula={desgloseSaldoFormula}
-          prorrateoPresupuestoComun={prorrateoDetalle.proporcion}
+          prorrateoPresupuestoComun={prorrateoParaTarjeta.proporcion}
           miembros={compensacionData?.miembros ?? []}
           sueldosDigitos={sueldosDigitos}
           onSueldoChange={(usuarioId, soloDigitos) => {
             setSueldosDirty(true)
             setSueldosDigitos((prev) => ({ ...prev, [usuarioId]: soloDigitos }))
           }}
-          errorCompensacion={errorCompensacion}
+          errorCompensacion={errorDashboard}
           delay={160}
         />
       </div>

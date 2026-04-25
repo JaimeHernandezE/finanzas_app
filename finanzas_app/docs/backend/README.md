@@ -8,6 +8,9 @@ Backend de Finanzas App: Django 4.x, Django REST Framework, PostgreSQL. Se ejecu
 backend/
 ├── core/                 # Configuración Django (settings, urls, wsgi)
 ├── applications/         # Apps del dominio
+│   └── finanzas/
+│       ├── services/     # Cálculos por pantalla (p. ej. dashboard); ver `services_recalculo.py` para snapshots
+│       └── …
 │   └── usuarios/        # Autenticación (Usuario, Firebase → JWT)
 ├── tests/               # Tests pytest (conftest, test_categorias, test_metodos_pago, test_tarjetas)
 ├── pytest.ini            # Configuración pytest (DJANGO_SETTINGS_MODULE, patrones)
@@ -52,6 +55,12 @@ Más comandos y contexto: [docs/DEPLOYMENT-LOCAL.md — Comandos rápidos](../DE
 | GET | `/api/finanzas/presupuesto-mes/` | Query: `mes`, `anio`, `ambito` = `FAMILIAR` o `PERSONAL`. |
 | POST | `/api/finanzas/presupuestos/` | Body: `categoria`, `mes` (YYYY-MM-01), `monto`, `ambito`. |
 | PATCH/DELETE | `/api/finanzas/presupuestos/<id>/` | Actualizar monto o borrar presupuesto. |
+
+### Dashboard — resumen agregado
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/finanzas/dashboard-resumen/?mes=<1-12>&anio=<aaaa>` | Resumen para la pantalla dashboard: bloque `efectivo` (mismo contenido que `efectivo-disponible`, siempre mes calendario **actual** del servidor), `compensacion` (mismo shape que `compensacion-proyectada` para el **mes/anio** pedido o `null`), `sueldos_prorrateo_montos`, `prorrateo`, `ingresos_mes_actual`, `sueldo_proyectado`, `presupuesto` (total común comprometido + personales), `efectivo_hasta_mes_anterior`, `presupuesto_comun_prorrateado`, `total_presupuestos_personales`, `saldo_proyectado`, `desglose_saldo`, `es_mes_calendario_actual`. Implementación: `applications/finanzas/services/dashboard.py`. |
 
 ## API — Usuarios / familia (Bearer Firebase)
 

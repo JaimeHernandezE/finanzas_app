@@ -53,8 +53,19 @@ function isRetriableStatus(status?: number): boolean {
   return status === 502 || status === 503 || status === 504
 }
 
+function normalizeApiPath(baseURL: string | undefined, url: string | undefined): string | undefined {
+  if (!baseURL || !url) return url
+  const normalizedBase = baseURL.replace(/\/+$/, '')
+  // Si la base ya termina en /api (config habitual en móvil), evitamos /api/api/...
+  if (!/\/api$/i.test(normalizedBase)) return url
+  if (url === '/api') return '/'
+  if (url.startsWith('/api/')) return url.slice(4)
+  return url
+}
+
 client.interceptors.request.use(async (config) => {
   config.baseURL = getApiBaseUrl()
+  config.url = normalizeApiPath(config.baseURL, config.url)
   config.timeout = getApiTimeoutMs()
   const token = await getToken()
   if (token) {

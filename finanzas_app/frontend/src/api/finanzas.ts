@@ -71,6 +71,67 @@ export interface SueldosEstimadosProrrateoResp {
   montos: Record<string, string>
 }
 
+export interface EfectivoDisponibleDesglose {
+  a: string
+  b: string
+  c: string
+  d: string
+  e: string
+  e_personal: string
+  e_comun: string
+}
+
+export interface CompensacionProyectadaResp {
+  periodo: { mes: number; anio: number }
+  neto_familiar_comun: string
+  miembros: {
+    usuario_id: number
+    nombre: string
+    neto_comun_mes: string
+    ingreso_declarado_mes: string
+  }[]
+}
+
+export interface DashboardResumenDesgloseSaldoItem {
+  letra: string
+  etiqueta: string
+  monto: number
+}
+
+export interface DashboardResumenPresupuestoPersonal {
+  cuenta_id: number | null
+  cuenta_nombre: string
+  total_comprometido: string
+}
+
+/** GET /api/finanzas/dashboard-resumen/ */
+export interface DashboardResumenApi {
+  periodo: { mes: number; anio: number }
+  es_mes_calendario_actual: boolean
+  efectivo: {
+    efectivo: string
+    personal_historico: string
+    comun_movimientos_historico: string
+    prorrateo_gastos_comunes_acumulado: string
+    desglose: EfectivoDisponibleDesglose
+    recalculo: { pendiente: boolean; dirty_from: string | null }
+  }
+  compensacion: CompensacionProyectadaResp | null
+  sueldos_prorrateo_montos: Record<string, string>
+  prorrateo: { proporcion: string; base_usuario: string }
+  ingresos_mes_actual: string
+  sueldo_proyectado: string
+  presupuesto: {
+    comun_total_comprometido: string
+    personales: DashboardResumenPresupuestoPersonal[]
+  }
+  efectivo_hasta_mes_anterior: string
+  presupuesto_comun_prorrateado: string
+  total_presupuestos_personales: string
+  saldo_proyectado: string
+  desglose_saldo: DashboardResumenDesgloseSaldoItem[]
+}
+
 export interface ResumenHistoricoMes {
   mes: number
   anio: number
@@ -223,6 +284,9 @@ export const finanzasApi = {
       }
       recalculo: { pendiente: boolean; dirty_from: string | null }
     }>('/api/finanzas/efectivo-disponible/'),
+
+  getDashboardResumen: (mes: number, anio: number) =>
+    client.get<DashboardResumenApi>('/api/finanzas/dashboard-resumen/', { params: { mes, anio } }),
 
   recalcularHistorico: () =>
     client.post<RecalculoHistoricoResult>('/api/finanzas/recalculo/historico/'),

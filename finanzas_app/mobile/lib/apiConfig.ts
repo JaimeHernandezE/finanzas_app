@@ -10,6 +10,9 @@ export const API_BASE_URL = (
 ).replace(/\/$/, '')
 
 setApiBaseUrl(API_BASE_URL)
+if (__DEV__) {
+  console.info('[apiConfig] API base URL:', API_BASE_URL)
+}
 
 // En móvil preferimos fail-fast para no dejar la UI "colgada" 20-25s en mala red.
 const timeoutRaw = process.env.EXPO_PUBLIC_API_TIMEOUT_MS

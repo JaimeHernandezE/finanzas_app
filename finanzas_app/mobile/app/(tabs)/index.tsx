@@ -12,11 +12,11 @@ import {
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query'
+import axios from 'axios'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
-import { finanzasApi, movimientosApi } from '@finanzas/shared/api'
-import { incluirIngresoMovimientoEnSueldoProyectadoMes } from '@finanzas/shared/utils/sueldoProyectadoIngresos'
-import type { PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
+import { apiErrorMessage, finanzasApi, movimientosApi } from '@finanzas/shared/api'
+import type { DashboardResumenApi, PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
 
@@ -35,26 +35,10 @@ interface Movimiento {
   ingreso_comun?:   number | null
 }
 
-interface LiquidacionApi {
-  ingresos: Array<{ usuario_id: number; total: string }>
-  gastos_comunes: Array<{ usuario_id: number; total: string }>
-}
-
 interface CuentaPersonalApi {
   id: number
   nombre: string
   es_propia: boolean
-}
-
-interface PresupuestoCuentaResumen {
-  cuentaId: number | null
-  cuentaNombre: string
-  total: number
-}
-
-interface PresupuestosSaldoProyectado {
-  comunTotal: number
-  personales: PresupuestoCuentaResumen[]
 }
 
 interface EfectivoDesgloseApi {
@@ -65,11 +49,6 @@ interface EfectivoDesgloseApi {
   e?: number | string
   e_personal?: number | string
   e_comun?: number | string
-}
-
-interface EfectivoDisponibleApi {
-  efectivo: string
-  desglose?: EfectivoDesgloseApi | null
 }
 
 const MESES = [
@@ -90,21 +69,6 @@ function toPesos(n: unknown): number {
 
 function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
-}
-
-function sueldoEstimadoMes(sueldoEstimado: number): number {
-  const base = Math.round(Number(sueldoEstimado) || 0)
-  return Math.max(0, base)
-}
-
-function totalPresupuestoComprometido(filas: PresupuestoMesFila[] | null | undefined): number {
-  return (filas ?? [])
-    .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
-    .reduce((sum, f) => {
-      const presupuestado = toPesos(f.monto_presupuestado)
-      const gastado = toPesos(f.gastado)
-      return sum + Math.max(presupuestado, gastado)
-    }, 0)
 }
 
 function fechaCorta(iso: string): string {
@@ -147,17 +111,6 @@ export default function DashboardScreen() {
     solo_mios: true,
   })
   const movimientos = raw as Movimiento[]
-  const {
-    movimientos: movimientosComunesRaw,
-    loading: loadingMovimientosComunes,
-    error: errorMovimientosComunes,
-  } = useMovimientos({
-    mes: mes + 1,
-    anio,
-    ambito: 'COMUN',
-    solo_mios: true,
-  })
-  const movimientosComunes = (movimientosComunesRaw ?? []) as Movimiento[]
 
   const queryClient = useQueryClient()
   const isFetchingRQ = useIsFetching()
@@ -165,21 +118,36 @@ export default function DashboardScreen() {
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
-  const { mesPrevio, anioPrevio } = useMemo(() => {
-    if (mes === 0) return { mesPrevio: 12, anioPrevio: anio - 1 }
-    return { mesPrevio: mes, anioPrevio: anio }
-  }, [mes, anio])
-
-  // ── Queries del dashboard (todas offline-first via React Query) ────────────
+  // Métricas del resumen: solo `obtener_resumen_dashboard` (services/dashboard.py) vía GET dashboard-resumen/
 
   const qDeuda = useQuery({
     queryKey: ['deudaPendiente'],
     queryFn: () => movimientosApi.getCuotasDeudaPendiente().then((r: any) => r.data),
   })
 
-  const qEfectivo = useQuery({
-    queryKey: ['efectivoDisponible'],
-    queryFn: () => finanzasApi.getEfectivoDisponible().then((r: any) => r.data as EfectivoDisponibleApi),
+  const qDashboard = useQuery<DashboardResumenApi>({
+    queryKey: ['dashboardResumen', mes + 1, anio],
+    queryFn: async () => {
+      try {
+        const r = await finanzasApi.getDashboardResumen(mes + 1, anio)
+        return r.data
+      } catch (e: unknown) {
+        if (axios.isAxiosError(e)) {
+          const status = e.response?.status
+          const fullUrl = `${String(e.config?.baseURL ?? '')}${String(e.config?.url ?? '')}`
+          if (__DEV__) {
+            console.error('[dashboardResumen] request failed', { status, fullUrl, params: e.config?.params })
+          }
+          if (status === 404) {
+            throw new Error(
+              `Dashboard no encontrado (${fullUrl || '/api/finanzas/dashboard-resumen/'}). ` +
+              'Revisa que el backend local tenga la ruta dashboard-resumen.',
+            )
+          }
+        }
+        throw e
+      }
+    },
   })
 
   const qCuentas = useQuery<CuentaPersonalApi[]>({
@@ -187,52 +155,14 @@ export default function DashboardScreen() {
     queryFn: () => finanzasApi.getCuentasPersonales().then((r: any) => r.data as CuentaPersonalApi[]),
   })
 
-  const qLiquidacion = useQuery<LiquidacionApi>({
-    queryKey: ['liquidacion', mes + 1, anio],
-    queryFn: () => finanzasApi.getLiquidacion(mes + 1, anio).then((r: any) => r.data as LiquidacionApi),
-  })
-
-  const qPresupuesto = useQuery<PresupuestoMesFila[]>({
-    queryKey: ['presupuestoMes', mes + 1, anio, cuentaTab],
-    queryFn: () =>
-      finanzasApi.getPresupuestoMes({
-        mes: mes + 1,
-        anio,
-        ambito: 'PERSONAL',
-        cuenta: cuentaTab ?? undefined,
-      }).then((r: any) => r.data as PresupuestoMesFila[]),
-  })
-
-  const qLiquidacionAnterior = useQuery<LiquidacionApi>({
-    queryKey: ['liquidacion', mesPrevio, anioPrevio],
-    queryFn: () => finanzasApi.getLiquidacion(mesPrevio, anioPrevio).then((r: any) => r.data as LiquidacionApi),
-  })
-
-  const qCompensacion = useQuery({
-    queryKey: ['compensacion', mes + 1, anio],
-    queryFn: () => finanzasApi.getCompensacionProyectada(mes + 1, anio).then((r: any) => r.data),
-    enabled: esActual,
-  })
-
-  const qSueldos = useQuery({
-    queryKey: ['sueldosProrrateo', mes + 1, anio],
-    queryFn: () =>
-      finanzasApi.getSueldosEstimadosProrrateo(mes + 1, anio)
-        .then((r: any) => r.data as { mes: number; anio: number; montos: Record<string, string> }),
-    enabled: esActual,
-  })
-
   // Pull-to-refresh: fuerza refetch de todas las queries del dashboard
   const refetchAll = useCallback(async () => {
     await Promise.all([
       queryClient.refetchQueries({ queryKey: ['movimientos'] }),
       queryClient.refetchQueries({ queryKey: ['deudaPendiente'] }),
-      queryClient.refetchQueries({ queryKey: ['efectivoDisponible'] }),
       queryClient.refetchQueries({ queryKey: ['cuentasPersonales'] }),
-      queryClient.refetchQueries({ queryKey: ['liquidacion'] }),
       queryClient.refetchQueries({ queryKey: ['presupuestoMes'] }),
-      queryClient.refetchQueries({ queryKey: ['compensacion'] }),
-      queryClient.refetchQueries({ queryKey: ['sueldosProrrateo'] }),
+      queryClient.refetchQueries({ queryKey: ['dashboardResumen'] }),
     ])
   }, [queryClient])
 
@@ -260,47 +190,23 @@ export default function DashboardScreen() {
     })
   }, [qCuentas.data])
 
-  const qPresupuestosSaldo = useQuery<PresupuestosSaldoProyectado>({
-    queryKey: ['presupuestosSaldoProyectado', mes + 1, anio, cuentasPersonales.map((c) => c.id).join(',')],
-    queryFn: async () => {
-      const comunRes = await finanzasApi.getPresupuestoMes({
+  /** Evita GET presupuesto-mes con cuenta obsoleta/inexistente → 400 del backend. */
+  const presupuestoQueryEnabled = useMemo(() => {
+    if (qCuentas.isLoading) return false
+    if (cuentasPersonales.length === 0) return true
+    return cuentaTab != null && cuentasPersonales.some((c) => c.id === cuentaTab)
+  }, [qCuentas.isLoading, cuentasPersonales, cuentaTab])
+
+  const qPresupuesto = useQuery<PresupuestoMesFila[]>({
+    queryKey: ['presupuestoMes', mes + 1, anio, cuentaTab],
+    queryFn: () =>
+      finanzasApi.getPresupuestoMes({
         mes: mes + 1,
         anio,
-        ambito: 'FAMILIAR',
-      })
-      const comunTotal = totalPresupuestoComprometido(comunRes.data ?? [])
-
-      const personales: PresupuestoCuentaResumen[] = []
-      if (!cuentasPersonales.length) {
-        const personalGlobalRes = await finanzasApi.getPresupuestoMes({
-          mes: mes + 1,
-          anio,
-          ambito: 'PERSONAL',
-        })
-        const total = totalPresupuestoComprometido(personalGlobalRes.data ?? [])
-        if (total > 0) {
-          personales.push({ cuentaId: null, cuentaNombre: 'Personal', total })
-        }
-      } else {
-        const personalesRes = await Promise.all(
-          cuentasPersonales.map(async (cuenta) => {
-            const resp = await finanzasApi.getPresupuestoMes({
-              mes: mes + 1,
-              anio,
-              ambito: 'PERSONAL',
-              cuenta: cuenta.id,
-            })
-            return {
-              cuentaId: cuenta.id,
-              cuentaNombre: cuenta.nombre,
-              total: totalPresupuestoComprometido(resp.data ?? []),
-            }
-          }),
-        )
-        personales.push(...personalesRes.filter((p) => p.total > 0))
-      }
-      return { comunTotal, personales }
-    },
+        ambito: 'PERSONAL',
+        cuenta: cuentaTab ?? undefined,
+      }).then((r: any) => r.data as PresupuestoMesFila[]),
+    enabled: presupuestoQueryEnabled,
   })
 
   // Auto-seleccionar primera cuenta
@@ -316,71 +222,13 @@ export default function DashboardScreen() {
     [qDeuda.data],
   )
 
-  const [sueldosProrrateo, setSueldosProrrateo] = useState<Record<number, number>>({})
-
-  useEffect(() => {
-    const compensacion = qCompensacion.data as any
-    if (!esActual || !compensacion?.miembros?.length) {
-      setSueldosProrrateo({})
-      return
-    }
-    if (qLiquidacionAnterior.isLoading || qSueldos.isLoading) return
-
-    const prevById = Object.fromEntries(
-      (qLiquidacionAnterior.data?.ingresos ?? []).map((i) => [
-        i.usuario_id,
-        Math.round(Number(i.total) || 0),
-      ])
-    )
-    const apiMontos = (qSueldos.data?.montos ?? {}) as Record<string, string>
-    const next: Record<number, number> = {}
-    for (const m of compensacion.miembros) {
-      const k = String(m.usuario_id)
-      const apiVal = apiMontos[k]
-      if (apiVal !== undefined && apiVal !== null && apiVal !== '') {
-        next[m.usuario_id] = Math.round(Number(apiVal) || 0)
-      } else {
-        next[m.usuario_id] = prevById[m.usuario_id] ?? 0
-      }
-    }
-    setSueldosProrrateo(next)
-  }, [
-    esActual,
-    qCompensacion.data,
-    qLiquidacionAnterior.data,
-    qLiquidacionAnterior.isLoading,
-    qSueldos.data,
-    qSueldos.isLoading,
-  ])
-
-  const prorrateoDetalle = useMemo(() => {
-    const vacio = { proporcion: 0, baseUsuario: 0 }
-    const compensacion = qCompensacion.data as any
-    if (!esActual || qCompensacion.error || !compensacion?.miembros?.length || !user) return vacio
-    const n = compensacion.miembros.length
-    const totalEstimado = compensacion.miembros.reduce(
-      (sum: number, m: any) => sum + sueldoEstimadoMes(sueldosProrrateo[m.usuario_id] ?? 0),
-      0,
-    )
-    const self = compensacion.miembros.find((m: any) => m.usuario_id === user.id)
-    if (!self) return vacio
-    const miBaseNeta = sueldoEstimadoMes(sueldosProrrateo[user.id] ?? 0)
-    let proporcion = 0
-    if (totalEstimado > 0) {
-      proporcion = miBaseNeta / totalEstimado
-    } else if (n > 0) {
-      proporcion = 1 / n
-    }
-    return { proporcion, baseUsuario: miBaseNeta }
-  }, [esActual, qCompensacion.data, qCompensacion.error, user, sueldosProrrateo])
-
   const efectivo = useMemo(
-    () => Math.round(Number(qEfectivo.data?.efectivo) || 0),
-    [qEfectivo.data],
+    () => Math.round(Number(qDashboard.data?.efectivo?.efectivo) || 0),
+    [qDashboard.data],
   )
   const efectivoDesglose = useMemo(
-    () => qEfectivo.data?.desglose ?? null,
-    [qEfectivo.data],
+    () => qDashboard.data?.efectivo?.desglose ?? null,
+    [qDashboard.data],
   )
 
   const panelEfectivoDesglose = useMemo(() => {
@@ -393,42 +241,39 @@ export default function DashboardScreen() {
     const ePersonal = toPesos(efectivoDesglose.e_personal)
     const eComun = toPesos(efectivoDesglose.e_comun)
     const fmtAbs = (x: number) => formatMonto(Math.abs(x))
+    const fmt = (x: number) => (x < 0 ? `−${formatMonto(Math.abs(x))}` : formatMonto(x))
     return (
       <View className="mt-4 pt-4 border-t border-border gap-3">
         <Text className="text-xs font-semibold text-dark">Desglose (A + B + C − D + E)</Text>
         <Text className="text-[11px] text-muted uppercase">Aportes</Text>
         <View className="flex-row items-start justify-between gap-2">
-          <Text className="text-xs text-muted flex-1">
-            A — Total ingresos (ingreso común histórico, sin mes actual)
-          </Text>
+          <Text className="text-xs text-muted flex-1">A — Total sueldos (histórico)</Text>
           <Text className={`text-xs font-semibold shrink-0 ${a >= 0 ? 'text-success' : 'text-danger'}`}>
             {a >= 0 ? '+' : '−'}
             {fmtAbs(a)}
           </Text>
         </View>
         <View className="flex-row items-start justify-between gap-2">
-          <Text className="text-xs text-muted flex-1">B — Sueldo declarado mes</Text>
+          <Text className="text-xs text-muted flex-1">B — Sueldo declarado (mes actual)</Text>
           <Text className={`text-xs font-semibold shrink-0 ${b >= 0 ? 'text-success' : 'text-danger'}`}>
             {b >= 0 ? '+' : '−'}
             {fmtAbs(b)}
           </Text>
         </View>
-        <Text className="text-[11px] text-muted uppercase pt-1">Luego los egresos</Text>
+        <Text className="text-[11px] text-muted uppercase pt-1">Egresos</Text>
         <View className="flex-row items-start justify-between gap-2">
-          <Text className="text-xs text-muted flex-1">
-            C — Egresos personales (neto mensual en cuentas, histórico)
-          </Text>
+          <Text className="text-xs text-muted flex-1">C — Gastos personales (histórico)</Text>
           <Text className={`text-xs font-semibold shrink-0 ${c >= 0 ? 'text-success' : 'text-danger'}`}>
             {c >= 0 ? '+' : '−'}
             {fmtAbs(c)}
           </Text>
         </View>
         <View className="flex-row items-start justify-between gap-2">
-          <Text className="text-xs text-muted flex-1">D — Egresos comunes (prorrateo acumulado)</Text>
+          <Text className="text-xs text-muted flex-1">D — Gastos comunes (histórico)</Text>
           <Text className="text-xs font-semibold text-danger shrink-0">−{fmtAbs(d)}</Text>
         </View>
         <View className="flex-row items-start justify-between gap-2">
-          <Text className="text-xs text-muted flex-1">E — Egresos mes actual (neto personal + común)</Text>
+          <Text className="text-xs text-muted flex-1">E — Mes actual (personal + común)</Text>
           <Text className={`text-xs font-semibold shrink-0 ${e >= 0 ? 'text-success' : 'text-danger'}`}>
             {e >= 0 ? '+' : '−'}
             {fmtAbs(e)}
@@ -437,72 +282,32 @@ export default function DashboardScreen() {
         <View className="pl-2 border-l border-border gap-1">
           <View className="flex-row justify-between">
             <Text className="text-[11px] text-muted">↳ Personal (sin duplicar sueldos)</Text>
-            <Text className="text-[11px] text-dark">
-              {ePersonal < 0 ? `−${fmtAbs(ePersonal)}` : fmtAbs(ePersonal)}
-            </Text>
+            <Text className="text-[11px] text-dark">{fmt(ePersonal)}</Text>
           </View>
           <View className="flex-row justify-between">
             <Text className="text-[11px] text-muted">↳ Común</Text>
-            <Text className="text-[11px] text-dark">
-              {eComun < 0 ? `−${fmtAbs(eComun)}` : fmtAbs(eComun)}
-            </Text>
+            <Text className="text-[11px] text-dark">{fmt(eComun)}</Text>
           </View>
         </View>
         <Text className="text-[10px] text-muted leading-snug">
-          Cálculo: A + B + C − D + E. C y E muestran el signo del neto; D siempre se resta.
+          Cálculo: A + B + C − D + E. A y B se muestran como aportes (+). En el bloque inferior, C y E llevan el
+          signo del neto (+ verde / − rojo); D siempre se resta (−). D acumula prorrateos de meses anteriores al
+          actual.
         </Text>
       </View>
     )
   }, [mostrarDetalleEfectivo, efectivoDesglose, formatMonto])
-  const ingresosPersonalesMesActual = useMemo(() => {
-    if (!esActual) return 0
-    return movimientos
-      .filter(
-        (m) =>
-          m.ambito === 'PERSONAL' &&
-          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
-      )
-      .reduce((sum, m) => sum + toPesos(m.monto), 0)
-  }, [esActual, movimientos])
-  const ingresosComunesMesActual = useMemo(() => {
-    if (!esActual) return 0
-    return movimientosComunes
-      .filter(
-        (m) =>
-          m.ambito === 'COMUN' &&
-          incluirIngresoMovimientoEnSueldoProyectadoMes(m),
-      )
-      .reduce((sum, m) => sum + toPesos(m.monto), 0)
-  }, [esActual, movimientosComunes])
-  const ingresosMesActual = ingresosPersonalesMesActual + ingresosComunesMesActual
-  const sueldoProyectado = useMemo(() => {
-    if (!esActual || !user) return 0
-    return prorrateoDetalle.baseUsuario + ingresosMesActual
-  }, [esActual, prorrateoDetalle.baseUsuario, user, ingresosMesActual])
-  const efectivoHastaMesAnterior = useMemo(() => {
-    if (!efectivoDesglose) return 0
-    return efectivo - toPesos(efectivoDesglose.b) - toPesos(efectivoDesglose.e)
-  }, [efectivo, efectivoDesglose])
-  const presupuestoComunProrrateado = useMemo(() => {
-    const totalComun = toPesos(qPresupuestosSaldo.data?.comunTotal)
-    return Math.round(totalComun * prorrateoDetalle.proporcion)
-  }, [qPresupuestosSaldo.data?.comunTotal, prorrateoDetalle.proporcion])
 
-  const presupuestosPersonalesOrdenados = useMemo(
-    () =>
-      [...(qPresupuestosSaldo.data?.personales ?? [])].sort((a, b) =>
-        a.cuentaNombre.localeCompare(b.cuentaNombre, 'es', { sensitivity: 'base' }),
-      ),
-    [qPresupuestosSaldo.data?.personales],
+  const saldo = useMemo(
+    () => (qDashboard.data ? toPesos(qDashboard.data.saldo_proyectado) : 0),
+    [qDashboard.data],
   )
-  const totalPresupuestosPersonales = useMemo(
-    () => presupuestosPersonalesOrdenados.reduce((sum, p) => sum + toPesos(p.total), 0),
-    [presupuestosPersonalesOrdenados],
-  )
-
-  const saldo = useMemo(() => {
-    return sueldoProyectado + efectivoHastaMesAnterior - presupuestoComunProrrateado - totalPresupuestosPersonales
-  }, [sueldoProyectado, efectivoHastaMesAnterior, presupuestoComunProrrateado, totalPresupuestosPersonales])
+  const participacionProrrateoPct = useMemo(() => {
+    const dash = qDashboard.data
+    if (!dash) return 0
+    const p = Number(dash.prorrateo.proporcion)
+    return Number.isFinite(p) ? Math.round(p * 100) : 0
+  }, [qDashboard.data])
 
   // Movimientos filtrados por la cuenta seleccionada (para categorías y lista)
   const movimientosCuenta = useMemo(() => {
@@ -587,22 +392,16 @@ export default function DashboardScreen() {
     else setMes(m => m + 1)
   }
 
-  const hasError = error ||
-    errorMovimientosComunes ||
-    (qEfectivo.error ? String(qEfectivo.error) : null) ||
-    (qLiquidacion.error ? String(qLiquidacion.error) : null) ||
-    (qLiquidacionAnterior.error ? String(qLiquidacionAnterior.error) : null)
+  const hasError =
+    error ||
+    (qDashboard.error ? apiErrorMessage(qDashboard.error) : null) ||
+    (qCuentas.error ? apiErrorMessage(qCuentas.error) : null)
 
   // isLoading: primera carga sin datos en cache; refetch en background no activa pantalla completa.
   const isLoading = !refreshing && (
     loading ||
-    loadingMovimientosComunes ||
-    qEfectivo.isLoading ||
-    qDeuda.isLoading ||
-    qLiquidacion.isLoading ||
-    qLiquidacionAnterior.isLoading ||
-    qPresupuestosSaldo.isLoading ||
-    (esActual && qSueldos.isLoading)
+    qDashboard.isLoading ||
+    qDeuda.isLoading
   )
   // Indicador discreto de sincronía en segundo plano
   const isSyncing = !refreshing && isFetchingRQ > 0
@@ -721,6 +520,11 @@ export default function DashboardScreen() {
           </View>
         ) : (
           <>
+            {qDashboard.data?.efectivo?.recalculo?.pendiente ? (
+              <Text className="text-xs text-muted mb-3 leading-snug">
+                Hay recálculo de histórico pendiente; los totales pueden actualizarse al ejecutar el mantenimiento.
+              </Text>
+            ) : null}
             {/* Tarjetas métricas */}
             <View className="gap-3 mb-6">
               <View className="bg-white rounded-2xl p-5">
@@ -779,43 +583,36 @@ export default function DashboardScreen() {
                   <View className="mt-4 pt-4 border-t border-white/15 gap-2">
                     <Text className="text-xs font-semibold text-white/80">Cómo se calcula el saldo proyectado</Text>
                     <Text className="text-[11px] text-white/50 leading-snug">
-                      Se calcula como A + B − C − D − …, con presupuestos comprometidos (si una categoría está excedida, usa gasto real).
+                      Mismos términos que calcula el servidor (GET dashboard-resumen): A + B − C − … con presupuestos
+                      comprometidos.
                     </Text>
-                    <Text className="text-[11px] text-white/45 uppercase pt-1">Aportes</Text>
-                    <View className="flex-row items-start justify-between gap-2">
-                      <Text className="text-xs text-white/60 flex-1">A — Sueldo estimado + ingresos mes actual</Text>
-                      <Text className="text-xs font-semibold text-accent shrink-0">+{formatMonto(sueldoProyectado)}</Text>
-                    </View>
-                    <View className="flex-row items-start justify-between gap-2">
-                      <Text className="text-xs text-white/60 flex-1">B — Efectivo hasta mes anterior</Text>
-                      <Text className={`text-xs font-semibold shrink-0 ${efectivoHastaMesAnterior < 0 ? 'text-danger' : 'text-accent'}`}>
-                        {efectivoHastaMesAnterior < 0 ? '−' : '+'}
-                        {formatMonto(Math.abs(efectivoHastaMesAnterior))}
-                      </Text>
-                    </View>
-                    <Text className="text-[11px] text-white/45 uppercase pt-1">Egresos (presupuestos)</Text>
-                    <View className="flex-row items-start justify-between gap-2">
-                      <Text className="text-xs text-white/60 flex-1">C — Presupuesto común prorrateado</Text>
-                      <Text className="text-xs font-semibold text-danger shrink-0">
-                        −{formatMonto(Math.abs(presupuestoComunProrrateado))}
-                      </Text>
-                    </View>
-                    {presupuestosPersonalesOrdenados.map((p, idx) => {
-                      const letra = 'DEFGHIJKLMNOPQRSTUVWXYZ'[idx] ?? `P${idx + 1}`
+                    {(qDashboard.data?.desglose_saldo ?? []).map((t) => {
+                      const m = Number(t.monto)
+                      const esAporte = t.letra === 'A' || t.letra === 'B'
+                      const absFmt = formatMonto(Math.abs(m))
+                      const montoStr = esAporte
+                        ? m < 0
+                          ? `−${absFmt}`
+                          : `+${absFmt}`
+                        : `−${absFmt}`
                       return (
-                        <View key={`${p.cuentaId ?? 'personal'}-${p.cuentaNombre}`} className="flex-row items-start justify-between gap-2">
+                        <View key={t.letra} className="flex-row items-start justify-between gap-2">
                           <Text className="text-xs text-white/60 flex-1">
-                            {letra} — Presupuesto personal — {p.cuentaNombre}
+                            {t.letra} — {t.etiqueta}
                           </Text>
-                          <Text className="text-xs font-semibold text-danger shrink-0">
-                            −{formatMonto(Math.abs(toPesos(p.total)))}
+                          <Text
+                            className={`text-xs font-semibold shrink-0 ${
+                              esAporte ? (m < 0 ? 'text-danger' : 'text-accent') : 'text-danger'
+                            }`}
+                          >
+                            {montoStr}
                           </Text>
                         </View>
                       )
                     })}
                     <Text className="text-[10px] text-white/40 leading-snug pt-1">
-                      C usa presupuesto común prorrateado por sueldo estimado (
-                      {Math.round(prorrateoDetalle.proporcion * 100)}% de participación).
+                      Participación en presupuesto común prorrateado: {participacionProrrateoPct}% (según bases persistidas
+                      del mes).
                     </Text>
                   </View>
                 )}
@@ -895,7 +692,9 @@ export default function DashboardScreen() {
               {qPresupuesto.isLoading ? (
                 <Text className="text-muted text-sm text-center py-2">Cargando comparación…</Text>
               ) : qPresupuesto.error ? (
-                <Text className="text-muted text-sm text-center py-2">No se pudo cargar presupuesto del período.</Text>
+                <Text className="text-muted text-sm text-center py-2">
+                  {apiErrorMessage(qPresupuesto.error)}
+                </Text>
               ) : categoriasComparadas.length === 0 ? (
                 <Text className="text-muted text-sm text-center py-2">Sin presupuestos configurados para este período/cuenta.</Text>
               ) : (

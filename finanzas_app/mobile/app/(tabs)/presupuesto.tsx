@@ -9,13 +9,13 @@ import {
   View,
 } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import {
   finanzasApi,
   type CuentaPersonalApi,
   type PresupuestoMesFila,
 } from '@finanzas/shared/api/finanzas'
-import { movimientosApi } from '@finanzas/shared/api/movimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
@@ -28,11 +28,6 @@ function montoNum(v: string | number | null | undefined): number {
   if (v == null) return 0
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
-}
-
-function montoEntero(v: string | number | null | undefined): number {
-  const n = montoNum(v)
-  return Number.isFinite(n) ? Math.round(n) : 0
 }
 
 function mesStr(anio: number, mes: number): string {
@@ -50,6 +45,27 @@ function colorBarra(pct: number): string {
   return '#22c55e'
 }
 
+/**
+ * Suma `gastado` de las filas de GET presupuesto-mes sin duplicar hijas bajo categoría padre agregada
+ * (misma estructura que arma `build_presupuesto_mes_filas` en el servidor).
+ */
+function totalGastadoDesdeFilas(filas: PresupuestoMesFila[]): number {
+  const padreAgIds = new Set(
+    filas.filter((f) => f.es_agregado_padre).map((f) => f.categoria_id),
+  )
+  let sum = 0
+  for (const f of filas) {
+    if (f.es_agregado_padre) {
+      sum += f.gastado
+      continue
+    }
+    const padreId = f.categoria_padre_id
+    if (padreId != null && padreAgIds.has(padreId)) continue
+    sum += f.gastado
+  }
+  return Math.round(sum)
+}
+
 export default function PresupuestoScreen() {
   const { formatMonto } = useConfig()
   const router = useRouter()
@@ -58,7 +74,8 @@ export default function PresupuestoScreen() {
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
   const [ambito, setAmbito] = useState<'FAMILIAR' | 'PERSONAL'>('FAMILIAR')
-  const { data: cuentasData } = useApi<CuentaPersonalApi[]>(
+  const queryClient = useQueryClient()
+  const { data: cuentasData, loading: loadingCuentas } = useApi<CuentaPersonalApi[]>(
     () => finanzasApi.getCuentasPersonales(),
     [],
   )
@@ -81,60 +98,38 @@ export default function PresupuestoScreen() {
 
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 
-  const { data, loading, error, refetch } = useApi<PresupuestoMesFila[]>(
-    () =>
-      finanzasApi.getPresupuestoMes({
-        mes: mes + 1,
-        anio,
-        ambito,
-        cuenta: ambito === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
-      }),
-    [mes, anio, ambito, cuentaPersonalId],
-  )
-  const filas = useMemo(() => data ?? [], [data])
+  const presupuestoQueryEnabled = useMemo(() => {
+    if (loadingCuentas) return false
+    if (ambito === 'FAMILIAR') return true
+    if (!cuentasPropias.length) return true
+    return cuentaPersonalId != null && cuentasPropias.some((c) => c.id === cuentaPersonalId)
+  }, [loadingCuentas, ambito, cuentasPropias, cuentaPersonalId])
 
-  type MovimientoResumen = {
-    id: number
-    monto: string | number
-    metodo_pago_tipo?: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
-    tarjeta_nombre?: string | null
-  }
-  type CuotaResumen = {
-    movimiento?: number | null
-    monto: string | number
-    estado?: 'PENDIENTE' | 'FACTURADO' | 'PAGADO' | string
-    incluir?: boolean
-  }
-  const ambitoMov = ambito === 'FAMILIAR' ? 'COMUN' : 'PERSONAL'
-  const { data: gastosMesData } = useApi<MovimientoResumen[]>(
-    () =>
-      movimientosApi.getMovimientos({
-        mes: mes + 1,
-        anio,
-        tipo: 'EGRESO',
-        ambito: ambitoMov,
-        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
-      }) as Promise<{ data: MovimientoResumen[] }>,
-    [mes, anio, ambitoMov, cuentaPersonalId],
-  )
-  const { data: movCreditosData } = useApi<MovimientoResumen[]>(
-    () =>
-      movimientosApi.getMovimientos({
-        tipo: 'EGRESO',
-        ambito: ambitoMov,
-        metodo: 'CREDITO',
-        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
-      }) as Promise<{ data: MovimientoResumen[] }>,
-    [ambitoMov, cuentaPersonalId],
-  )
-  const { data: cuotasMesData } = useApi<CuotaResumen[]>(
-    () =>
-      movimientosApi.getCuotas({
-        mes: mes + 1,
-        anio,
-      }) as Promise<{ data: CuotaResumen[] }>,
-    [mes, anio],
-  )
+  const {
+    data: presupuestoData,
+    isLoading: loadingPresupuesto,
+    error: presupuestoError,
+    refetch: refetchPresupuesto,
+  } = useQuery<PresupuestoMesFila[]>({
+    queryKey: ['presupuestoMes', 'tab', mes + 1, anio, ambito, cuentaPersonalId],
+    queryFn: () =>
+      finanzasApi
+        .getPresupuestoMes({
+          mes: mes + 1,
+          anio,
+          ambito,
+          cuenta: ambito === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
+        })
+        .then((r: { data: PresupuestoMesFila[] }) => r.data),
+    enabled: presupuestoQueryEnabled,
+  })
+
+  const filas = useMemo(() => presupuestoData ?? [], [presupuestoData])
+  const loading = loadingCuentas || !presupuestoQueryEnabled || loadingPresupuesto
+  const error = presupuestoError ? String((presupuestoError as Error).message) : null
+  const refetch = useCallback(async () => {
+    await refetchPresupuesto()
+  }, [refetchPresupuesto])
 
   useEffect(() => {
     if (ambito !== 'PERSONAL') return
@@ -148,8 +143,8 @@ export default function PresupuestoScreen() {
   useFocusEffect(
     useCallback(() => {
       if (omitirPrimerFoco.current) { omitirPrimerFoco.current = false; return }
-      void refetch()
-    }, [refetch]),
+      void queryClient.invalidateQueries({ queryKey: ['presupuestoMes'] })
+    }, [queryClient]),
   )
 
   function irAnterior() {
@@ -176,41 +171,7 @@ export default function PresupuestoScreen() {
         .reduce((s, f) => s + montoNum(f.monto_presupuestado), 0),
     [filas],
   )
-  const gastoReal = useMemo(
-    () =>
-      ((gastosMesData ?? []) as MovimientoResumen[])
-        .filter((m) => m.metodo_pago_tipo !== 'CREDITO')
-        .reduce((sum, m) => sum + montoNum(m.monto), 0),
-    [gastosMesData],
-  )
-  const cuotasPendientesPorTarjeta = useMemo(() => {
-    const movTarjetaPorId = new Map<number, string>()
-    for (const mov of (movCreditosData ?? []) as MovimientoResumen[]) {
-      movTarjetaPorId.set(mov.id, String(mov.tarjeta_nombre || 'Tarjeta'))
-    }
-    const agg = new Map<string, number>()
-    for (const cuota of (cuotasMesData ?? []) as CuotaResumen[]) {
-      const estado = String(cuota.estado ?? '').toUpperCase()
-      const incluir = Boolean(cuota.incluir ?? true)
-      if (estado === 'PAGADO' || !incluir) continue
-      const movId = Number(cuota.movimiento ?? NaN)
-      if (!Number.isFinite(movId)) continue
-      const tarjeta = movTarjetaPorId.get(movId)
-      if (!tarjeta) continue
-      agg.set(tarjeta, (agg.get(tarjeta) ?? 0) + montoNum(cuota.monto))
-    }
-    return Array.from(agg.entries())
-      .map(([tarjeta, total]) => ({ tarjeta, total }))
-      .sort((a, b) => a.tarjeta.localeCompare(b.tarjeta, 'es'))
-  }, [movCreditosData, cuotasMesData])
-  const cuotasPendientesTotal = useMemo(
-    () => cuotasPendientesPorTarjeta.reduce((sum, row) => sum + row.total, 0),
-    [cuotasPendientesPorTarjeta],
-  )
-  const totalGastado = useMemo(
-    () => Math.round(gastoReal + cuotasPendientesTotal),
-    [gastoReal, cuotasPendientesTotal],
-  )
+  const totalGastado = useMemo(() => totalGastadoDesdeFilas(filas), [filas])
   const disponible = totalPresupuestado - totalGastado
   const pctGlobal = porcentaje(totalGastado, totalPresupuestado)
 
@@ -454,15 +415,12 @@ export default function PresupuestoScreen() {
                     <Text className="text-dark font-bold text-sm">{formatMonto(totalGastado)}</Text>
                     {mostrarDetalleGastado && (
                       <View className="mt-2">
-                        <Text className="text-muted text-[10px]">Gasto real: {formatMonto(gastoReal)}</Text>
-                        <Text className="text-muted text-[10px] mt-0.5">
-                          Cuotas pendientes: {formatMonto(cuotasPendientesTotal)}
+                        <Text className="text-muted text-[10px] leading-snug">
+                          El total gastado es la suma del campo gastado por categoría devuelta por el servidor en
+                          presupuesto-mes (misma lógica que build_presupuesto_mes_filas): incluye débito y efectivo y
+                          las cuotas de tarjeta asignadas a cada categoría, sin contar dos veces las subcategorías
+                          cuando hay un padre agregado.
                         </Text>
-                        {cuotasPendientesPorTarjeta.map((row) => (
-                          <Text key={row.tarjeta} className="text-muted text-[10px] mt-0.5">
-                            - {row.tarjeta}: {formatMonto(row.total)}
-                          </Text>
-                        ))}
                       </View>
                     )}
                   </View>
