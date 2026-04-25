@@ -6,9 +6,20 @@ ENV PYTHONUNBUFFERED 1
 
 WORKDIR /app
 
-# libpq + cliente PostgreSQL (pg_dump / psql para respaldo BD)
-RUN apt-get update && apt-get install -y libpq-dev gcc postgresql-client \
+# libpq + cliente PostgreSQL 18 (pg_dump / psql para respaldo BD).
+# pg_dump debe ser igual o más nuevo que el servidor; producción usa PostgreSQL 18.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates curl gnupg gcc \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        | gpg --dearmor -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg \
+    && . /etc/os-release \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        libpq-dev postgresql-client-18 \
     && rm -rf /var/lib/apt/lists/*
+ENV PG_DUMP=/usr/lib/postgresql/18/bin/pg_dump
 
 # Instalar dependencias de Python
 COPY requirements.txt /app/

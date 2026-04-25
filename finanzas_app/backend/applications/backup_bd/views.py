@@ -150,6 +150,10 @@ CONFIRMACION_IMPORT_EMERGENCIA = 'IMPORTAR_MODO_EMERGENCIA'
 MAX_IMPORT_BYTES = 200 * 1024 * 1024
 
 
+def _env_true(name: str) -> bool:
+    return (os.environ.get(name) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -163,6 +167,16 @@ def importar_dump(request):
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
+    if not settings.DEBUG and not _env_true('ALLOW_DB_IMPORT'):
+        return Response(
+            {
+                'error': (
+                    'Importación de base de datos deshabilitada en producción. '
+                    'Define ALLOW_DB_IMPORT=true solo durante una ventana controlada si necesitas habilitarla.'
+                ),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     decoded, error = obtener_usuario_desde_token(request)
     if error:
