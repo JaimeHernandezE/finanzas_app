@@ -1,27 +1,29 @@
 """
-Filas de presupuesto vs gasto por mes (misma semántica que GET presupuesto-mes).
+Presupuesto vs gasto por mes por categoría (familiar o personal por cuenta).
+
+- Egresos con método distinto de CRÉDITO se suman por categoría según fecha del mes.
+- Los egresos a crédito no suman el monto del movimiento; sí suman las Cuota del mes
+  (mes_facturacion, incluir=True, estado distinto de PAGADO), alineado con la vista web.
 """
 
 from datetime import date
 from decimal import Decimal
 
-from django.db.models import Sum
+from django.db.models import QuerySet, Sum
 
 from applications.finanzas.models import Categoria, Cuota, Movimiento, Presupuesto
 
 
-def build_presupuesto_mes_filas(
+def _querysets_presupuesto_mes(
     usuario,
     mes: int,
     anio: int,
     ambito: str,
     cuenta_id: int | None,
-) -> list[dict]:
+) -> tuple[QuerySet, QuerySet, QuerySet]:
     """
-    Construye la lista de filas que devuelve la vista `presupuesto_mes`.
-
-    `ambito` debe ser 'FAMILIAR' o 'PERSONAL' (mayúsculas).
-    `cuenta_id` solo aplica a ámbito PERSONAL (filtra movimientos/presupuesto por cuenta).
+    Devuelve (pres_qs, mov_qs, cuotas_qs) para el ámbito y mes dados.
+    `ambito`: 'FAMILIAR' | 'PERSONAL'. `cuenta_id` solo aplica a PERSONAL.
     """
     familia_id = usuario.familia_id
     mes_first = date(anio, mes, 1)
@@ -52,8 +54,7 @@ def build_presupuesto_mes_filas(
             incluir=True,
             mes_facturacion__month=mes,
             mes_facturacion__year=anio,
-            estado='PENDIENTE',
-        )
+        ).exclude(estado='PAGADO')
     else:
         pres_qs = Presupuesto.objects.filter(
             familia_id=familia_id,
@@ -82,8 +83,7 @@ def build_presupuesto_mes_filas(
             incluir=True,
             mes_facturacion__month=mes,
             mes_facturacion__year=anio,
-            estado='PENDIENTE',
-        )
+        ).exclude(estado='PAGADO')
         if cuenta_id is not None:
             mov_qs = mov_qs.filter(cuenta_id=cuenta_id, categoria__cuenta_personal_id=cuenta_id)
             pres_qs = pres_qs.filter(categoria__cuenta_personal_id=cuenta_id)
@@ -92,16 +92,29 @@ def build_presupuesto_mes_filas(
                 movimiento__categoria__cuenta_personal_id=cuenta_id,
             )
 
-    gastos_por_cat = {
-        row['categoria_id']: row['t'] or 0
-        for row in mov_qs.values('categoria_id').annotate(t=Sum('monto'))
-    }
-    gastos_cuotas_por_cat = {
-        row['movimiento__categoria_id']: row['t'] or 0
-        for row in cuotas_qs.values('movimiento__categoria_id').annotate(t=Sum('monto'))
-    }
-    for categoria_id, total_cuotas in gastos_cuotas_por_cat.items():
-        gastos_por_cat[categoria_id] = (gastos_por_cat.get(categoria_id) or 0) + total_cuotas
+    return pres_qs, mov_qs, cuotas_qs
+
+
+def _gastado_int(g):
+    try:
+        return int(g)
+    except (TypeError, ValueError):
+        return int(float(g))
+
+
+def _monto_pres_a_decimal(monto_str):
+    if monto_str is None:
+        return Decimal('0')
+    try:
+        return Decimal(str(monto_str))
+    except Exception:
+        return Decimal('0')
+
+
+def _construir_filas(
+    pres_qs: QuerySet,
+    gastos_por_cat: dict,
+) -> list[dict]:
     pres_map = {p.categoria_id: p for p in pres_qs}
     all_ids = set(pres_map.keys()) | set(gastos_por_cat.keys())
     nombres = {c.id: c.nombre for c in Categoria.objects.filter(pk__in=all_ids)}
@@ -115,20 +128,6 @@ def build_presupuesto_mes_filas(
         .values_list('id', flat=True)
         .distinct()
     )
-
-    def _gastado_int(g):
-        try:
-            return int(g)
-        except (TypeError, ValueError):
-            return int(float(g))
-
-    def _monto_pres_a_decimal(monto_str):
-        if monto_str is None:
-            return Decimal('0')
-        try:
-            return Decimal(str(monto_str))
-        except Exception:
-            return Decimal('0')
 
     filas: list[dict] = []
     for cid in sorted(all_ids, key=lambda x: nombres.get(x, '')):
@@ -211,6 +210,141 @@ def build_presupuesto_mes_filas(
     for row in filas:
         row['categoria_padre_id'] = cat_meta.get(row['categoria_id'])
     return filas
+
+
+def total_presupuestado_filas(filas: list[dict]) -> int:
+    """Suma montos presupuestados en filas hoja con presupuesto asignado."""
+    total = Decimal('0')
+    for f in filas:
+        if f.get('es_agregado_padre'):
+            continue
+        if f.get('presupuesto_id') is None:
+            continue
+        total += _monto_pres_a_decimal(f.get('monto_presupuestado'))
+    return int(total.quantize(Decimal('1')))
+
+
+def total_gastado_coherente_filas(filas: list[dict]) -> int:
+    """
+    Suma `gastado` sin duplicar hijas bajo categoría padre agregada
+    (misma estructura que devuelve el servicio).
+    """
+    padre_ag_ids = {f['categoria_id'] for f in filas if f.get('es_agregado_padre')}
+    suma = 0
+    for f in filas:
+        if f.get('es_agregado_padre'):
+            suma += int(f.get('gastado') or 0)
+            continue
+        padre_id = f.get('categoria_padre_id')
+        if padre_id is not None and padre_id in padre_ag_ids:
+            continue
+        suma += int(f.get('gastado') or 0)
+    return suma
+
+
+def _cuotas_por_tarjeta(cuotas_qs: QuerySet) -> list[dict]:
+    rows = (
+        cuotas_qs.values('movimiento__tarjeta__nombre')
+        .annotate(t=Sum('monto'))
+        .order_by('movimiento__tarjeta__nombre')
+    )
+    out = []
+    for r in rows:
+        nombre = r['movimiento__tarjeta__nombre'] or 'Tarjeta'
+        out.append({'tarjeta': nombre, 'total': int(r['t'] or 0)})
+    return out
+
+
+def presupuesto_mes_vacio() -> dict:
+    """Payload cuando no hay familia o se necesita estructura consistente sin consultas."""
+    return {
+        'filas': [],
+        'resumen': {
+            'total_presupuestado': 0,
+            'total_gastado': 0,
+            'disponible': 0,
+            'porcentaje_gastado': 0.0,
+            'gasto_debito_efectivo': 0,
+            'cuotas_mes_total': 0,
+            'cuotas_por_tarjeta': [],
+            'monto_excedido': 0,
+        },
+    }
+
+
+def build_presupuesto_mes_payload(
+    usuario,
+    mes: int,
+    anio: int,
+    ambito: str,
+    cuenta_id: int | None,
+) -> dict:
+    """
+    Payload completo para GET presupuesto-mes: filas por categoría + resumen global.
+
+    `ambito`: 'FAMILIAR' o 'PERSONAL' (mayúsculas).
+    `cuenta_id` solo aplica a ámbito PERSONAL (filtra movimientos/presupuesto/cuotas por cuenta).
+    """
+    pres_qs, mov_qs, cuotas_qs = _querysets_presupuesto_mes(
+        usuario, mes, anio, ambito, cuenta_id
+    )
+
+    raw_debito = mov_qs.aggregate(t=Sum('monto'))['t'] or 0
+    gasto_debito_efectivo = _gastado_int(raw_debito)
+
+    raw_cuotas_total = cuotas_qs.aggregate(t=Sum('monto'))['t'] or 0
+    cuotas_mes_total = _gastado_int(raw_cuotas_total)
+
+    cuotas_por_tarjeta = _cuotas_por_tarjeta(cuotas_qs)
+
+    gastos_por_cat = {
+        row['categoria_id']: row['t'] or 0
+        for row in mov_qs.values('categoria_id').annotate(t=Sum('monto'))
+    }
+    gastos_cuotas_por_cat = {
+        row['movimiento__categoria_id']: row['t'] or 0
+        for row in cuotas_qs.values('movimiento__categoria_id').annotate(t=Sum('monto'))
+    }
+    for categoria_id, total_cuotas in gastos_cuotas_por_cat.items():
+        gastos_por_cat[categoria_id] = (gastos_por_cat.get(categoria_id) or 0) + total_cuotas
+
+    filas = _construir_filas(pres_qs, gastos_por_cat)
+
+    total_presupuestado = total_presupuestado_filas(filas)
+    # El total de la card "Gastado" debe cerrar exactamente con su desglose.
+    total_gastado = gasto_debito_efectivo + cuotas_mes_total
+    disponible = total_presupuestado - total_gastado
+    if total_presupuestado > 0:
+        porcentaje_gastado = round((total_gastado / total_presupuestado) * 100, 1)
+    else:
+        porcentaje_gastado = 0.0
+    monto_excedido = max(0, total_gastado - total_presupuestado)
+
+    resumen = {
+        'total_presupuestado': total_presupuestado,
+        'total_gastado': total_gastado,
+        'disponible': disponible,
+        'porcentaje_gastado': porcentaje_gastado,
+        'gasto_debito_efectivo': gasto_debito_efectivo,
+        'cuotas_mes_total': cuotas_mes_total,
+        'cuotas_por_tarjeta': cuotas_por_tarjeta,
+        'monto_excedido': monto_excedido,
+    }
+
+    return {'filas': filas, 'resumen': resumen}
+
+
+def build_presupuesto_mes_filas(
+    usuario,
+    mes: int,
+    anio: int,
+    ambito: str,
+    cuenta_id: int | None,
+) -> list[dict]:
+    """
+    Solo la lista de filas (compatibilidad con dashboard y llamadas internas).
+    """
+    return build_presupuesto_mes_payload(usuario, mes, anio, ambito, cuenta_id)['filas']
 
 
 def total_presupuesto_comprometido(filas: list[dict]) -> int:

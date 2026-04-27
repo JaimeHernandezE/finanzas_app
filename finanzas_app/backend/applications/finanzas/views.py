@@ -36,7 +36,7 @@ from .models import (
 )
 from . import services_recalculo
 from .services.dashboard import obtener_resumen_dashboard
-from .services.presupuesto_mes import build_presupuesto_mes_filas
+from .services.presupuesto_mes import build_presupuesto_mes_payload, presupuesto_mes_vacio
 from .serializers import (
     CategoriaSerializer,
     CuentaPersonalSerializer,
@@ -968,13 +968,19 @@ def _puede_editar_presupuesto(usuario, presupuesto):
 def presupuesto_mes(request):
     """
     GET ?mes=3&anio=2026&ambito=FAMILIAR|PERSONAL[&cuenta=ID]
-    Lista categorías con presupuesto y/o gastos del mes (egresos COMUN o PERSONAL).
+
+    Respuesta: ``{ filas: [...], resumen: { total_presupuestado, total_gastado,
+    disponible, porcentaje_gastado, gasto_debito_efectivo, cuotas_mes_total,
+    cuotas_por_tarjeta, monto_excedido } }``.
+
+    Las filas listan categorías con presupuesto y/o gastos del mes; el gastado
+    excluye movimientos CRÉDITO e incluye cuotas del mes facturado (no pagadas).
     """
     usuario, error = utils_auth.get_usuario_autenticado(request)
     if error:
         return error
     if not usuario.familia_id:
-        return Response([])
+        return Response(presupuesto_mes_vacio())
 
     try:
         mes = int(request.GET.get('mes', 0))
@@ -1001,8 +1007,8 @@ def presupuesto_mes(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    filas = build_presupuesto_mes_filas(usuario, mes, anio, ambito, cuenta_id)
-    return Response(filas)
+    payload = build_presupuesto_mes_payload(usuario, mes, anio, ambito, cuenta_id)
+    return Response(payload)
 
 
 @api_view(['POST'])

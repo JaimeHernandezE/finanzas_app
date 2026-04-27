@@ -15,6 +15,7 @@ import {
   finanzasApi,
   type CuentaPersonalApi,
   type PresupuestoMesFila,
+  type PresupuestoMesResponse,
 } from '@finanzas/shared/api/finanzas'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
@@ -43,27 +44,6 @@ function colorBarra(pct: number): string {
   if (pct >= 100) return '#ef4444'
   if (pct >= 80) return '#f59e0b'
   return '#22c55e'
-}
-
-/**
- * Suma `gastado` de las filas de GET presupuesto-mes sin duplicar hijas bajo categoría padre agregada
- * (misma estructura que arma `build_presupuesto_mes_filas` en el servidor).
- */
-function totalGastadoDesdeFilas(filas: PresupuestoMesFila[]): number {
-  const padreAgIds = new Set(
-    filas.filter((f) => f.es_agregado_padre).map((f) => f.categoria_id),
-  )
-  let sum = 0
-  for (const f of filas) {
-    if (f.es_agregado_padre) {
-      sum += f.gastado
-      continue
-    }
-    const padreId = f.categoria_padre_id
-    if (padreId != null && padreAgIds.has(padreId)) continue
-    sum += f.gastado
-  }
-  return Math.round(sum)
 }
 
 export default function PresupuestoScreen() {
@@ -110,7 +90,7 @@ export default function PresupuestoScreen() {
     isLoading: loadingPresupuesto,
     error: presupuestoError,
     refetch: refetchPresupuesto,
-  } = useQuery<PresupuestoMesFila[]>({
+  } = useQuery<PresupuestoMesResponse>({
     queryKey: ['presupuestoMes', 'tab', mes + 1, anio, ambito, cuentaPersonalId],
     queryFn: () =>
       finanzasApi
@@ -120,11 +100,12 @@ export default function PresupuestoScreen() {
           ambito,
           cuenta: ambito === 'PERSONAL' && cuentaPersonalId != null ? cuentaPersonalId : undefined,
         })
-        .then((r: { data: PresupuestoMesFila[] }) => r.data),
+        .then((r: { data: PresupuestoMesResponse }) => r.data),
     enabled: presupuestoQueryEnabled,
   })
 
-  const filas = useMemo(() => presupuestoData ?? [], [presupuestoData])
+  const filas = useMemo(() => presupuestoData?.filas ?? [], [presupuestoData])
+  const resumenMes = presupuestoData?.resumen
   const loading = loadingCuentas || !presupuestoQueryEnabled || loadingPresupuesto
   const error = presupuestoError ? String((presupuestoError as Error).message) : null
   const refetch = useCallback(async () => {
@@ -164,16 +145,12 @@ export default function PresupuestoScreen() {
     [filas],
   )
 
-  const totalPresupuestado = useMemo(
-    () =>
-      filas
-        .filter((f) => !f.es_agregado_padre && f.presupuesto_id != null)
-        .reduce((s, f) => s + montoNum(f.monto_presupuestado), 0),
-    [filas],
-  )
-  const totalGastado = useMemo(() => totalGastadoDesdeFilas(filas), [filas])
-  const disponible = totalPresupuestado - totalGastado
-  const pctGlobal = porcentaje(totalGastado, totalPresupuestado)
+  const totalPresupuestado = resumenMes?.total_presupuestado ?? 0
+  const totalGastado = resumenMes?.total_gastado ?? 0
+  const disponible = resumenMes?.disponible ?? 0
+  const pctGlobal =
+    resumenMes?.porcentaje_gastado ?? porcentaje(totalGastado, totalPresupuestado)
+  const pctBarraGlobal = Math.min(pctGlobal, 100)
 
   const bloquesConPresupuesto = useMemo(() => {
     const conP = filas.filter((f) => {
@@ -413,14 +390,19 @@ export default function PresupuestoScreen() {
                       </TouchableOpacity>
                     </View>
                     <Text className="text-dark font-bold text-sm">{formatMonto(totalGastado)}</Text>
-                    {mostrarDetalleGastado && (
-                      <View className="mt-2">
+                    {mostrarDetalleGastado && resumenMes && (
+                      <View className="mt-2 gap-0.5">
                         <Text className="text-muted text-[10px] leading-snug">
-                          El total gastado es la suma del campo gastado por categoría devuelta por el servidor en
-                          presupuesto-mes (misma lógica que build_presupuesto_mes_filas): incluye débito y efectivo y
-                          las cuotas de tarjeta asignadas a cada categoría, sin contar dos veces las subcategorías
-                          cuando hay un padre agregado.
+                          Gasto débito/efectivo: {formatMonto(resumenMes.gasto_debito_efectivo)}
                         </Text>
+                        <Text className="text-muted text-[10px] leading-snug">
+                          Cuotas del mes: {formatMonto(resumenMes.cuotas_mes_total)}
+                        </Text>
+                        {resumenMes.cuotas_por_tarjeta.map((row) => (
+                          <Text key={row.tarjeta} className="text-muted text-[10px] leading-snug">
+                            — {row.tarjeta}: {formatMonto(row.total)}
+                          </Text>
+                        ))}
                       </View>
                     )}
                   </View>
@@ -445,7 +427,7 @@ export default function PresupuestoScreen() {
                   <View className="h-2 bg-border rounded-full overflow-hidden">
                     <View
                       className="h-2 rounded-full"
-                      style={{ width: `${pctGlobal}%`, backgroundColor: colorBarra(pctGlobal) }}
+                      style={{ width: `${pctBarraGlobal}%`, backgroundColor: colorBarra(pctBarraGlobal) }}
                     />
                   </View>
                 </View>

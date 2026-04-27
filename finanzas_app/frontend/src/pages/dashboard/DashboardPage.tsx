@@ -4,7 +4,7 @@ import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi, movimientosApi } from '@/api'
-import type { DashboardResumenApi, PresupuestoMesFila } from '@/api/finanzas'
+import type { DashboardResumenApi, PresupuestoMesFila, PresupuestoMesResponse } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import InputMontoClp from '@/components/ui/InputMontoClp/InputMontoClp'
 import { montoClpANumero } from '@/utils/montoClp'
@@ -656,7 +656,7 @@ export default function DashboardPage() {
       setCuentaTab(cuentasPropias[0].id)
     }
   }, [cuentasPropias, cuentaTab])
-  const { data: presupuestoData, loading: loadingPresupuesto, error: errorPresupuesto } = useApi<PresupuestoMesFila[]>(
+  const { data: presupuestoMesApi, loading: loadingPresupuesto, error: errorPresupuesto } = useApi<PresupuestoMesResponse>(
     () =>
       finanzasApi.getPresupuestoMes({
         mes: mes + 1,
@@ -666,6 +666,7 @@ export default function DashboardPage() {
       }),
     [mes, anio, cuentaTab],
   )
+  const presupuestoData = presupuestoMesApi?.filas ?? []
 
   const deudaTc = useMemo(() => {
     const t = deudaRes?.total
@@ -955,12 +956,9 @@ export default function DashboardPage() {
         return a.nombreBase.localeCompare(b.nombreBase, 'es', { sensitivity: 'base' })
       })
   }, [presupuestoData])
-  const totalCatGastado = categoriasComparadas
-    .filter(c => !c.esAgregadoPadre)
-    .reduce((s, c) => s + c.gastado, 0)
-  const totalCatPresupuestado = categoriasComparadas
-    .filter(c => !c.esAgregadoPadre)
-    .reduce((s, c) => s + c.presupuestado, 0)
+  const resumenPresupuestoMes = presupuestoMesApi?.resumen
+  const totalCatGastado = resumenPresupuestoMes?.total_gastado ?? 0
+  const totalCatPresupuestado = resumenPresupuestoMes?.total_presupuestado ?? 0
 
   const linkListadoCuentaActiva = useMemo(() => {
     if (cuentaTab !== null) return `/gastos/cuenta/${cuentaTab}`

@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { finanzasApi, type PresupuestoMesFila } from '@/api/finanzas'
-import { movimientosApi } from '@/api/movimientos'
+import { finanzasApi, type PresupuestoMesFila, type PresupuestoMesResponse } from '@/api/finanzas'
 import { useApi } from '@/hooks/useApi'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
@@ -242,7 +241,7 @@ export default function PresupuestoPage() {
     }
   }, [ambito, cuentasPropias, cuentaPersonalId])
 
-  const { data: rawFilas, loading, error, refetch } = useApi<PresupuestoMesFila[]>(
+  const { data: presupuestoPayload, loading, error, refetch } = useApi<PresupuestoMesResponse>(
     () =>
       finanzasApi.getPresupuestoMes({
         mes: mes + 1,
@@ -252,43 +251,8 @@ export default function PresupuestoPage() {
       }),
     [mes, anio, ambito, cuentaPersonalId],
   )
-  type MovimientoResumen = {
-    id: number
-    movimiento?: number | null
-    monto: string | number
-    metodo_pago_tipo?: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
-    tarjeta_nombre?: string | null
-  }
-  const ambitoMov = ambito === 'FAMILIAR' ? 'COMUN' : 'PERSONAL'
-  const { data: gastosMesData } = useApi<MovimientoResumen[]>(
-    () =>
-      movimientosApi.getMovimientos({
-        mes: mes + 1,
-        anio,
-        tipo: 'EGRESO',
-        ambito: ambitoMov,
-        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
-      }),
-    [mes, anio, ambitoMov, cuentaPersonalId],
-  )
-  const { data: movCreditosData } = useApi<MovimientoResumen[]>(
-    () =>
-      movimientosApi.getMovimientos({
-        tipo: 'EGRESO',
-        ambito: ambitoMov,
-        metodo: 'CREDITO',
-        cuenta: ambitoMov === 'PERSONAL' && cuentaPersonalId !== null ? cuentaPersonalId : undefined,
-      }),
-    [ambitoMov, cuentaPersonalId],
-  )
-  const { data: cuotasPendientesMesData } = useApi<Array<{ movimiento?: number | null; monto: string | number }>>(
-    () =>
-      movimientosApi.getCuotas({
-        mes: mes + 1,
-        anio,
-      }),
-    [mes, anio],
-  )
+  const rawFilas = presupuestoPayload?.filas ?? []
+  const resumenMes = presupuestoPayload?.resumen
 
   const { data: categoriasData } = useCategorias({
     ambito,
@@ -307,10 +271,7 @@ export default function PresupuestoPage() {
     [categoriasData],
   )
 
-  const categorias = useMemo(
-    () => (rawFilas ?? []).map(filaToCat),
-    [rawFilas],
-  )
+  const categorias = useMemo(() => rawFilas.map(filaToCat), [rawFilas])
 
   const [showAddForm, setShowAddForm] = useState(false)
   const [newCategoryId, setNewCategoryId] = useState('')
@@ -357,45 +318,13 @@ export default function PresupuestoPage() {
     [categorias],
   )
 
-  const totalPresupuestado = categorias
-    .filter(c => !c.esAgregadoPadre && c.presupuestoId != null)
-    .reduce((s, c) => s + (c.presupuestado ?? 0), 0)
-  const gastoReal = useMemo(
-    () =>
-      ((gastosMesData ?? []) as MovimientoResumen[])
-        .filter((m) => m.metodo_pago_tipo !== 'CREDITO')
-        .reduce((sum, m) => sum + (Number(m.monto) || 0), 0),
-    [gastosMesData],
-  )
-  const cuotasPendientesPorTarjeta = useMemo(() => {
-    const movTarjetaPorId = new Map<number, string>()
-    for (const mov of (movCreditosData ?? []) as MovimientoResumen[]) {
-      movTarjetaPorId.set(mov.id, String(mov.tarjeta_nombre || 'Tarjeta'))
-    }
-    const agg = new Map<string, number>()
-    for (const cuota of (cuotasPendientesMesData ?? [])) {
-      const cuotaEstado = String((cuota as { estado?: string }).estado ?? '').toUpperCase()
-      const cuotaIncluir = Boolean((cuota as { incluir?: boolean }).incluir ?? true)
-      if (cuotaEstado === 'PAGADO') continue
-      if (!cuotaIncluir) continue
-      const movId = Number(cuota.movimiento ?? NaN)
-      if (!Number.isFinite(movId)) continue
-      const tarjeta = movTarjetaPorId.get(movId)
-      if (!tarjeta) continue
-      agg.set(tarjeta, (agg.get(tarjeta) ?? 0) + (Number(cuota.monto) || 0))
-    }
-    return Array.from(agg.entries())
-      .map(([tarjeta, total]) => ({ tarjeta, total }))
-      .sort((a, b) => a.tarjeta.localeCompare(b.tarjeta, 'es'))
-  }, [movCreditosData, cuotasPendientesMesData])
-  const cuotasPendientesTotal = useMemo(
-    () => cuotasPendientesPorTarjeta.reduce((sum, row) => sum + row.total, 0),
-    [cuotasPendientesPorTarjeta],
-  )
-  const totalGastado = Math.round(gastoReal + cuotasPendientesTotal)
-  const disponible = totalPresupuestado - totalGastado
-  const porcentajeGeneral =
-    totalPresupuestado > 0 ? (totalGastado / totalPresupuestado) * 100 : 0
+  const totalPresupuestado = resumenMes?.total_presupuestado ?? 0
+  const totalGastado = resumenMes?.total_gastado ?? 0
+  const disponible = resumenMes?.disponible ?? 0
+  const porcentajeGeneral = resumenMes?.porcentaje_gastado ?? 0
+  const gastoReal = resumenMes?.gasto_debito_efectivo ?? 0
+  const cuotasPendientesTotal = resumenMes?.cuotas_mes_total ?? 0
+  const cuotasPendientesPorTarjeta = resumenMes?.cuotas_por_tarjeta ?? []
 
   const bloquesConPresupuesto = useMemo(() => {
     const padreIds = new Set(

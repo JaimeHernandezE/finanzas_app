@@ -16,7 +16,7 @@ import axios from 'axios'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { apiErrorMessage, finanzasApi, movimientosApi } from '@finanzas/shared/api'
-import type { DashboardResumenApi, PresupuestoMesFila } from '@finanzas/shared/api/finanzas'
+import type { DashboardResumenApi, PresupuestoMesFila, PresupuestoMesResponse } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
 
@@ -197,7 +197,7 @@ export default function DashboardScreen() {
     return cuentaTab != null && cuentasPersonales.some((c) => c.id === cuentaTab)
   }, [qCuentas.isLoading, cuentasPersonales, cuentaTab])
 
-  const qPresupuesto = useQuery<PresupuestoMesFila[]>({
+  const qPresupuesto = useQuery<PresupuestoMesResponse>({
     queryKey: ['presupuestoMes', mes + 1, anio, cuentaTab],
     queryFn: () =>
       finanzasApi.getPresupuestoMes({
@@ -205,7 +205,7 @@ export default function DashboardScreen() {
         anio,
         ambito: 'PERSONAL',
         cuenta: cuentaTab ?? undefined,
-      }).then((r: any) => r.data as PresupuestoMesFila[]),
+      }).then((r: { data: PresupuestoMesResponse }) => r.data),
     enabled: presupuestoQueryEnabled,
   })
 
@@ -323,7 +323,7 @@ export default function DashboardScreen() {
   }, [movimientosCuenta])
 
   const categoriasComparadas = useMemo(() => {
-    const data = qPresupuesto.data ?? []
+    const data = qPresupuesto.data?.filas ?? []
     const nombrePorId = new Map(data.map(f => [f.categoria_id, f.categoria_nombre || '']))
     return data
       .filter((f) => {
@@ -366,20 +366,9 @@ export default function DashboardScreen() {
       })
   }, [qPresupuesto.data])
 
-  const totalCatGastado = useMemo(
-    () =>
-      categoriasComparadas
-        .filter((c) => !c.esAgregadoPadre)
-        .reduce((s, c) => s + c.gastado, 0),
-    [categoriasComparadas],
-  )
-  const totalCatPresupuestado = useMemo(
-    () =>
-      categoriasComparadas
-        .filter((c) => !c.esAgregadoPadre)
-        .reduce((s, c) => s + c.presupuestado, 0),
-    [categoriasComparadas],
-  )
+  const resumenPresupuestoMes = qPresupuesto.data?.resumen
+  const totalCatGastado = resumenPresupuestoMes?.total_gastado ?? 0
+  const totalCatPresupuestado = resumenPresupuestoMes?.total_presupuestado ?? 0
 
   function irAnterior() {
     if (mes === 0) { setMes(11); setAnio(a => a - 1) }

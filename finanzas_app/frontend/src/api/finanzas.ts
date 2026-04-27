@@ -20,6 +20,22 @@ export interface PresupuestoMesFila {
   categoria_padre_id?: number | null
 }
 
+export interface PresupuestoMesResumen {
+  total_presupuestado: number
+  total_gastado: number
+  disponible: number
+  porcentaje_gastado: number
+  gasto_debito_efectivo: number
+  cuotas_mes_total: number
+  cuotas_por_tarjeta: { tarjeta: string; total: number }[]
+  monto_excedido: number
+}
+
+export interface PresupuestoMesResponse {
+  filas: PresupuestoMesFila[]
+  resumen: PresupuestoMesResumen
+}
+
 export interface ImportacionCuentaPersonalResult {
   ok: boolean
   dry_run: boolean
@@ -291,9 +307,8 @@ export const finanzasApi = {
   recalcularHistorico: () =>
     client.post<RecalculoHistoricoResult>('/api/finanzas/recalculo/historico/'),
 
-  /** Filas categoría + presupuesto/gastado del mes */
   getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL'; cuenta?: number }) =>
-    client.get<PresupuestoMesFila[]>('/api/finanzas/presupuesto-mes/', { params }),
+    client.get<PresupuestoMesResponse>('/api/finanzas/presupuesto-mes/', { params }),
 
   createPresupuesto: (data: {
     categoria: number

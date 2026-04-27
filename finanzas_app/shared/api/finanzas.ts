@@ -22,6 +22,23 @@ export interface PresupuestoMesFila {
   categoria_padre_id?: number | null
 }
 
+/** GET /api/finanzas/presupuesto-mes/ — campo `resumen` */
+export interface PresupuestoMesResumen {
+  total_presupuestado: number
+  total_gastado: number
+  disponible: number
+  porcentaje_gastado: number
+  gasto_debito_efectivo: number
+  cuotas_mes_total: number
+  cuotas_por_tarjeta: { tarjeta: string; total: number }[]
+  monto_excedido: number
+}
+
+export interface PresupuestoMesResponse {
+  filas: PresupuestoMesFila[]
+  resumen: PresupuestoMesResumen
+}
+
 export interface EfectivoDisponibleDesglose {
   a: string
   b: string
@@ -123,9 +140,9 @@ export const finanzasApi = {
   getLiquidacion: (mes: number, anio: number) =>
     client.get('/api/finanzas/liquidacion/', { params: { mes, anio } }),
 
-  /** Filas categoría + presupuesto/gastado del mes */
+  /** Filas categoría + presupuesto/gastado del mes y resumen global (totales calculados en servidor) */
   getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL'; cuenta?: number }) =>
-    client.get<PresupuestoMesFila[]>('/api/finanzas/presupuesto-mes/', { params }),
+    client.get<PresupuestoMesResponse>('/api/finanzas/presupuesto-mes/', { params }),
 
   createPresupuesto: (data: {
     categoria: number
