@@ -447,6 +447,23 @@
   margin-bottom: $space-6;
 }
 
+.seleccionarTodoRow {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-3 $space-4;
+  border-bottom: 1px solid #e8e8e4;
+  background: #fafaf8;
+}
+
+.seleccionarTodoText {
+  font-size: $font-size-xs;
+  font-weight: $font-weight-semibold;
+  color: $color-text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .cuotaRow {
   display: flex;
   align-items: flex-start;

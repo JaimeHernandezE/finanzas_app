@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, InputMontoClp, Select, Textarea, CategoriaSelect } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
@@ -111,11 +111,13 @@ const fechaIso = (anio: number, mesIndex: number, dia: number) => {
 function CuotaRow({
   cuota,
   totalCuotas,
+  fechaMovimiento,
   onToggleIncluir,
   onOpenMovimiento,
 }: {
   cuota: Cuota
   totalCuotas?: number
+  fechaMovimiento?: string | null
   onToggleIncluir: (id: number) => void
   onOpenMovimiento?: (movimientoId: number) => void
 }) {
@@ -166,6 +168,7 @@ function CuotaRow({
         onChange={() => onToggleIncluir(cuota.id)}
         aria-label={`Incluir cuota ${cuota.numero ?? cuota.numeroCuota ?? ''}${totalCuotas ? ` de ${totalCuotas}` : ''} en el pago`}
       />
+      <span className={styles.movFecha}>{fechaMovimiento ? fechaCorta(fechaMovimiento) : '—'}</span>
       <div className={styles.cuotaContent}>
         <div className={styles.cuotaLinePrimaria}>
           <span className={`${styles.cuotaDesc} ${excluida ? styles.excluida : ''}`}>
@@ -679,6 +682,7 @@ export default function PagarTarjetaPage() {
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [errorPago, setErrorPago] = useState<string | null>(null)
+  const seleccionarTodoRef = useRef<HTMLInputElement | null>(null)
   const returnTo = `${location.pathname}${location.search}`
 
   const toMonthIndex = (fecha: string | undefined) => {
@@ -761,6 +765,30 @@ export default function PagarTarjetaPage() {
     const c = cuotasConSeleccionLocal.find(x => x.id === id)
     if (!c) return
     setIncluirPorCuota((prev) => ({ ...prev, [id]: !c.incluir }))
+  }
+  const cuotasToggleables = useMemo(
+    () => cuotasFiltradas.filter(c => c.estado !== 'PAGADO'),
+    [cuotasFiltradas],
+  )
+  const todasCuotasSeleccionadas = cuotasToggleables.length > 0
+    && cuotasToggleables.every(c => c.incluir)
+  const algunasCuotasSeleccionadas = cuotasToggleables.some(c => c.incluir)
+
+  useEffect(() => {
+    if (!seleccionarTodoRef.current) return
+    seleccionarTodoRef.current.indeterminate = algunasCuotasSeleccionadas && !todasCuotasSeleccionadas
+  }, [algunasCuotasSeleccionadas, todasCuotasSeleccionadas])
+
+  const toggleSeleccionTodas = () => {
+    if (cuotasToggleables.length === 0) return
+    const incluirTodas = !todasCuotasSeleccionadas
+    setIncluirPorCuota((prev) => {
+      const next = { ...prev }
+      for (const cuota of cuotasToggleables) {
+        next[cuota.id] = incluirTodas
+      }
+      return next
+    })
   }
 
   const agregarCargo = (descripcion: string, monto: number) => {
@@ -996,6 +1024,17 @@ export default function PagarTarjetaPage() {
           : (esPersonal ? 'sin-cuenta-personal' : 'sin-cuenta-familiar'),
         cuentaNombre: mov.cuenta_nombre || (esPersonal ? 'Sin cuenta (personal)' : 'Sin cuenta (familiar)'),
       })
+    }
+    return map
+  }, [movimientosPersonalesTarjeta, movimientosComunesTarjeta])
+  const fechaMovimientoPorId = useMemo(() => {
+    const map = new Map<number, string>()
+    const all = [
+      ...movimientosPersonalesTarjeta,
+      ...movimientosComunesTarjeta,
+    ]
+    for (const mov of all) {
+      if (!map.has(mov.id)) map.set(mov.id, mov.fecha)
     }
     return map
   }, [movimientosPersonalesTarjeta, movimientosComunesTarjeta])
@@ -1289,23 +1328,40 @@ export default function PagarTarjetaPage() {
             {cuotasFiltradas.length === 0 ? (
               <EmptyStateCuotas />
             ) : (
-              cuotasFacturadasPorCuenta.map(grupo => (
-                <div key={grupo.cuentaKey} className={styles.movSubGrupo}>
-                  <div className={styles.movSubGrupoHeader}>
-                    <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
-                    <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
-                  </div>
-                  {grupo.cuotas.map(cuota => (
-                    <CuotaRow
-                      key={cuota.id}
-                      cuota={cuota}
-                      totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
-                      onToggleIncluir={toggleIncluir}
-                      onOpenMovimiento={irEditarMovimiento}
-                    />
-                  ))}
+              <>
+                <div className={styles.seleccionarTodoRow}>
+                  <input
+                    ref={seleccionarTodoRef}
+                    type="checkbox"
+                    className={styles.cuotaCheckbox}
+                    checked={todasCuotasSeleccionadas}
+                    disabled={cuotasToggleables.length === 0}
+                    onChange={toggleSeleccionTodas}
+                    aria-label="Seleccionar o deseleccionar todas las cuotas no pagadas"
+                  />
+                  <span className={styles.seleccionarTodoText}>
+                    Seleccionar/deseleccionar todo
+                  </span>
                 </div>
-              ))
+                {cuotasFacturadasPorCuenta.map(grupo => (
+                  <div key={grupo.cuentaKey} className={styles.movSubGrupo}>
+                    <div className={styles.movSubGrupoHeader}>
+                      <span className={styles.movSubGrupoTitulo}>{grupo.cuentaNombre}</span>
+                      <span className={styles.movSubGrupoTotal}>{formatMonto(grupo.total)}</span>
+                    </div>
+                    {grupo.cuotas.map(cuota => (
+                      <CuotaRow
+                        key={cuota.id}
+                        cuota={cuota}
+                        totalCuotas={cuota.movimiento ? totalCuotasPorMovimiento.get(cuota.movimiento) : undefined}
+                        fechaMovimiento={cuota.movimiento ? (fechaMovimientoPorId.get(cuota.movimiento) ?? null) : null}
+                        onToggleIncluir={toggleIncluir}
+                        onOpenMovimiento={irEditarMovimiento}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </>
             )}
           </div>
 
