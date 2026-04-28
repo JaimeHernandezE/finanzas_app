@@ -1081,8 +1081,22 @@ export default function PagarTarjetaPage() {
       entry.cuotas.push(cuota)
       map.set(cuentaKey, entry)
     }
-    return Array.from(map.values()).sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
-  }, [cuotasFiltradas, movimientoMetaPorId])
+    return Array.from(map.values())
+      .map((grupo) => ({
+        ...grupo,
+        cuotas: [...grupo.cuotas].sort((a, b) => {
+          const movA = Number(a.movimiento ?? a.movimientoId ?? NaN)
+          const movB = Number(b.movimiento ?? b.movimientoId ?? NaN)
+          const fechaA = Number.isFinite(movA) ? fechaMovimientoPorId.get(movA) ?? null : null
+          const fechaB = Number.isFinite(movB) ? fechaMovimientoPorId.get(movB) ?? null : null
+          const idxA = toMonthIndex(fechaA ?? a.mes_facturacion) ?? Number.MAX_SAFE_INTEGER
+          const idxB = toMonthIndex(fechaB ?? b.mes_facturacion) ?? Number.MAX_SAFE_INTEGER
+          if (idxA !== idxB) return idxA - idxB
+          return a.id - b.id
+        }),
+      }))
+      .sort((a, b) => a.cuentaNombre.localeCompare(b.cuentaNombre, 'es'))
+  }, [cuotasFiltradas, movimientoMetaPorId, fechaMovimientoPorId])
 
   if (cuotasLoading || cuotasTarjetaLoading || movPersonalLoading || movComunLoading) return <Cargando />
   if (cuotasError || cuotasTarjetaError || movPersonalError || movComunError) {
