@@ -77,7 +77,10 @@ class Usuario(AbstractUser):
         max_length=64,
         default='America/Santiago',
         help_text='Zona horaria IANA preferida del usuario (ej: America/Santiago, Europe/Madrid). '
-                  'Usada en el cliente para formatear fechas y horas.',
+                  'Usada en el cliente para formatear fechas y horas. '
+                  'Los workflows en .github/workflows/ usan cron UTC pensados para ejecutarse entre '
+                  '02:00 y 04:00 hora local Chile (default America/Santiago); si cambias esa franja, '
+                  'recalcula los UTC en los YAML.',
     )
 
     def cuentas_visibles(self):

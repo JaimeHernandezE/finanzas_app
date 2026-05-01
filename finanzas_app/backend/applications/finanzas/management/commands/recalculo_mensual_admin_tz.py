@@ -15,8 +15,9 @@ from applications.finanzas.management.commands.rollover_presupuestos_mensuales i
 class Command(BaseCommand):
     help = (
         'Ejecuta tareas de inicio de mes si la hora local del administrador es '
-        'día 1 a las 02:00: rollover de presupuestos, recálculo histórico y '
-        'reparación de cuotas.'
+        'día 1 entre las 02:00 y las 03:59 (horas de reloj 2 y 3): rollover de '
+        'presupuestos, recálculo histórico y reparación de cuotas. '
+        'Permite un único cron UTC mensual alineado con Chile (DST).'
     )
 
     def add_arguments(self, parser):
@@ -29,7 +30,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--force',
             action='store_true',
-            help='Ejecuta aunque no sea día 1 a las 02:00 en la zona horaria admin.',
+            help='Ejecuta aunque no sea día 1 en la ventana horaria local esperada.',
         )
 
     def handle(self, *args, **options):
@@ -54,12 +55,13 @@ class Command(BaseCommand):
             tz = ZoneInfo(tz_name)
 
         ahora_local = timezone.now().astimezone(tz)
-        en_ventana = ahora_local.day == 1 and ahora_local.hour == 2
+        # Ventana horas 2 y 3 locales: cron workflow `0 6 1 * *` (UTC) → ~02:00 o ~03:00 CL según offset.
+        en_ventana = ahora_local.day == 1 and ahora_local.hour in (2, 3)
         if not force and not en_ventana:
             self.stdout.write(
                 self.style.WARNING(
                     f'Se omite ejecución: ahora local admin ({tz_name}) es {ahora_local.isoformat()} '
-                    '(se requiere día 1, 02:00).'
+                    '(se requiere día 1, entre 02:00 y 03:59).'
                 )
             )
             return

@@ -143,3 +143,19 @@ def get_usuario_autenticado(request):
             status=status.HTTP_403_FORBIDDEN,
         )
     return usuario, None
+
+
+def obtener_usuario_opcional(request):
+    """
+    Si viene Authorization: Bearer, intenta resolver al Usuario.
+    Si no hay cabecera, el token falla o el usuario no existe → None (sin Response).
+
+    Útil para endpoints públicos que enriquecen la respuesta cuando hay sesión válida.
+    """
+    auth_header = request.headers.get('Authorization', '')
+    if not auth_header.startswith('Bearer '):
+        return None
+    usuario, err = get_usuario_autenticado(request)
+    if err is not None:
+        return None
+    return usuario

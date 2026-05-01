@@ -26,6 +26,10 @@ export interface Usuario {
   foto:    string | null
   rol:     string
   familia: { id: number; nombre: string } | null
+  /** IANA, coincide con `Usuario.zona_horaria` en Django (ej. America/Santiago). */
+  zona_horaria?: string
+  idioma_ui?: string
+  moneda_display?: string
 }
 
 interface AuthContextType {

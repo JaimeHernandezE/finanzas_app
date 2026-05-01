@@ -22,6 +22,8 @@ import {
   MovimientoFormulario,
   type MovimientoFormularioRef,
 } from '../../components/movimientos/MovimientoFormulario'
+import { useAuth } from '../../context/AuthContext'
+import { hoyIsoEnZonaHoraria } from '../../lib/fechasZona'
 
 interface Tarjeta {
   id: number
@@ -128,7 +130,9 @@ function lineaCategoriaComentarioCuota(c: Cuota, detallePorMov?: DetalleMovMap):
 }
 
 export default function TarjetaPagarScreen() {
-  const { formatMonto } = useConfig()
+  const { formatMonto, config } = useConfig()
+  const { user } = useAuth()
+  const zonaEfectiva = user?.zona_horaria ?? config.zona_horaria ?? 'America/Santiago'
   const router = useRouter()
   const params = useLocalSearchParams<{
     tarjeta?: string
@@ -615,7 +619,7 @@ export default function TarjetaPagarScreen() {
         tarjeta_id: tarjetaIdEfectivo,
         mes: mes + 1,
         anio,
-        fecha_pago: new Date().toISOString().slice(0, 10),
+        fecha_pago: hoyIsoEnZonaHoraria(zonaEfectiva),
         cuota_ids: cuotasPorPagar.map((c) => c.id),
       })
       setCargosAdicionales([])

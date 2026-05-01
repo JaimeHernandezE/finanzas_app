@@ -663,13 +663,19 @@ def configuracion_global(request):
     Retorna la configuración global de la app: zona horaria, moneda, formato.
     No requiere autenticación — se consume antes del login.
 
+    Si el cliente envía un Bearer válido, zona_horaria refleja ``Usuario.zona_horaria``
+    (preferencia IANA del modelo); si no, se usa ``TIME_ZONE`` del proyecto.
+
     En el futuro este endpoint puede incluir el tipo de cambio
     obtenido de una API externa (ej: mindicador.cl para CLP/USD).
     """
-    from django.conf import settings
+    zona_horaria = settings.TIME_ZONE
+    usuario_opt = utils_auth.obtener_usuario_opcional(request)
+    if usuario_opt is not None and (usuario_opt.zona_horaria or '').strip():
+        zona_horaria = usuario_opt.zona_horaria.strip()
 
     return Response({
-        'zona_horaria': settings.TIME_ZONE,
+        'zona_horaria': zona_horaria,
         'es_demo': getattr(settings, 'DEMO', False),
         'moneda': {
             'codigo':              settings.MONEDA_BASE,

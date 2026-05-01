@@ -1,10 +1,10 @@
 name: Tareas inicio de mes (admin TZ)
 
+# Día 1 de cada mes a las 06:00 UTC ≈ 02:00 America/Santiago cuando el offset es UTC−4.
+# Con UTC−3 suele corresponder a ~03:00 local (desfase de una hora al cambiar horario; GitHub solo permite cron UTC).
 on:
   schedule:
-    # Se ejecuta cada hora el día 1 (UTC). El comando decide si corresponde
-    # según la zona horaria del administrador (día 1, 02:00 local).
-    - cron: '0 * 1 * *'
+    - cron: '0 6 1 * *'
   workflow_dispatch:
 
 jobs:

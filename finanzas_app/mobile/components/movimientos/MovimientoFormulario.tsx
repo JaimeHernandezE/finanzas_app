@@ -33,6 +33,9 @@ import {
   createMovimientoOptimistic,
   patchMovimientoOptimistic,
 } from '../../lib/movimientosOffline'
+import { useAuth } from '../../context/AuthContext'
+import { useConfig } from '@finanzas/shared/context/ConfigContext'
+import { hoyIsoEnZonaHoraria } from '../../lib/fechasZona'
 
 export type MovimientoFormularioRef = {
   abrirNuevoComun: () => void
@@ -170,8 +173,9 @@ function displayToIso(display: string): string {
   return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
 
-function todayDisplay(): string {
-  return isoToDisplay(new Date().toISOString().slice(0, 10))
+/** Fecha de hoy en DD/MM/AAAA según zona IANA (Usuario.zona_horaria / config). */
+function todayDisplay(zonaHoraria: string): string {
+  return isoToDisplay(hoyIsoEnZonaHoraria(zonaHoraria))
 }
 
 function dateToIsoLocal(date: Date): string {
@@ -194,7 +198,9 @@ function displayToDate(display: string): Date | null {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-function formInicial() {
+const ZONA_HORARIA_DEFAULT = 'America/Santiago'
+
+function formInicial(zonaHoraria: string) {
   return {
     comentario: '',
     monto: '',
@@ -202,12 +208,12 @@ function formInicial() {
     tarjeta: 0,
     num_cuotas: '',
     monto_cuota: '',
-    fecha: todayDisplay(),
+    fecha: todayDisplay(zonaHoraria),
     ambito: 'COMUN' as 'COMUN' | 'PERSONAL',
     cuenta: 0,
   }
 }
-const FORM_INICIAL = formInicial()
+const FORM_INICIAL = formInicial(ZONA_HORARIA_DEFAULT)
 
 function cuentaPersonalPrimero(a: CuentaPersonalApi, b: CuentaPersonalApi) {
   const ap = a.nombre.trim().toLowerCase() === 'personal'
@@ -267,6 +273,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       return all.find((c) => c.id === cuentaFija)?.nombre ?? `Cuenta #${cuentaFija}`
     }, [cuentaFija, cuentasRes])
 
+    const { user } = useAuth()
+    const { config } = useConfig()
+    const zonaEfectiva = user?.zona_horaria ?? config.zona_horaria ?? ZONA_HORARIA_DEFAULT
+
     const [showForm, setShowForm] = useState(false)
     const [saving, setSaving] = useState(false)
     const [tipo, setTipo] = useState<TipoMovimiento>('EGRESO')
@@ -324,7 +334,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setEditingId(null)
       setVinculoIngresoComun(false)
       setCreditoTarjetaFijaId(null)
-      setForm(formInicial())
+      setForm(formInicial(zonaEfectiva))
       setTipo('EGRESO')
       setMetodoTipo('DEBITO')
       setErrorGeneral(null)
@@ -337,7 +347,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       setEditingId(null)
       setVinculoIngresoComun(false)
       setCreditoTarjetaFijaId(tarjetaId)
-      const inicial = formInicial()
+      const inicial = formInicial(zonaEfectiva)
       inicial.ambito = 'PERSONAL'
       inicial.cuenta = cuentasPropias[0]?.id ?? 0
       inicial.tarjeta = tarjetaId
@@ -433,7 +443,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setEditingId(null)
         setVinculoIngresoComun(false)
         setForm({
-          ...formInicial(),
+          ...formInicial(zonaEfectiva),
           ambito: 'PERSONAL',
           cuenta: cuentaFija,
         })
@@ -443,7 +453,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setBaseMetodoPagoId(null)
         setShowForm(true)
       }
-    }, [esStandalone, cuentaFija])
+    }, [esStandalone, cuentaFija, zonaEfectiva])
 
     useFocusEffect(
       useCallback(() => {
@@ -452,7 +462,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setVinculoIngresoComun(false)
         setCreditoTarjetaFijaId(null)
         setForm({
-          ...formInicial(),
+          ...formInicial(zonaEfectiva),
           ambito: 'PERSONAL',
           cuenta: cuentaFija,
         })
@@ -461,7 +471,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setErrorGeneral(null)
         setBaseMetodoPagoId(null)
         setShowForm(true)
-      }, [esStandalone, cuentaFija, editar]),
+      }, [esStandalone, cuentaFija, editar, zonaEfectiva]),
     )
 
     useEffect(() => {
@@ -474,7 +484,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setVinculoIngresoComun(false)
         setCreditoTarjetaFijaId(null)
         setForm({
-          ...formInicial(),
+          ...formInicial(zonaEfectiva),
           ambito: ambitoForm,
           cuenta: ambitoForm === 'PERSONAL' ? cuentaId : 0,
         })
@@ -485,7 +495,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         setShowForm(true)
         router.replace('/(tabs)/gastos')
       }
-    }, [esStandalone, nuevo, ambito, cuenta, router])
+    }, [esStandalone, nuevo, ambito, cuenta, router, zonaEfectiva])
 
     useEffect(() => {
       if (esStandalone) return
@@ -616,7 +626,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
       }, 220)
     }
 
-    const fechaPickerValue = useMemo(() => displayToDate(form.fecha) ?? new Date(), [form.fecha])
+    const fechaPickerValue = useMemo(() => {
+      const desdeForm = displayToDate(form.fecha)
+      if (desdeForm) return desdeForm
+      const desdeZona = displayToDate(isoToDisplay(hoyIsoEnZonaHoraria(zonaEfectiva)))
+      return desdeZona ?? new Date()
+    }, [form.fecha, zonaEfectiva])
 
     function onFechaSeleccionada(_event: unknown, selectedDate: Date) {
       setField('fecha', isoToDisplay(dateToIsoLocal(selectedDate)))

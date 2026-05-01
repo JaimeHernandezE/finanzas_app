@@ -9,13 +9,13 @@
 # Secret (GitHub → Settings → Secrets and variables → Actions):
 #   DATABASE_URL_DEMO  → URL **solo** de la BD demo (nunca la de producción).
 #
-# Ajusta `cron` si quieres otra hora (hora UTC).
+# Ventana local Chile: 02:00–04:00 (America/Santiago). Evita solaparse con export (min :00) y backup (:30).
 
 name: Reset demo nightly
 
 on:
   schedule:
-    - cron: '0 6 * * *' # 06:00 UTC (~03:00 Chile aprox., según DST)
+    - cron: '45 6 * * *'
   workflow_dispatch:
 
 jobs:

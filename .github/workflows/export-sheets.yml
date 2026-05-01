@@ -1,9 +1,11 @@
 name: Export diario a Google Sheets
 
+# Ventana local Chile: 02:00–04:00 (America/Santiago, default Usuario.zona_horaria en
+# finanzas_app/backend/applications/usuarios/models.py). GitHub solo acepta cron UTC.
+# 06:00 UTC ≈ 02:00 (invierno -4) / 03:00 (verano -3) en Chile.
 on:
   schedule:
-    # 18:00 UTC ≈ 15:00 Chile (UTC-3). Respaldo pg_dump 30 min después (mismo desfase que antes).
-    - cron: '0 18 * * *'
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:

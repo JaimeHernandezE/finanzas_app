@@ -13,10 +13,10 @@
 
 name: Backup PostgreSQL a Drive
 
+# Ventana local Chile: 02:00–04:00 (America/Santiago). Después del export a Sheets (export-sheets.yml).
 on:
   schedule:
-    # 18:30 UTC ≈ 15:30 Chile (UTC-3). +7 h respecto al horario anterior (~08:30 Chile).
-    - cron: '30 18 * * *'
+    - cron: '30 6 * * *'
   workflow_dispatch:
 
 jobs:
