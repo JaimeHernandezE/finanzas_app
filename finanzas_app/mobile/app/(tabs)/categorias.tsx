@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Modal,
@@ -150,6 +150,9 @@ export default function CategoriasScreen() {
     () => buildJerarquiaCategorias(personalesSinCuenta),
     [personalesSinCuenta],
   )
+
+  /** Jerarquía de todas las categorías personales del tipo (egreso/ingreso). */
+  const jerPer = useMemo(() => buildJerarquiaCategorias(personales), [personales])
 
   const [formOpen, setFormOpen] = useState(false)
   const [formModo, setFormModo] = useState<'crear' | 'editar'>('crear')
@@ -352,7 +355,7 @@ export default function CategoriasScreen() {
                 ) : null}
               </View>
             ) : (
-              <>
+              <Fragment key={`personales-${filtroTipo}-${personales.length}-${jerPer.length}`}>
                 {cuentaPersonalPrincipalId != null ? (
                   <View className="mb-2">
                     {subTituloCuenta(nombreCuentaPrincipal ?? 'Cuenta principal')}
@@ -402,7 +405,7 @@ export default function CategoriasScreen() {
                     ) : null}
                   </View>
                 </View>
-              </>
+              </Fragment>
             )}
           </>
         )}
