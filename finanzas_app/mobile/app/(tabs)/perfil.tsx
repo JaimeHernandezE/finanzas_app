@@ -195,6 +195,17 @@ export default function PerfilScreen() {
           {passwordOk && <Text className="text-success text-xs mt-2">{passwordOk}</Text>}
         </View>
 
+        <View className="bg-white border border-border rounded-xl p-4 mb-4">
+          <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Finanzas</Text>
+          <TouchableOpacity
+            onPress={() => router.push('/categorias' as never)}
+            className="flex-row items-center justify-between py-3 border-b border-border"
+          >
+            <Text className="text-dark font-medium">Categorías</Text>
+            <Text className="text-muted text-sm">›</Text>
+          </TouchableOpacity>
+        </View>
+
         {user.rol === 'ADMIN' ? (
           <View className="bg-white border border-border rounded-xl p-4 mb-4">
             <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Respaldo</Text>
