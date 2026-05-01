@@ -935,6 +935,30 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
     }
 
 
+def refrescar_resumen_historico_ultimo_mes_cerrado(
+    familia_id: int, hoy: date | None = None
+) -> int:
+    """
+    Persiste solo el snapshot del último mes calendario cerrado (útil en cron de inicio de mes).
+    Retorna 1 si hubo fila guardada, 0 si no aplicaba.
+    """
+    User = get_user_model()
+    if not User.objects.filter(familia_id=familia_id).exists():
+        return 0
+    if hoy is None:
+        hoy = timezone.localdate()
+    mes_pd = ultimo_mes_cerrado(hoy)
+    row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
+    if row is None:
+        return 0
+    ResumenHistoricoMesSnapshot.objects.update_or_create(
+        familia_id=familia_id,
+        mes=mes_pd,
+        defaults={'payload': row},
+    )
+    return 1
+
+
 def backfill_resumen_historico_snapshots(familia_id: int) -> int:
     """
     Recalcula y persiste snapshots para todos los meses con datos hasta el último mes cerrado

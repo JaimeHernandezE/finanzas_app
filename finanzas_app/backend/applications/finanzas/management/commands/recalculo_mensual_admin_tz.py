@@ -1,6 +1,7 @@
 from datetime import date
 from zoneinfo import ZoneInfo
 
+from dateutil.relativedelta import relativedelta
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -73,10 +74,17 @@ class Command(BaseCommand):
             )
             return
 
-        mes_inicio = services_recalculo.primer_dia_mes(min(candidatos))
-        services_recalculo.recalcular_familia_desde(familia_id, mes_inicio)
-        n_resumen = services_recalculo.backfill_resumen_historico_snapshots(familia_id)
-        n_saldos = services_recalculo.backfill_saldos_personales_usuario(admin.pk, familia_id)
+        # Solo mes anterior + mes actual: recalcular toda la historia desde GitHub
+        # contra la BD remota puede tardar horas (no es viable en Actions).
+        dia_ref = ahora_local.date()
+        mes_actual_pd = date(dia_ref.year, dia_ref.month, 1)
+        mes_anterior_pd = mes_actual_pd - relativedelta(months=1)
+        services_recalculo.recalcular_familia_meses(
+            familia_id, [mes_anterior_pd, mes_actual_pd]
+        )
+        n_resumen = services_recalculo.refrescar_resumen_historico_ultimo_mes_cerrado(
+            familia_id, hoy=dia_ref
+        )
         cuotas = services_recalculo.reparar_cuotas_credito_familia(familia_id)
 
         self.stdout.write(
@@ -84,7 +92,8 @@ class Command(BaseCommand):
                 'Tareas de inicio de mes completadas. '
                 f'mes_destino={mes_destino.isoformat()} '
                 f'presupuestos(creados={presupuestos_creados}, omitidos={presupuestos_omitidos}) '
-                f'desde={mes_inicio.isoformat()} resumen={n_resumen} saldos={n_saldos} '
+                f'recalculo_meses=[{mes_anterior_pd.isoformat()}, {mes_actual_pd.isoformat()}] '
+                f'resumen_ultimo_cerrado={n_resumen} '
                 f"cuotas(creadas={cuotas['cuotas_creadas']}, actualizadas={cuotas['cuotas_actualizadas']}, "
                 f"eliminadas={cuotas['cuotas_eliminadas']})"
             )

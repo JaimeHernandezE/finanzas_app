@@ -130,5 +130,5 @@ docker-compose exec web python manage.py <comando>
 - `importar_movimientos_csv <archivo> --usuario-id=<id> [--familia-id=<id>] [--dry-run]`
 - `rollover_presupuestos_mensuales [--mes YYYY-MM-01] [--familia-id=<id>] [--dry-run]`
 - `backfill_resumen_historico [--familia-id <id>]`
-- `recalculo_mensual_admin_tz [--admin-id <id>]` — tareas de inicio de mes: rollover de presupuestos, recálculo de snapshots y reparación de cuotas crédito (sin filtro por hora; apto para cron y ejecución manual).
+- `recalculo_mensual_admin_tz [--admin-id <id>]` — tareas de inicio de mes: rollover de presupuestos; recálculo acotado al **mes anterior y mes actual** (liquidación + saldos); actualiza solo el snapshot de resumen del **último mes cerrado**; repara cuotas crédito. Para reparar **toda** la historia usar el endpoint `POST` de recálculo histórico o `backfill_resumen_historico`.
 - `seed_demo`, `seed_demo_minimal`, `ensure_demo_seed`, `seed_demo_if_empty`
