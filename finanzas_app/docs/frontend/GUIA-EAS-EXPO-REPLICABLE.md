@@ -77,7 +77,7 @@ En **otra app**, copia los **patrones** (no hace falta copiar nombres de pantall
 | Síntoma | Causa probable |
 |---------|----------------|
 | La app **se cierra** al abrir (release) | `EXPO_PUBLIC_FIREBASE_*` no estaban en el build; init de Firebase con config vacía. |
-| **Network Error** tras login o al cargar | `EXPO_PUBLIC_API_URL` ausente en EAS → fallback `localhost`; o, en **monorepo**, `process.env` no sustituido dentro de `shared/` → mismo efecto; usar `apiConfig` + `setApiBaseUrl`. |
+| **Network Error** tras login o al cargar | `EXPO_PUBLIC_API_URL` ausente en EAS → fallback `localhost`; o, en **monorepo**, `process.env` no sustituido dentro de `shared/` → mismo efecto (usar `apiConfig` + `setApiBaseUrl`); o, en **desarrollo local con `--host lan`**, IP del PC cambió y `.env` quedó con una IP antigua. |
 | **Login OK**, listados / datos **vacíos o error** | Cliente HTTP leyendo `localStorage` en lugar de SecureStore (detección “nativo” incorrecta). Corregido leyendo **primero** SecureStore. |
 | En emulador, no pasas la **huella** | Usar `__DEV__` en el lock, o panel del emulador → Fingerprint → “Touch the sensor”. |
 

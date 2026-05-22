@@ -12,6 +12,8 @@ import {
 import { useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
+import { useApi } from '@finanzas/shared/hooks/useApi'
+import { familiaApi } from '@finanzas/shared/api/familia'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
@@ -43,6 +45,7 @@ interface Movimiento {
   monto: number | string
   comentario: string
   categoria_nombre: string
+  autor_nombre?: string
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   usuario?: number | string
 }
@@ -75,6 +78,21 @@ function toMontoNumber(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0
   }
   return 0
+}
+
+function normalizarUsuarioId(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') {
+    const txt = value.trim()
+    if (!txt) return null
+    const n = Number(txt)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+function primerNombre(nombre?: string): string {
+  return (nombre || '').trim().split(/\s+/)[0] || ''
 }
 
 /** Misma lógica que GastosComunesPage web: neto por día sin TC en el cálculo. */
@@ -113,6 +131,7 @@ function groupByDate(movimientos: Movimiento[]) {
 export default function GastosScreen() {
   const { formatMonto } = useConfig()
   const { user } = useAuth()
+  const usuarioActualId = user?.id ?? null
   const { categoria: categoriaParamRaw } = useLocalSearchParams<{ categoria?: string }>()
   const formRef = useRef<MovimientoFormularioRef>(null)
   const insets = useSafeAreaInsets()
@@ -128,6 +147,7 @@ export default function GastosScreen() {
   const [busqueda, setBusqueda] = useState('')
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
+  const [filtrosUsuarios, setFiltrosUsuarios] = useState<number[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
   const categoriaParamAplicadaRef = useRef<string>('')
 
@@ -168,6 +188,41 @@ export default function GastosScreen() {
     q: busqueda.trim() || undefined,
   })
   const movimientosTyped = (raw ?? []) as Movimiento[]
+  const { data: miembrosRaw } = useApi(() => familiaApi.getMiembros(), [])
+
+  const usuariosFiltro = useMemo(() => {
+    const ordenar = (usuarios: { id: number; nombre: string; esActual: boolean }[]) =>
+      [...usuarios].sort((a, b) => {
+        if (a.esActual !== b.esActual) return a.esActual ? -1 : 1
+        return a.nombre.localeCompare(b.nombre, 'es')
+      })
+
+    const fromApi = (miembrosRaw ?? []) as { id: number; nombre: string }[]
+    if (fromApi.length > 0) {
+      return ordenar(
+        fromApi.map((m) => ({
+          id: m.id,
+          nombre: primerNombre(m.nombre) || `Usuario ${m.id}`,
+          esActual: usuarioActualId != null && m.id === usuarioActualId,
+        })),
+      )
+    }
+
+    const map = new Map<number, string>()
+    for (const mov of movimientosTyped) {
+      const uid = normalizarUsuarioId(mov.usuario)
+      if (uid != null) {
+        map.set(uid, primerNombre(mov.autor_nombre) || `Usuario ${uid}`)
+      }
+    }
+    return ordenar(
+      Array.from(map.entries()).map(([id, nombre]) => ({
+        id,
+        nombre,
+        esActual: usuarioActualId != null && id === usuarioActualId,
+      })),
+    )
+  }, [miembrosRaw, movimientosTyped, usuarioActualId])
 
   const omitirRefetchEnPrimerFoco = useRef(true)
   useFocusEffect(
@@ -237,13 +292,17 @@ export default function GastosScreen() {
     return movimientosTyped.filter((m) => {
       if (filtrosCategorias.length > 0 && !filtrosCategorias.includes(m.categoria_nombre)) return false
       if (filtrosMetodos.length > 0 && !filtrosMetodos.includes(m.metodo_pago_tipo)) return false
+      if (filtrosUsuarios.length > 0) {
+        const uid = normalizarUsuarioId(m.usuario)
+        if (uid == null || !filtrosUsuarios.includes(uid)) return false
+      }
       return true
     })
-  }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
+  }, [movimientosTyped, filtrosCategorias, filtrosMetodos, filtrosUsuarios])
 
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
 
-  const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
+  const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length + filtrosUsuarios.length
   const puedeMostrarEtiquetaPeriodo =
     filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
   const sumaMostrada = useMemo(
@@ -259,6 +318,7 @@ export default function GastosScreen() {
   function limpiarFiltros() {
     setFiltrosCategorias([])
     setFiltrosMetodos([])
+    setFiltrosUsuarios([])
     setFiltrosOpen(false)
   }
 
@@ -269,6 +329,12 @@ export default function GastosScreen() {
   function toggleMetodo(met: string) {
     setFiltrosMetodos((prev) =>
       prev.includes(met) ? prev.filter((x) => x !== met) : [...prev, met]
+    )
+  }
+
+  function toggleUsuario(uid: number) {
+    setFiltrosUsuarios((prev) =>
+      prev.includes(uid) ? prev.filter((x) => x !== uid) : [...prev, uid],
     )
   }
 
@@ -331,33 +397,57 @@ export default function GastosScreen() {
     const badge = METODO_BADGE[mov.metodo_pago_tipo ?? 'EFECTIVO']
     const esIngreso = mov.tipo === 'INGRESO'
     const m = montoSeguro(mov.monto)
-    const puedeEditar =
-      user != null &&
-      mov.usuario != null &&
-      mov.usuario !== '' &&
-      Number(mov.usuario) === Number(user.id)
+    const usuarioMovimientoId = normalizarUsuarioId(mov.usuario)
+    const esAjeno =
+      usuarioActualId != null &&
+      usuarioMovimientoId != null &&
+      usuarioMovimientoId !== usuarioActualId
+    const puedeEditarEliminar =
+      usuarioActualId != null &&
+      usuarioMovimientoId != null &&
+      usuarioMovimientoId === usuarioActualId
+    const autor =
+      primerNombre(
+        usuariosFiltro.find((u) => u.id === usuarioMovimientoId)?.nombre || mov.autor_nombre,
+      ) || '—'
 
     return (
-      <View className={`mx-5 bg-white border-x border-t border-border ${isLast ? 'border-b rounded-b-xl mb-1' : ''} ${!isLast ? '' : ''} overflow-hidden`}>
+      <View
+        className={`mx-5 border-x border-t border-border ${isLast ? 'border-b rounded-b-xl mb-1' : ''} ${esAjeno ? 'bg-[#f8f8f8]' : 'bg-white'} overflow-hidden`}
+      >
         <View className="px-4 py-3 flex-row items-center">
           <View className="flex-1 min-w-0 mr-2">
-            <Text className="text-dark font-medium text-sm" numberOfLines={2}>
+            {esAjeno && (
+              <Text className="mb-0.5 text-[11px] font-semibold text-[#8b9098]">
+                {autor}
+              </Text>
+            )}
+            <Text className={`${esAjeno ? 'text-[#9ca3af]' : 'text-dark'} font-medium text-sm`} numberOfLines={2}>
               {mov.comentario || '—'}
             </Text>
-            <Text className="text-muted text-xs mt-0.5">{mov.categoria_nombre}</Text>
+            <Text className={`${esAjeno ? 'text-[#9ca3af]' : 'text-muted'} text-xs mt-0.5`}>
+              {mov.categoria_nombre}
+            </Text>
           </View>
           <View className="items-end">
-            <Text className={`text-sm font-semibold ${esIngreso ? 'text-success' : 'text-dark'}`}>
+            <Text
+              className={`text-sm font-semibold ${
+                esAjeno ? 'text-[#9ca3af]' : esIngreso ? 'text-success' : 'text-dark'
+              }`}
+            >
               {esIngreso ? '+' : '−'}
               {formatMonto(m)}
             </Text>
             <View className="flex-row items-center mt-1 gap-2 flex-wrap justify-end">
-              <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
-                <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
+              <View
+                className="rounded px-1.5 py-0.5"
+                style={{ backgroundColor: esAjeno ? '#f3f4f6' : badge.bg }}
+              >
+                <Text className="text-[10px] font-semibold" style={{ color: esAjeno ? '#9ca3af' : badge.color }}>
                   {badge.label}
                 </Text>
               </View>
-              {puedeEditar && (
+              {puedeEditarEliminar && (
                 <TouchableOpacity
                   onPress={() => formRef.current?.iniciarEdicion(mov.id)}
                   hitSlop={8}
@@ -366,9 +456,11 @@ export default function GastosScreen() {
                   <Text className="text-dark text-xs font-semibold">Editar</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity onPress={() => confirmarEliminar(mov)} hitSlop={8}>
-                <Text className="text-danger text-sm">🗑</Text>
-              </TouchableOpacity>
+              {puedeEditarEliminar && (
+                <TouchableOpacity onPress={() => confirmarEliminar(mov)} hitSlop={8}>
+                  <Text className="text-danger text-sm">🗑</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -590,6 +682,9 @@ export default function GastosScreen() {
         onToggleCategoria={toggleCategoria}
         filtrosMetodos={filtrosMetodos}
         onToggleMetodo={toggleMetodo}
+        usuarios={usuariosFiltro}
+        filtrosUsuarios={filtrosUsuarios}
+        onToggleUsuario={toggleUsuario}
         onLimpiar={limpiarFiltros}
       />
 

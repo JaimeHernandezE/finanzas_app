@@ -206,6 +206,14 @@
   }
 }
 
+.movRowDisabled {
+  background: #f8f8f8;
+
+  &:hover {
+    background: #f8f8f8;
+  }
+}
+
 // Autor — columna fija izquierda, primer nombre
 .movAutor {
   width: 52px;
@@ -214,6 +222,20 @@
   font-weight: $font-weight-semibold;
   color: $color-text-muted;
   @include truncate;
+}
+
+.movUsuarioEstado {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: $font-weight-semibold;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 999px;
+}
+
+.movUsuarioEstadoAjeno {
+  background: #f1f2f4;
+  color: #8b9098;
 }
 
 .movInfo {
@@ -229,6 +251,11 @@
   font-weight: $font-weight-medium;
   color: $color-text;
   @include truncate;
+}
+
+.movRowDisabled .movDesc,
+.movRowDisabled .movCat {
+  color: #9ca3af;
 }
 
 .movMonto {

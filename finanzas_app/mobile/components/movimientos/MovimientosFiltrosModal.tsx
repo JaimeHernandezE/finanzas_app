@@ -40,6 +40,9 @@ type Props = {
   onToggleCategoria: (c: CategoriaFiltroFila) => void
   filtrosMetodos: string[]
   onToggleMetodo: (met: 'EFECTIVO' | 'DEBITO' | 'CREDITO') => void
+  usuarios: Array<{ id: number; nombre: string; esActual: boolean }>
+  filtrosUsuarios: number[]
+  onToggleUsuario: (usuarioId: number) => void
   onLimpiar: () => void
 }
 
@@ -66,6 +69,9 @@ export function MovimientosFiltrosModal({
   onToggleCategoria,
   filtrosMetodos,
   onToggleMetodo,
+  usuarios,
+  filtrosUsuarios,
+  onToggleUsuario,
   onLimpiar,
 }: Props) {
   const insets = useSafeAreaInsets()
@@ -319,6 +325,34 @@ export function MovimientosFiltrosModal({
                   </TouchableOpacity>
                 )
               })}
+
+              {usuarios.length > 0 && (
+                <>
+                  <Text className="text-xs text-muted font-semibold uppercase mt-4 mb-2">Usuario</Text>
+                  {usuarios.map((u) => {
+                    const selected = filtrosUsuarios.includes(u.id)
+                    return (
+                      <TouchableOpacity
+                        key={u.id}
+                        onPress={() => onToggleUsuario(u.id)}
+                        className="flex-row items-center py-2.5 border-b border-border"
+                      >
+                        <View
+                          className={`w-5 h-5 rounded border mr-3 items-center justify-center ${
+                            selected ? 'bg-dark border-dark' : 'border-border bg-white'
+                          }`}
+                        >
+                          {selected && <Text className="text-white text-xs font-bold">✓</Text>}
+                        </View>
+                        <Text className="text-dark text-sm">
+                          {u.nombre}
+                          {u.esActual ? ' (Tú)' : ''}
+                        </Text>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </>
+              )}
             </ScrollView>
 
             <View

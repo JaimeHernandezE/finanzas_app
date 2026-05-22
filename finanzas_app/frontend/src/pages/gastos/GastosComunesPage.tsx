@@ -160,7 +160,7 @@ function FilterSidebar({
   abierto:           boolean
   periodoSlot:       ReactNode
   categorias:        CategoriaFiltroFila[]
-  usuarios:          { id: number; nombre: string }[]
+  usuarios:          { id: number; nombre: string; esActual: boolean }[]
   filtrosCategorias: string[]
   filtrosMetodos:    string[]
   filtrosUsuarios:   number[]
@@ -220,7 +220,7 @@ function FilterSidebar({
                     checked={filtrosUsuarios.includes(u.id)}
                     onChange={() => onToggleUsuario(u.id)}
                   />
-                  {u.nombre}
+                  {u.nombre}{u.esActual ? ' (Tú)' : ''}
                 </label>
               ))}
             </div>
@@ -253,15 +253,22 @@ function MovimientoRow({
   const esIngreso = mov.tipo === 'INGRESO'
   const esCredito = mov.metodo_pago_tipo === 'CREDITO'
   const esPropio  = usuarioId == null || mov.usuario === usuarioId
+  const nombreAutor = (mov.autor_nombre || '').split(' ')[0] || '—'
 
   return (
-    <div className={styles.movRow}>
+    <div className={`${styles.movRow} ${!esPropio ? styles.movRowDisabled : ''}`}>
       <span
         className={styles.movAutor}
         style={{ color: esPropio ? '#0f0f0f' : undefined }}
       >
-        {(mov.autor_nombre || '').split(' ')[0] || '—'}
+        {nombreAutor}
       </span>
+
+      {!esPropio && (
+        <span className={`${styles.movUsuarioEstado} ${styles.movUsuarioEstadoAjeno}`}>
+          Otro
+        </span>
+      )}
 
       <div className={styles.movInfo}>
         <span className={styles.movDesc}>{mov.comentario || '—'}</span>
@@ -271,7 +278,7 @@ function MovimientoRow({
       <span
         className={styles.movMonto}
         style={{
-          color: esIngreso ? '#22a06b' : esCredito ? '#6b7280' : '#0f0f0f',
+          color: !esPropio ? '#9ca3af' : esIngreso ? '#22a06b' : esCredito ? '#6b7280' : '#0f0f0f',
         }}
       >
         {esIngreso ? '+' : esCredito ? '' : '−'}
@@ -280,7 +287,10 @@ function MovimientoRow({
 
       <span
         className={styles.movBadge}
-        style={{ backgroundColor: badge.bg, color: badge.color }}
+        style={{
+          backgroundColor: esPropio ? badge.bg : '#f3f4f6',
+          color: esPropio ? badge.color : '#9ca3af',
+        }}
       >
         {badge.label}
       </span>
@@ -393,6 +403,7 @@ export default function GastosComunesPage() {
   const [searchParams] = useSearchParams()
   const { formatMonto } = useConfig()
   const { usuario: usuarioAuth } = useAuth()
+  const usuarioId = usuarioAuth?.id ?? null
   const hoy = new Date()
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -436,12 +447,19 @@ export default function GastosComunesPage() {
   )
 
   const usuariosFiltro = useMemo(() => {
+    const ordenarUsuarios = (usuarios: { id: number; nombre: string; esActual: boolean }[]) =>
+      [...usuarios].sort((a, b) => {
+        if (a.esActual !== b.esActual) return a.esActual ? -1 : 1
+        return a.nombre.localeCompare(b.nombre, 'es')
+      })
+
     const fromApi = (miembrosRaw ?? []) as { id: number; nombre: string }[]
     if (fromApi.length > 0) {
-      return fromApi.map(m => ({
+      return ordenarUsuarios(fromApi.map(m => ({
         id: m.id,
         nombre: (m.nombre || '').trim().split(/\s+/)[0] || `Usuario ${m.id}`,
-      }))
+        esActual: usuarioId != null && m.id === usuarioId,
+      })))
     }
     const map = new Map<number, string>()
     for (const m of movimientosTyped) {
@@ -450,10 +468,11 @@ export default function GastosComunesPage() {
         map.set(m.usuario, nom)
       }
     }
-    return Array.from(map.entries())
-      .map(([id, nombre]) => ({ id, nombre }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-  }, [miembrosRaw, movimientosTyped])
+    return ordenarUsuarios(
+      Array.from(map.entries())
+        .map(([id, nombre]) => ({ id, nombre, esActual: usuarioId != null && id === usuarioId })),
+    )
+  }, [miembrosRaw, movimientosTyped, usuarioId])
 
   const esActualMes = mes === hoy.getMonth() && anio === hoy.getFullYear()
   const esAnioMaximo = anio >= hoy.getFullYear()
@@ -562,8 +581,6 @@ export default function GastosComunesPage() {
 
   const puedeMostrarEtiquetaPeriodo =
     filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
-
-  const usuarioId = usuarioAuth?.id ?? null
 
   const grupos    = groupByDate(movimientosFiltrados)
   const totalLabel = puedeMostrarEtiquetaPeriodo
