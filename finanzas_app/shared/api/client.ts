@@ -1,12 +1,31 @@
 import axios from 'axios'
 import { getApiBaseUrl, getApiTimeoutMs } from './baseUrl'
 
+// Token en memoria: evita múltiples lecturas async de SecureStore que pueden dar valores
+// inconsistentes cuando varias requests se inician en paralelo durante la restauración de sesión.
+// undefined = no inicializado todavía (fallback a SecureStore)
+// null      = sin sesión (logged out)
+// string    = token activo
+let _memToken: string | null | undefined = undefined
+
+export function setMemToken(token: string | null): void {
+  _memToken = token
+}
+
+// Callback registrado por AuthContext para refrescar el token Firebase al recibir 401.
+// Retorna el nuevo token, o null si la sesión expiró definitivamente.
+type RefreshFn = () => Promise<string | null>
+let _refreshFn: RefreshFn | null = null
+
+export function setRefreshTokenFn(fn: RefreshFn | null): void {
+  _refreshFn = fn
+}
+
 /**
- * Lee el JWT: primero SecureStore (Expo / RN), luego localStorage (Vite).
- * No usar `navigator.product === 'ReactNative'`: en RN moderno deja de cumplirse
- * y el cliente caía en localStorage → peticiones sin Authorization.
+ * Lee el JWT: primero memoria, luego SecureStore (Expo / RN), luego localStorage (Vite).
  */
 async function getToken(): Promise<string | null> {
+  if (_memToken !== undefined) return _memToken
   try {
     const SecureStore = await import('expo-secure-store')
     const fromSecure = await SecureStore.getItemAsync('auth_token')
@@ -25,6 +44,7 @@ async function getToken(): Promise<string | null> {
 }
 
 async function removeToken(): Promise<void> {
+  _memToken = null
   try {
     const SecureStore = await import('expo-secure-store')
     await SecureStore.deleteItemAsync('auth_token')
@@ -78,7 +98,7 @@ client.interceptors.response.use(
   (response) => response,
   async (error) => {
     const cfg = error?.config as
-      | (Record<string, unknown> & { method?: string; __retryCount?: number })
+      | (Record<string, unknown> & { method?: string; __retryCount?: number; __tokenRetried?: boolean })
       | undefined
     const method = String(cfg?.method ?? '').toLowerCase()
     const safeMethod = method === 'get' || method === 'head' || method === 'options'
@@ -95,11 +115,27 @@ client.interceptors.response.use(
       }
     }
 
-    if (error.response?.status === 401) {
+    if (status === 401) {
       const reqUrl = String(error.config?.url ?? '')
       if (reqUrl.includes('/api/export/sincronizar')) {
         return Promise.reject(error)
       }
+
+      // Intentar refrescar el token Firebase antes de cerrar sesión.
+      // Esto cubre el caso más común: app en background >1h, token expirado.
+      if (_refreshFn && cfg && !cfg.__tokenRetried) {
+        cfg.__tokenRetried = true
+        try {
+          const freshToken = await _refreshFn()
+          if (freshToken) {
+            cfg.headers = { ...(cfg.headers ?? {}), Authorization: `Bearer ${freshToken}` }
+            return client.request(cfg as any)
+          }
+        } catch {
+          // Si el refresh falla, continuar con logout normal.
+        }
+      }
+
       await removeToken()
       if (
         typeof window !== 'undefined' &&
