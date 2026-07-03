@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { AppState } from 'react-native'
 import { useRouter } from 'expo-router'
 import * as SecureStore from 'expo-secure-store'
 import axios from 'axios'
@@ -17,6 +18,7 @@ import {
 import { FirebaseError } from 'firebase/app'
 import { getFirebaseAuth } from '../lib/firebase'
 import { API_BASE_URL } from '../lib/apiConfig'
+import { setMemToken, setRefreshTokenFn } from '../../shared/api/client'
 
 export interface Usuario {
   id:      number
@@ -145,7 +147,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError]     = useState<string | null>(null)
 
   useEffect(() => {
+    // Registrar la función de refresco de token para que el interceptor 401 pueda usarla.
+    setRefreshTokenFn(async () => {
+      const firebaseUser = getFirebaseAuth().currentUser
+      if (!firebaseUser) return null
+      const freshToken = await firebaseUser.getIdToken(true)
+      await SecureStore.setItemAsync('auth_token', freshToken)
+      setMemToken(freshToken)
+      return freshToken
+    })
+
     restaurarSesion()
+
+    // Al volver del background, refrescar el token proactivamente antes de que
+    // refetchOnReconnect dispare queries con el token expirado.
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState !== 'active') return
+      const firebaseUser = getFirebaseAuth().currentUser
+      if (!firebaseUser) return
+      try {
+        const freshToken = await firebaseUser.getIdToken(false)
+        await SecureStore.setItemAsync('auth_token', freshToken)
+        setMemToken(freshToken)
+      } catch {
+        // Si falla silenciosamente, el interceptor 401 intentará un refresh forzado.
+      }
+    })
+
+    return () => {
+      sub.remove()
+      setRefreshTokenFn(null)
+    }
   }, [])
 
   const clearError = useCallback(() => {
@@ -180,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const sincronizarSesionBackend = useCallback(
     async (firebaseToken: string, redirectToTabs = true) => {
       await SecureStore.setItemAsync('auth_token', firebaseToken)
+      setMemToken(firebaseToken)
       try {
         const res = await getMeConReintento(firebaseToken)
         setUsuario(res.data)
@@ -216,8 +249,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedToken = await SecureStore.getItemAsync('auth_token')
       if (!storedToken) return
 
+      // Poner el token en memoria lo antes posible para que cualquier request que
+      // se dispare mientras esperamos a Firebase use el token almacenado en vez
+      // de leer SecureStore de forma asíncrona (y potencialmente inconsistente).
+      setMemToken(storedToken)
+
       // Esperar a que Firebase cargue su sesión persistida (AsyncStorage).
-      // authStateReady() resuelve en cuanto el estado inicial está disponible.
       const auth = getFirebaseAuth()
       await auth.authStateReady()
 
@@ -228,11 +265,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         tokenToUse = await firebaseUser.getIdToken()
         await SecureStore.setItemAsync('auth_token', tokenToUse)
+        setMemToken(tokenToUse)
       }
 
       const res = await getMeConReintento(tokenToUse)
       setUsuario(res.data)
     } catch {
+      setMemToken(null)
       await SecureStore.deleteItemAsync('auth_token')
       await signOut(getFirebaseAuth()).catch(() => {})
     } finally {
@@ -380,6 +419,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   )
 
   async function logout() {
+    setMemToken(null)
     await SecureStore.deleteItemAsync('auth_token')
     await signOut(getFirebaseAuth()).catch(() => {})
     setUsuario(null)
