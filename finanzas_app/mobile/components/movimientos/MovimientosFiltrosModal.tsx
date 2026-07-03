@@ -40,9 +40,9 @@ type Props = {
   onToggleCategoria: (c: CategoriaFiltroFila) => void
   filtrosMetodos: string[]
   onToggleMetodo: (met: 'EFECTIVO' | 'DEBITO' | 'CREDITO') => void
-  usuarios: Array<{ id: number; nombre: string; esActual: boolean }>
-  filtrosUsuarios: number[]
-  onToggleUsuario: (usuarioId: number) => void
+  usuarios?: Array<{ id: number; nombre: string; esActual: boolean }>
+  filtrosUsuarios?: number[]
+  onToggleUsuario?: (usuarioId: number) => void
   onLimpiar: () => void
 }
 
@@ -69,9 +69,9 @@ export function MovimientosFiltrosModal({
   onToggleCategoria,
   filtrosMetodos,
   onToggleMetodo,
-  usuarios,
-  filtrosUsuarios,
-  onToggleUsuario,
+  usuarios = [],
+  filtrosUsuarios = [],
+  onToggleUsuario = () => {},
   onLimpiar,
 }: Props) {
   const insets = useSafeAreaInsets()
