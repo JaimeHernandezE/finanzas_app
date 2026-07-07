@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   SYNC_BANNER_QUERY_KEY,
+  scheduleSyncBannerHide,
   type SyncBannerData,
 } from '../lib/syncBannerState'
 
@@ -28,6 +29,15 @@ export function SyncStatusBanner() {
   })
 
   const phase = data?.phase ?? 'hidden'
+
+  // Si el estado vino de caché persistido (p. ej. "synced" sin timer activo), programar ocultado.
+  useEffect(() => {
+    if (phase === 'synced') {
+      scheduleSyncBannerHide(queryClient, 2000)
+    } else if (phase === 'offline' || phase === 'error') {
+      scheduleSyncBannerHide(queryClient, 3500)
+    }
+  }, [phase, queryClient])
 
   useEffect(() => {
     if (phase === 'hidden') {
@@ -68,7 +78,7 @@ export function SyncStatusBanner() {
 
   return (
     <Animated.View
-      pointerEvents={visible ? 'auto' : 'none'}
+      pointerEvents="none"
       style={{
         position: 'absolute',
         left: 0,

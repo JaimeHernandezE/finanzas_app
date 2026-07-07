@@ -11,6 +11,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { onlineManager } from '@tanstack/react-query'
 import NetInfo from '@react-native-community/netinfo'
 import { queryClient, persister, persistOptions } from '../lib/queryClient'
+import { SYNC_BANNER_QUERY_KEY } from '../lib/syncBannerState'
 import { SyncStatusBanner } from '../components/SyncStatusBanner'
 
 export default function RootLayout() {
@@ -38,7 +39,8 @@ export default function RootLayout() {
       client={queryClient}
       persistOptions={persistOptions}
       onSuccess={() => {
-        // Cache restaurado desde disco — se puede loguear o medir aquí
+        // Estado transitorio del banner no debe sobrevivir al reinicio de la app.
+        queryClient.setQueryData(SYNC_BANNER_QUERY_KEY, { phase: 'hidden' })
       }}
     >
       <ConfigProvider>

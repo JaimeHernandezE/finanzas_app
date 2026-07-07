@@ -68,6 +68,7 @@ export const persister = createAsyncStoragePersister({
 /** Query keys cuyo `data` suele ser grande: no van a AsyncStorage (límite Android). */
 const QUERY_KEYS_SIN_PERSISTENCIA = new Set<string>([
   'movimientos',
+  'movimientoSyncBanner',
   'liquidacion',
   'presupuestoMes',
   'compensacion',
