@@ -13,6 +13,7 @@ import NetInfo from '@react-native-community/netinfo'
 import { queryClient, persister, persistOptions } from '../lib/queryClient'
 import { SYNC_BANNER_QUERY_KEY } from '../lib/syncBannerState'
 import { SyncStatusBanner } from '../components/SyncStatusBanner'
+import { MovimientosOutboxSync } from '../components/MovimientosOutboxSync'
 
 export default function RootLayout() {
   useEffect(() => {
@@ -48,6 +49,7 @@ export default function RootLayout() {
           <ViajeProvider>
             <AppLock>
               <SyncStatusBanner />
+              <MovimientosOutboxSync />
               <Slot />
             </AppLock>
           </ViajeProvider>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { apiErrorMessage } from '../api/apiErrorMessage'
 
 interface UseApiState<T> {
   data: T | null
@@ -29,12 +30,7 @@ export function useApi<T>(
       setData(res.data)
     } catch (err: unknown) {
       if (requestSeqRef.current !== seq) return
-      const ax = err as { response?: { data?: { error?: string } }; message?: string }
-      setError(
-        ax.response?.data?.error ??
-          ax.message ??
-          'Error al cargar los datos.',
-      )
+      setError(apiErrorMessage(err) || 'Error al cargar los datos.')
     } finally {
       if (requestSeqRef.current !== seq) return
       setLoading(false)

@@ -68,6 +68,13 @@ async function writeOutbox(items: OutboxItem[]) {
 
 async function enqueue(item: OutboxItem) {
   const items = await readOutbox()
+  const alreadyQueued = items.some((i) => {
+    if (item.kind === 'create' && i.kind === 'create') return i.local_id === item.local_id
+    if (item.kind === 'patch' && i.kind === 'patch') return i.id === item.id
+    if (item.kind === 'delete' && i.kind === 'delete') return i.id === item.id
+    return false
+  })
+  if (alreadyQueued) return
   items.push(item)
   await writeOutbox(items)
 }
@@ -175,6 +182,7 @@ export function createMovimientoOptimistic(
         const server = res.data as Record<string, unknown>
         updateMovimientoInCaches(qc, remoteId, { ...server, _sync_pending: false })
       }
+      await removeCreateFromOutbox(localId)
       invalidateFinanzasTrasMovimiento(qc)
       setSyncBannerPhase(qc, 'synced')
       scheduleSyncBannerHide(qc, 2000)
@@ -300,4 +308,25 @@ export async function flushMovimientosOutbox(qc: QueryClient) {
 
   await writeOutbox(pending)
   invalidateFinanzasTrasMovimiento(qc)
+}
+
+let flushInFlight: Promise<void> | null = null
+let flushAgain = false
+
+/**
+ * Vacía la cola offline de forma serializada.
+ * Evita POST duplicados cuando varias pantallas o eventos NetInfo disparan flush a la vez
+ * (común en MIUI con red inestable).
+ */
+export function scheduleFlushMovimientosOutbox(qc: QueryClient): void {
+  flushAgain = true
+  if (flushInFlight) return
+  flushInFlight = (async () => {
+    while (flushAgain) {
+      flushAgain = false
+      await flushMovimientosOutbox(qc)
+    }
+  })().finally(() => {
+    flushInFlight = null
+  })
 }

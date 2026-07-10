@@ -1,7 +1,17 @@
 /** Mensaje legible desde respuestas DRF (`detail`, `error`) o Error genérico. */
 export function apiErrorMessage(err: unknown): string {
   if (err && typeof err === 'object' && 'response' in err) {
-    const r = err as { response?: { data?: { detail?: unknown; error?: string } } }
+    const r = err as {
+      response?: { data?: { detail?: unknown; error?: string } }
+      message?: string
+      code?: string
+    }
+    if (!r.response) {
+      if (r.code === 'ECONNABORTED') {
+        return 'La conexión tardó demasiado. Reintenta en unos segundos.'
+      }
+      return 'Sin conexión al servidor. Comprueba internet e inténtalo de nuevo.'
+    }
     const d = r.response?.data
     if (d && typeof d === 'object') {
       if (typeof d.error === 'string' && d.error) return d.error

@@ -135,7 +135,7 @@ export default function CuentaPersonalScreen() {
 
   const id = idParam ? Number(idParam) : NaN
 
-  const { data: cuentasData, loading: loadingCuentas, error: errorCuentas } = useApi<CuentaPersonalApi[]>(
+  const { data: cuentasData, loading: loadingCuentas, error: errorCuentas, refetch: refetchCuentas } = useApi<CuentaPersonalApi[]>(
     async () => {
       if (!user) return { data: [] }
       return finanzasApi.getCuentasPersonales()
@@ -364,6 +364,14 @@ export default function CuentaPersonalScreen() {
             <Text className="text-danger text-sm text-center">
               {errorCuentas ?? 'Cuenta no encontrada o sin acceso.'}
             </Text>
+            {errorCuentas ? (
+              <TouchableOpacity
+                onPress={() => void refetchCuentas()}
+                className="mt-3 self-center rounded-lg bg-dark px-4 py-2"
+              >
+                <Text className="text-surface text-sm font-semibold">Reintentar</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </ScrollView>
       </MobileShell>

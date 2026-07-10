@@ -1,28 +1,11 @@
-import { useEffect } from 'react'
-import NetInfo from '@react-native-community/netinfo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { movimientosApi, type MovimientoFiltros } from '@finanzas/shared/api/movimientos'
-import {
-  deleteMovimientoOptimistic,
-  flushMovimientosOutbox,
-} from '../lib/movimientosOffline'
+import { apiErrorMessage } from '@finanzas/shared/api/apiErrorMessage'
+import { deleteMovimientoOptimistic } from '../lib/movimientosOffline'
 
 export function useMovimientos(filtros: MovimientoFiltros = {}) {
   const qc = useQueryClient()
   const queryKey = ['movimientos', filtros] as const
-
-  useEffect(() => {
-    void flushMovimientosOutbox(qc)
-  }, [qc])
-
-  useEffect(() => {
-    const sub = NetInfo.addEventListener((state) => {
-      if (state.isConnected) void flushMovimientosOutbox(qc)
-    })
-    return () => {
-      sub()
-    }
-  }, [qc])
 
   const q = useQuery({
     queryKey,
@@ -41,7 +24,7 @@ export function useMovimientos(filtros: MovimientoFiltros = {}) {
     movimientos: (q.data as unknown[]) ?? [],
     /** Primera carga con fetch activo; no confundir con refetch en background. */
     loading: q.isLoading,
-    error: q.error ? String(q.error) : null,
+    error: q.error ? apiErrorMessage(q.error) : null,
     refetch: q.refetch,
     eliminar,
   }
