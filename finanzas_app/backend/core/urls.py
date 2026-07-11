@@ -6,6 +6,7 @@ from core import views
 urlpatterns = [
     path('', views.raiz_api, name='raiz-api'),
     path('admin/', admin.site.urls),
+    path('api/espacios/',   include('applications.espacios.urls')),
     path('api/usuarios/',   include('applications.usuarios.urls')),
     path('api/finanzas/',   include('applications.finanzas.urls')),
     path('api/inversiones/', include('applications.inversiones.urls')),

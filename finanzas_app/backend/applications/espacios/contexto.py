@@ -9,10 +9,28 @@
 from rest_framework import status
 from rest_framework.response import Response
 
+from applications import utils as utils_auth
+
 from .models import PertenenciaEspacio
 from .services import obtener_espacio_personal
 
 HEADER_ESPACIO = 'X-Espacio-Id'
+
+
+def usuario_y_espacio(request):
+    """
+    Punto de entrada único para vistas multitenant (Fase 2): autentica al
+    usuario (Firebase o JWT demo) y resuelve su espacio activo en un solo paso.
+
+    Retorna (usuario, espacio, None) o (None, None, Response 4xx).
+    """
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err is not None:
+        return None, None, err
+    espacio, err = resolver_espacio_activo(request, usuario)
+    if err is not None:
+        return None, None, err
+    return usuario, espacio, None
 
 
 def resolver_espacio_activo(request, usuario):

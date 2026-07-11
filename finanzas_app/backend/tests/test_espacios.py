@@ -3,7 +3,7 @@
 
 import pytest
 from rest_framework import status
-from rest_framework.test import APIRequestFactory
+from rest_framework.test import APIClient, APIRequestFactory
 
 from applications.espacios.contexto import HEADER_ESPACIO, resolver_espacio_activo
 from applications.espacios.models import (
@@ -20,6 +20,11 @@ def rf():
     return APIRequestFactory()
 
 
+@pytest.fixture
+def client():
+    return APIClient()
+
+
 def _request(rf, espacio_id=None):
     headers = {}
     if espacio_id is not None:
@@ -27,11 +32,18 @@ def _request(rf, espacio_id=None):
     return rf.get('/api/cualquiera/', **headers)
 
 
-# ── Servicio: espacio personal ────────────────────────────────────────────────
+# ── Servicio y señal: espacio personal ───────────────────────────────────────
+
+def _quitar_espacios(usuario):
+    """Deja al usuario sin espacio personal (estado pre-migración, Fase 3)."""
+    PertenenciaEspacio.objects.filter(usuario=usuario).delete()
+
 
 class TestEspacioPersonal:
-    def test_crear_espacio_personal(self, usuario):
-        espacio = crear_espacio_personal(usuario)
+    def test_signal_crea_espacio_personal_al_crear_usuario(self, usuario):
+        # El fixture crea el usuario → la señal post_save debe dejarlo con espacio.
+        espacio = obtener_espacio_personal(usuario)
+        assert espacio is not None
         assert espacio.tipo == Espacio.TIPO_PERSONAL
         assert espacio.es_personal
         pertenencia = PertenenciaEspacio.objects.get(usuario=usuario, espacio=espacio)
@@ -47,6 +59,7 @@ class TestEspacioPersonal:
         ).count() == 1
 
     def test_obtener_sin_espacio_devuelve_none(self, usuario):
+        _quitar_espacios(usuario)
         assert obtener_espacio_personal(usuario) is None
 
     def test_espacios_personales_de_dos_usuarios_son_distintos(self, usuario, usuario_2):
@@ -65,6 +78,7 @@ class TestResolverEspacioActivo:
         assert espacio.id == personal.id
 
     def test_sin_header_y_sin_espacio_personal_403(self, rf, usuario):
+        _quitar_espacios(usuario)
         espacio, err = resolver_espacio_activo(_request(rf), usuario)
         assert espacio is None
         assert err.status_code == status.HTTP_403_FORBIDDEN
@@ -151,3 +165,103 @@ class TestModelos:
             sheet_id='sheet-456',
         )
         assert usuario.config_respaldo.pk == config.pk
+
+
+# ── Endpoints /api/espacios/ ──────────────────────────────────────────────────
+
+class TestEndpointsEspacios:
+    def test_mios_lista_espacios_propios(self, client, usuario, auth_header):
+        resp = client.get('/api/espacios/mios/', **auth_header)
+        assert resp.status_code == status.HTTP_200_OK
+        tipos = {e['tipo'] for e in resp.data}
+        assert Espacio.TIPO_PERSONAL in tipos
+        assert all('rol' in e for e in resp.data)
+
+    def test_mios_no_incluye_espacios_ajenos(self, client, usuario, usuario_otra_familia, auth_header):
+        ajeno = crear_espacio_personal(usuario_otra_familia)
+        resp = client.get('/api/espacios/mios/', **auth_header)
+        assert resp.status_code == status.HTTP_200_OK
+        assert ajeno.id not in {e['id'] for e in resp.data}
+
+    def test_activo_sin_header_es_personal(self, client, usuario, auth_header):
+        personal = obtener_espacio_personal(usuario)
+        resp = client.get('/api/espacios/activo/', **auth_header)
+        assert resp.status_code == status.HTTP_200_OK
+        assert resp.data['id'] == personal.id
+        assert resp.data['tipo'] == Espacio.TIPO_PERSONAL
+        assert resp.data['rol'] == PertenenciaEspacio.ROL_ADMIN
+
+    def test_activo_con_header_ajeno_403(self, client, usuario, usuario_otra_familia, auth_header):
+        ajeno = crear_espacio_personal(usuario_otra_familia)
+        resp = client.get(
+            '/api/espacios/activo/',
+            **auth_header,
+            HTTP_X_ESPACIO_ID=str(ajeno.id),
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_actualizar_modo_reparto_familiar(self, client, usuario, auth_header):
+        familiar = Espacio.objects.create(tipo=Espacio.TIPO_FAMILIAR, nombre='Familia Test')
+        PertenenciaEspacio.objects.create(
+            usuario=usuario, espacio=familiar, rol=PertenenciaEspacio.ROL_ADMIN
+        )
+        resp = client.patch(
+            f'/api/espacios/{familiar.id}/',
+            {'modo_reparto': Espacio.REPARTO_PARTES_IGUALES},
+            format='json',
+            **auth_header,
+        )
+        assert resp.status_code == status.HTTP_200_OK
+        familiar.refresh_from_db()
+        assert familiar.modo_reparto == Espacio.REPARTO_PARTES_IGUALES
+
+    def test_actualizar_modo_reparto_en_personal_400(self, client, usuario, auth_header):
+        personal = obtener_espacio_personal(usuario)
+        resp = client.patch(
+            f'/api/espacios/{personal.id}/',
+            {'modo_reparto': Espacio.REPARTO_SIN},
+            format='json',
+            **auth_header,
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_actualizar_requiere_rol_admin(self, client, usuario, usuario_2, auth_header_2):
+        familiar = Espacio.objects.create(tipo=Espacio.TIPO_FAMILIAR, nombre='Familia Test')
+        PertenenciaEspacio.objects.create(
+            usuario=usuario, espacio=familiar, rol=PertenenciaEspacio.ROL_ADMIN
+        )
+        PertenenciaEspacio.objects.create(
+            usuario=usuario_2, espacio=familiar, rol=PertenenciaEspacio.ROL_MIEMBRO
+        )
+        resp = client.patch(
+            f'/api/espacios/{familiar.id}/',
+            {'nombre': 'Hackeado'},
+            format='json',
+            **auth_header_2,
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_actualizar_espacio_ajeno_403(self, client, usuario, usuario_otra_familia, auth_header):
+        ajeno = crear_espacio_personal(usuario_otra_familia)
+        resp = client.patch(
+            f'/api/espacios/{ajeno.id}/',
+            {'nombre': 'Intruso'},
+            format='json',
+            **auth_header,
+        )
+        assert resp.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_actualizar_archivado_400(self, client, usuario, auth_header):
+        familiar = Espacio.objects.create(
+            tipo=Espacio.TIPO_FAMILIAR, nombre='Familia Vieja', archivado=True
+        )
+        PertenenciaEspacio.objects.create(
+            usuario=usuario, espacio=familiar, rol=PertenenciaEspacio.ROL_ADMIN
+        )
+        resp = client.patch(
+            f'/api/espacios/{familiar.id}/',
+            {'nombre': 'Nuevo nombre'},
+            format='json',
+            **auth_header,
+        )
+        assert resp.status_code == status.HTTP_400_BAD_REQUEST
