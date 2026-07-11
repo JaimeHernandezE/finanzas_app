@@ -231,7 +231,7 @@ Project docs live in `docs/`:
 - `docs/README.md` — Documentation index
 - `docs/DEPLOYMENT.md` — Deployment index (links local + production)
 - `docs/DEPLOYMENT-LOCAL.md` — Docker Compose local development
-- `docs/DEPLOYMENT-PRODUCTION.md` — Production deployment (e.g. Render)
+- `docs/DEPLOYMENT-PRODUCTION.md` — Production deployment (Railway is the active platform; Render kept as documented alternative)
 - `docs/backend/README.md` — Backend structure and commands
 
 Keep documentation in sync with code changes. Document new apps, endpoints, and models in `docs/backend/README.md`.

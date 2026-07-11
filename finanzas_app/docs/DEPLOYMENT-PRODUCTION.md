@@ -20,11 +20,10 @@ Localmente sigues usando [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md); en producci
 
 ---
 
-## Guía actual: Render (plan gratuito)
+> **Plataforma activa del proyecto: Railway** (plan Hobby, USD 5/mes). Render se mantiene documentado más abajo como alternativa.
+> Nota de experiencia real: se migró fuera de Render gratuito por latencia alta en cold starts y caídas/reinicios frecuentes en uso diario.
 
-> Nota de experiencia real del proyecto: se migró la demo fuera de Render gratuito por latencia alta en cold starts y caídas/reinicios frecuentes en uso diario.
-
-## Opción recomendada: Railway (más estable para demo/uso continuo)
+## Guía actual: Railway (plataforma en uso)
 
 Si buscas evitar el sleep/cold start del plan free de Render, Railway suele ser una mejor base para este proyecto porque mantiene el servicio más estable en uso continuo (API + frontend con tráfico real).
 
@@ -60,6 +59,19 @@ VITE_API_URL=https://<tu-backend>.up.railway.app
 
 Si no usas `VITE_ES_DEMO=true`, deberás definir también las `VITE_FIREBASE_*`.
 
+### Candados multitenant (Fase 0) — instancia personal/producción
+
+Las operaciones que tocan datos de **todas** las familias quedan bloqueadas en producción salvo habilitación explícita. Mientras la instancia sea de un solo operador (uso personal/familiar), agrega en las variables del backend en Railway:
+
+```env
+ALLOW_GLOBAL_EXPORT=true   # export a Google Sheets: cron export-sheets.yml y botón Sincronizar
+ALLOW_DB_EXPORT=true       # descarga de dump .sql.gz y subida de respaldo a Drive
+# ALLOW_DB_IMPORT=true     # solo durante una ventana controlada de restauración
+# REQUIRE_VERIFIED_EMAIL=true  # activar ANTES de abrir el registro a terceros
+```
+
+Sin `ALLOW_GLOBAL_EXPORT=true`, el workflow `export-sheets.yml` recibirá `403`. Al abrir la instancia a terceros: quitar `ALLOW_GLOBAL_EXPORT` y `ALLOW_DB_EXPORT`, y activar `REQUIRE_VERIFIED_EMAIL`.
+
 ### Credenciales neutrales (backend + GitHub Actions)
 
 Para evitar acoplarte a un proveedor (Render/Railway/etc.), usa nombres de secretos genéricos y separa dónde vive cada uno:
@@ -79,6 +91,8 @@ Para evitar acoplarte a un proveedor (Render/Railway/etc.), usa nombres de secre
 En GitHub: **Settings → Secrets and variables → Actions → New repository secret**.
 
 Si falta alguno, los workflows fallan con error de variable vacía (por ejemplo: `SECRET_KEY`/`SECRET_KEY_DEMO` en recálculo y reset).
+
+## Guía alternativa: Render (plan gratuito)
 
 ### Requisitos previos
 
