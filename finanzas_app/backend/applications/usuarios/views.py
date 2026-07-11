@@ -15,6 +15,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 class DemoLoginThrottle(AnonRateThrottle):
     scope = 'demo_login'
 
+
+class RegistroThrottle(AnonRateThrottle):
+    scope = 'registro'
+
 from applications import utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
 from .demo_constants import DEMO_EMAIL_GLORI, DEMO_EMAIL_JAIME
@@ -309,17 +313,26 @@ def demo_login(request):
 @api_view(['POST'])
 @authentication_classes([])  # No usar JWT de Django; esta vista valida el token de Firebase
 @permission_classes([AllowAny])
+@throttle_classes([RegistroThrottle])
 def registrar_usuario(request):
     """
     Crea un usuario nuevo con token Firebase válido.
     Primer usuario del sistema: crea familia y queda como ADMIN.
     Con invitación pendiente: crea el usuario sin familia hasta que acepte en la app.
+    Con REQUIRE_VERIFIED_EMAIL=true exige email verificado en Firebase
+    (candado Fase 0: activar antes de abrir registro a terceros).
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
     decoded, error = obtener_usuario_desde_token(request)
     if error:
         return Response({'error': error}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if utils_auth.env_flag('REQUIRE_VERIFIED_EMAIL') and not decoded.get('email_verified'):
+        return Response(
+            {'error': 'Debes verificar tu correo antes de registrarte. Revisa tu bandeja de entrada.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
 
     email = (decoded.get('email') or '').strip()
     uid = decoded.get('uid')

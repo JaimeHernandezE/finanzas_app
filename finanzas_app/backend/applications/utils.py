@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 
 from django.conf import settings
 from django.core.cache import cache
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 # (pantalla que dispara varias llamadas al cargar). Reduce latencia y presión
 # sobre el worker único en Render free.
 _FIREBASE_VERIFY_CACHE_SECONDS = 120
+
+
+def env_flag(name: str) -> bool:
+    """True si la variable de entorno es truthy: 1, true, yes, on (misma regla que settings)."""
+    return (os.environ.get(name) or '').strip().lower() in ('1', 'true', 'yes', 'on')
 
 
 def _usuario_desde_jwt_demo(token: str):

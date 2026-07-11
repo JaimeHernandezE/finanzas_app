@@ -193,6 +193,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_CLASSES': [],
     'DEFAULT_THROTTLE_RATES': {
         'demo_login': '10/minute',
+        'registro': '10/hour',
     },
 }
 

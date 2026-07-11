@@ -47,6 +47,24 @@ def _es_admin(usuario: Usuario) -> bool:
     return usuario.rol == 'ADMIN'
 
 
+# Fase 0 multitenant: el dump lleva la BD COMPLETA (todos los tenants). Un ADMIN
+# de familia no debe poder extraerla; queda como herramienta de operación de la
+# instancia hasta que exista el export por alcance (Fase 5 del plan).
+def _export_bd_deshabilitado():
+    if settings.DEBUG or _env_true('ALLOW_DB_EXPORT'):
+        return None
+    return Response(
+        {
+            'error': (
+                'Exportación de base de datos deshabilitada. El dump incluye los datos '
+                'de todas las familias de la instancia; define ALLOW_DB_EXPORT=true solo '
+                'si todas pertenecen al mismo operador.'
+            ),
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _database_url() -> str:
     u = os.environ.get('DATABASE_URL')
     if u:
@@ -69,9 +87,13 @@ def _database_url() -> str:
 def descargar_dump(request):
     """
     Descarga finanzas_pg_YYYY-MM-DD_HHMM.sql.gz (pg_dump texto + gzip).
+    Requiere ALLOW_DB_EXPORT=true en producción (candado multitenant).
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
+    bloqueo = _export_bd_deshabilitado()
+    if bloqueo is not None:
+        return bloqueo
     usuario, err = _usuario_y_error_firebase(request)
     if err is not None:
         return err
@@ -125,9 +147,13 @@ def descargar_dump(request):
 def subir_dump_a_drive(request):
     """
     Genera el mismo dump que el cron y lo sube a Drive; mantiene solo 2 respaldos recientes.
+    Requiere ALLOW_DB_EXPORT=true en producción (candado multitenant).
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
+    bloqueo = _export_bd_deshabilitado()
+    if bloqueo is not None:
+        return bloqueo
     usuario, err = _usuario_y_error_firebase(request)
     if err is not None:
         return err

@@ -104,6 +104,24 @@ def _ejecutar_exportacion_google_sheets():
     return {'ok': True, 'resumen': resumen}
 
 
+# Fase 0 multitenant: estos endpoints exportan datos de TODAS las familias a un
+# Sheet global. Deben permanecer bloqueados en producción salvo habilitación
+# explícita, hasta que exista el export por alcance (Fase 5 del plan).
+def _export_global_deshabilitado():
+    if settings.DEBUG or utils_auth.env_flag('ALLOW_GLOBAL_EXPORT'):
+        return None
+    return Response(
+        {
+            'error': (
+                'Exportación global deshabilitada. Exporta datos de todas las familias '
+                'de la instancia; define ALLOW_GLOBAL_EXPORT=true solo si todas las '
+                'familias pertenecen al mismo operador.'
+            ),
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def exportar_a_sheets(request):
@@ -113,7 +131,12 @@ def exportar_a_sheets(request):
 
     Autenticación: header X-Export-Token con el valor de
     la variable de entorno EXPORT_SECRET_TOKEN.
+    Requiere ALLOW_GLOBAL_EXPORT=true en producción (candado multitenant).
     """
+    bloqueo = _export_global_deshabilitado()
+    if bloqueo is not None:
+        return bloqueo
+
     token_esperado = os.getenv('EXPORT_SECRET_TOKEN')
     token_recibido = request.headers.get('X-Export-Token') or ''
 
@@ -148,6 +171,9 @@ def exportar_sheets_autenticado(request):
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
+    bloqueo = _export_global_deshabilitado()
+    if bloqueo is not None:
+        return bloqueo
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err is not None:
         return err
