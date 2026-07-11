@@ -46,7 +46,8 @@ La app partió con foco familiar y ahora necesita:
 
 ### Respaldos
 - Alcance completo en V1: personal y familiar, restauración selectiva por alcance.
-- Configuración de destino (Drive/Sheets) **a nivel de usuario**, no global.
+- Configuración de destino **a nivel de usuario**, no global.
+- Dos destinos: `DISPOSITIVO` (V1) y `DRIVE` del propio usuario (V2). Detalle en Fase 5.
 
 ---
 
@@ -137,7 +138,23 @@ Implementa las reglas de producto de §2:
 ### Fase 5 — Backup/restore por alcance
 
 - Alcances explícitos: `PERSONAL` y `FAMILIAR`.
-- Configuración Drive/Sheets desde el perfil del usuario (`ConfiguracionRespaldoUsuario`).
+- **Formato**: export lógico filtrado por espacio (serialización de los datos del tenant, JSON o `.sql.gz` lógico). Nunca `pg_dump` — el dump lleva la BD completa con datos de todos los tenants y queda solo como herramienta de operación de la instancia (superuser, Fase 0).
+
+**Destino `DISPOSITIVO` (V1 — sin credenciales, cero configuración):**
+
+- El backend genera el archivo por alcance y el usuario lo descarga:
+  - Móvil: `expo-file-system` + `expo-sharing` → el share sheet del sistema permite guardarlo en Descargas, Files, o su propio Drive/iCloud sin que la app necesite permisos de Google.
+  - Web: descarga directa del navegador (mismo patrón que `descargar_dump`).
+- Restauración: subir el archivo desde la app, por alcance (patrón similar a `importar_dump`).
+
+**Destino `DRIVE` del propio usuario (V2 — respaldo automático):**
+
+- Hoy el backup a Drive usa una sola cuenta global (`GOOGLE_DRIVE_OAUTH_*` de entorno en `drive_pg.py`); se reemplaza por OAuth por usuario:
+  1. Botón "Conectar Google Drive" en el perfil → flujo OAuth con scope `drive.file` (solo archivos creados por la app) y `access_type=offline`.
+  2. Refresh token **cifrado** en `ConfiguracionRespaldoUsuario`.
+  3. Respaldos del espacio van a una carpeta en el Drive del usuario, con rotación (mantener N recientes, como hoy).
+  4. Botón "Desconectar" que revoca el token.
+- Nota: el login con Google vía Firebase **no sirve** para esto — Firebase Auth no entrega refresh tokens OAuth con scopes de Drive. Es un flujo OAuth separado con el mismo Client ID de Google Cloud ya configurado.
 - Nombres y destinos segregados para evitar colisiones.
 - **Retirar** los endpoints globales bloqueados en Fase 0 (o dejarlos solo-superuser para operación de la instancia).
 - Rediseñar el cron de export de GitHub Actions: pasa de "un Sheet global con todo" a per-usuario/per-espacio, o se elimina en favor del export bajo demanda.
