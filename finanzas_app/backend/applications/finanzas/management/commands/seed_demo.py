@@ -582,6 +582,10 @@ class Command(BaseCommand):
             familia_id=fid, fecha__year=ref.year, fecha__month=ref.month
         ).delete()
 
+        # Transición multitenant Fase 3: asigna espacio a los datos recién sembrados.
+        from django.core.management import call_command
+        call_command('backfill_espacios', verbosity=0)
+
         self.stdout.write(
             self.style.SUCCESS(
                 f'Seed demo listo. Familia «{FAMILIA_DEMO_NOMBRE}» (id={familia.id}), '

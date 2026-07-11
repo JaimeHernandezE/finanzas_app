@@ -12,6 +12,13 @@ class Fondo(models.Model):
         on_delete=models.CASCADE,
         related_name='fondos',
     )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
+    )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,

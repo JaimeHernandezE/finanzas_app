@@ -42,6 +42,15 @@ class Espacio(models.Model):
     activo = models.BooleanField(default=True)
     # Familias disueltas quedan archivadas como registro histórico de solo lectura.
     archivado = models.BooleanField(default=False)
+    # Transición Fase 3: vínculo al modelo legacy Familia para espejar datos y
+    # membresías mientras conviven ambos esquemas. Se elimina en el cutover.
+    familia_origen = models.OneToOneField(
+        'usuarios.Familia',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='espacio_espejo',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -95,9 +95,16 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 
 **Ingresos comunes:** `GET/POST /api/finanzas/ingresos-comunes/`, `PUT/PATCH/DELETE /api/finanzas/ingresos-comunes/<id>/`. Las respuestas incluyen `movimiento` (id del movimiento generado). Editar el ingreso sigue sincronizando el movimiento.
 
-## App `espacios` (multitenant, Fases 1–2)
+## App `espacios` (multitenant, Fases 1–3)
 
-Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). El aislamiento de los datos financieros por espacio llega con la migración de esquema (Fase 3).
+Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). Estado: esquema en transición — los modelos tenant (`Categoria`, `Movimiento`, `Presupuesto`, `IngresoComun`, snapshots, `Fondo`, `Viaje`) tienen FK `espacio` **nullable** junto a `familia`; las vistas siguen filtrando por familia hasta el cutover.
+
+**Transición Fase 3 (convivencia de esquemas):**
+
+- `Espacio.familia_origen` vincula cada espacio FAMILIAR con su `Familia` legacy.
+- Señales espejan en caliente: crear `Familia` → espacio espejo; `Usuario.familia/rol/activo` → `PertenenciaEspacio` (salir de familia desactiva la pertenencia; el espacio persiste como registro histórico).
+- `python manage.py backfill_espacios` — idempotente: espacios personales para usuarios existentes, espejos por familia, pertenencias y llenado de FK `espacio` donde esté NULL (nunca pisa un espacio asignado). `seed_demo` lo invoca al final.
+- `python manage.py validar_espacios` — conteos por tenant; exit code ≠ 0 si hay filas sin espacio o desalineadas. **Correr backfill + validar antes del cutover.**
 
 | Pieza | Responsabilidad |
 |---|---|

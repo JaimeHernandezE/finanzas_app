@@ -38,3 +38,49 @@ def crear_espacio_personal(usuario) -> Espacio:
         rol=PertenenciaEspacio.ROL_ADMIN,
     )
     return espacio
+
+
+# ── Transición Fase 3: espejo Familia ↔ Espacio FAMILIAR ─────────────────────
+
+def espacio_para_familia(familia) -> Espacio:
+    """Espacio FAMILIAR espejo de una Familia legacy (idempotente)."""
+    espacio = Espacio.objects.filter(familia_origen=familia).first()
+    if espacio is not None:
+        return espacio
+    return Espacio.objects.create(
+        tipo=Espacio.TIPO_FAMILIAR,
+        nombre=(familia.nombre or 'Familia')[:150],
+        familia_origen=familia,
+    )
+
+
+def sincronizar_pertenencia_familiar(usuario) -> None:
+    """
+    Espeja Usuario.familia / rol / activo en PertenenciaEspacio mientras conviven
+    ambos esquemas. Al cambiar o abandonar la familia, las pertenencias familiares
+    anteriores quedan inactivas (el espacio persiste como registro histórico).
+    """
+    if usuario.familia_id:
+        espacio = espacio_para_familia(usuario.familia)
+        pertenencia, created = PertenenciaEspacio.objects.get_or_create(
+            usuario=usuario,
+            espacio=espacio,
+            defaults={'rol': usuario.rol, 'activo': usuario.activo},
+        )
+        if not created and (
+            pertenencia.rol != usuario.rol or pertenencia.activo != usuario.activo
+        ):
+            pertenencia.rol = usuario.rol
+            pertenencia.activo = usuario.activo
+            pertenencia.save(update_fields=['rol', 'activo'])
+        PertenenciaEspacio.objects.filter(
+            usuario=usuario,
+            activo=True,
+            espacio__tipo=Espacio.TIPO_FAMILIAR,
+        ).exclude(espacio=espacio).update(activo=False)
+    else:
+        PertenenciaEspacio.objects.filter(
+            usuario=usuario,
+            activo=True,
+            espacio__tipo=Espacio.TIPO_FAMILIAR,
+        ).update(activo=False)

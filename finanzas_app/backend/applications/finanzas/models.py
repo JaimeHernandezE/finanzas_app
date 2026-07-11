@@ -29,6 +29,14 @@ class Categoria(models.Model):
         related_name='categorias',
         help_text="Si es null, la categoría es global del sistema."
     )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover. "
+                  "Null también para categorías globales del sistema."
+    )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -247,6 +255,13 @@ class Movimiento(models.Model):
         help_text="Familia a la que pertenece este movimiento. "
                   "Todos los filtros de vistas parten por este campo."
     )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
+    )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -384,6 +399,13 @@ class Presupuesto(models.Model):
         on_delete=models.CASCADE,
         related_name='presupuestos',
     )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
+    )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -427,6 +449,13 @@ class IngresoComun(models.Model):
         'usuarios.Familia',
         on_delete=models.CASCADE,
         related_name='ingresos_comunes',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -472,6 +501,13 @@ class SaldoMensualSnapshot(models.Model):
         'usuarios.Familia',
         on_delete=models.CASCADE,
         related_name='saldos_mensuales_snapshot',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -526,6 +562,13 @@ class LiquidacionComunMensualSnapshot(models.Model):
         on_delete=models.CASCADE,
         related_name='liquidaciones_comun_snapshot',
     )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
+    )
     mes = models.DateField(help_text='Primer día del mes.')
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -562,6 +605,13 @@ class ResumenHistoricoMesSnapshot(models.Model):
         'usuarios.Familia',
         on_delete=models.CASCADE,
         related_name='resumenes_historicos_mes',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
     mes = models.DateField(help_text='Primer día del mes.')
     payload = models.JSONField()
