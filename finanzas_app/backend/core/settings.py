@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     'corsheaders',
 
     # Tus apps
+    'applications.espacios',
     'applications.usuarios',
     'applications.finanzas',
     'applications.inversiones',

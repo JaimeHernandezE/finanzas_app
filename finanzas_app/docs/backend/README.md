@@ -95,6 +95,19 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 
 **Ingresos comunes:** `GET/POST /api/finanzas/ingresos-comunes/`, `PUT/PATCH/DELETE /api/finanzas/ingresos-comunes/<id>/`. Las respuestas incluyen `movimiento` (id del movimiento generado). Editar el ingreso sigue sincronizando el movimiento.
 
+## App `espacios` (multitenant, Fase 1)
+
+Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). Sin endpoints todavía; los modelos y utilidades se cablean a los endpoints en la Fase 2.
+
+| Pieza | Responsabilidad |
+|---|---|
+| `Espacio` | Tenant: `tipo PERSONAL\|FAMILIAR`, `modo_reparto` (`PROPORCIONAL`/`PARTES_IGUALES`/`SIN_REPARTO`, solo FAMILIAR), `activo`, `archivado` (familias disueltas quedan como registro histórico de solo lectura). |
+| `PertenenciaEspacio` | Membresía usuario↔espacio con `rol` (`ADMIN`/`MIEMBRO`) y `activo`. Única por `(usuario, espacio)`. |
+| `ConfiguracionRespaldoUsuario` | Destinos de respaldo por usuario (`drive_folder_id`, `sheet_id`). Tokens OAuth llegan cifrados en Fase 5. |
+| `TenantModel` (abstracto) | Base para modelos con datos de tenant: FK `espacio` (PROTECT) y manager que **lanza `TenantScopeError`** ante cualquier acceso sin `.en_espacio(espacio)`; `.sin_aislamiento()` solo para commands de operación. |
+| `services.crear_espacio_personal(usuario)` | Idempotente; garantiza el espacio personal (usuario como ADMIN). |
+| `contexto.resolver_espacio_activo(request, usuario)` | Resuelve `X-Espacio-Id`: sin header → espacio personal; header inválido → 400; sin membresía activa → 403 (nunca fallback silencioso). |
+
 ## Mapa técnico de modelos `finanzas`
 
 Relación de cada modelo con su responsabilidad y su integración con:

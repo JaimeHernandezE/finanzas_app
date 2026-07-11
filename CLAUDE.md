@@ -86,6 +86,7 @@ applications/<app_name>/
 
 | App | Models | URL prefix |
 |---|---|---|
+| `espacios` | `Espacio`, `PertenenciaEspacio`, `ConfiguracionRespaldoUsuario`, `TenantModel` (abstract) | — (no endpoints yet; multitenant Fase 1) |
 | `usuarios` | `Familia`, `Usuario` | `/api/usuarios/` |
 | `finanzas` | `Categoria`, `MetodoPago`, `Tarjeta`, `CuentaPersonal`, `Movimiento`, `Cuota`, `Presupuesto`, `IngresoComun` | `/api/finanzas/` |
 | `inversiones` | `Fondo`, `Aporte`, `RegistroValor` | `/api/inversiones/` |
