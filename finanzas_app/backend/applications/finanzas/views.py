@@ -21,8 +21,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
-import applications.utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
+from applications.espacios.contexto import usuario_y_espacio
 from .models import (
     Categoria,
     CuentaPersonal,
@@ -52,6 +52,46 @@ from .serializers import (
 
 logger = logging.getLogger(__name__)
 _SUELDOS_PRORRATEO_CACHE_SECONDS = 45
+
+
+def _contexto_espacio(request):
+    """
+    Punto de entrada multitenant de este módulo (transición Fase 3→4): autentica,
+    resuelve el espacio activo (header X-Espacio-Id o espacio por defecto) y
+    deriva la familia legacy DESDE el espacio — no desde el usuario — de modo que
+    todos los filtros `familia=usuario.familia` del módulo queden scoped al
+    tenant seleccionado.
+
+    La asignación `usuario.familia` es SOLO en memoria (ninguna vista de este
+    módulo persiste al usuario; verificado). En espacio PERSONAL la familia
+    derivada es None: las lecturas se comportan como usuario sin familia
+    (listas vacías / catálogo global) y las escrituras quedan bloqueadas hasta
+    habilitar la operación personal. Espacios archivados: solo lectura.
+    """
+    usuario, espacio, err = usuario_y_espacio(request)
+    if err is not None:
+        return None, None, err
+
+    familia = espacio.familia_origen if espacio.familia_origen_id else None
+    usuario.familia = familia  # override en memoria; scoped al espacio activo
+
+    if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+        if espacio.archivado:
+            return None, None, Response(
+                {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if espacio.es_personal or familia is None:
+            return None, None, Response(
+                {
+                    'error': (
+                        'Finanzas aún no está habilitado en este espacio '
+                        '(transición multitenant en curso).'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+    return usuario, espacio, None
 
 
 def _nuevo_import_debug_id():
@@ -136,7 +176,7 @@ def categorias(request):
            familiares de su familia + personales suyas (sin globales).
     POST → Crea una categoría nueva (familiar o personal según body)
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -244,7 +284,7 @@ def categoria_detalle(request, pk):
     DELETE → Elimina una categoría (incluidas globales). Falla si hay movimientos
              u otros registros protegidos por FK.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -306,7 +346,7 @@ def metodos_pago(request):
     Son globales del sistema, no se crean por usuario.
     Asegura que exista un registro por cada tipo (EFECTIVO, DEBITO, CREDITO).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -331,7 +371,7 @@ def tarjetas(request):
     GET  → Lista las tarjetas del usuario autenticado
     POST → Crea una tarjeta nueva para el usuario autenticado
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -357,7 +397,7 @@ def tarjeta_detalle(request, pk):
     PUT    → Edita una tarjeta (solo si es del usuario autenticado)
     DELETE → Elimina una tarjeta (solo si es del usuario autenticado)
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -394,7 +434,7 @@ def cuentas_personales(request):
     GET  → Cuentas que el usuario puede ver: propias + tuteladas (TutorCuenta).
     POST → Crea una cuenta personal propia del usuario autenticado.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -439,7 +479,7 @@ def cuenta_personal_detalle(request, pk):
     PUT/PATCH → Solo el dueño puede editar.
     DELETE → Solo el dueño puede eliminar (si tiene movimientos, puede fallar por FK).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -524,7 +564,7 @@ def movimientos(request):
 
     POST → Crea un movimiento nuevo. Si es crédito, el signal genera las cuotas.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -658,7 +698,7 @@ def movimiento_detalle(request, pk):
     DELETE → Elimina el movimiento. No aplica a movimientos vinculados a ingreso común
              (eliminar el ingreso común en su lugar).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -732,7 +772,7 @@ def cuotas(request):
           ?mes=3&anio=2026 filtra por mes de facturación
           ?estado=PENDIENTE filtra por estado
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -781,7 +821,7 @@ def cuotas_deuda_pendiente(request):
     Suma de cuotas no pagadas del mes actual (facturado/a facturar del mes)
     de todas las tarjetas personales del usuario autenticado.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -810,7 +850,7 @@ def cuota_detalle(request, pk):
     PUT → Actualiza el estado o el campo incluir de una cuota.
           Si incluir pasa a False, mueve mes_facturacion al mes siguiente.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -860,7 +900,7 @@ def ingresos_comunes(request):
              "origen": "Sueldo"
            }
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -899,7 +939,7 @@ def ingreso_comun_detalle(request, pk):
     PUT/PATCH → Edita un ingreso común (solo el autor); el Movimiento vinculado se actualiza.
     DELETE → Elimina el ingreso y el movimiento vinculado.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -976,7 +1016,7 @@ def presupuesto_mes(request):
     Las filas listan categorías con presupuesto y/o gastos del mes; el gastado
     excluye movimientos CRÉDITO e incluye cuotas del mes facturado (no pagadas).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1019,7 +1059,7 @@ def presupuestos_create(request):
     POST { categoria, mes (YYYY-MM-01), monto, ambito: FAMILIAR|PERSONAL }
     Crea o actualiza el presupuesto de esa categoría/mes.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1107,7 +1147,7 @@ def presupuestos_create(request):
 @permission_classes([AllowAny])
 def presupuesto_detalle_finanzas(request, pk):
     """PATCH { monto } o DELETE."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1167,7 +1207,7 @@ def pagar_tarjeta(request):
     Los movimientos con crédito no se contabilizan como egreso en el momento
     del gasto; el impacto en caja ocurre aquí, al pagar la tarjeta.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1302,7 +1342,7 @@ def liquidacion(request):
 
     Query params obligatorios: ?mes=3&anio=2026
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1446,7 +1486,7 @@ def resumen_historico(request):
     """
     Resumen mensual histórico de la familia (neto común, sueldos, prorrateo, compensación).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1473,7 +1513,7 @@ def saldo_mensual(request):
     GET ?mes=3&anio=2026
     Efectivo neto (no crédito) por cuenta personal del usuario, desde snapshot o cálculo en vivo.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1530,7 +1570,7 @@ def cuenta_resumen_mensual(request):
     Resumen por mes calendario de una cuenta personal (ingresos/egresos efectivo-débito, neto).
     Solo cuentas visibles para el usuario (propias o tuteladas).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1592,7 +1632,7 @@ def efectivo_disponible(request):
     Efectivo del dashboard: ver services_recalculo.efectivo_disponible_dashboard
     (desglose A–E en campo desglose).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1625,7 +1665,7 @@ def dashboard_resumen(request):
     Resumen agregado para la pantalla dashboard (efectivo, compensación, prorrateo,
     presupuestos comprometidos, saldo proyectado). Ver `services.dashboard.obtener_resumen_dashboard`.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1660,7 +1700,7 @@ def compensacion_proyectada_datos(request):
     GET ?mes=3&anio=2026
     Neto familiar COMÚN y neto/ingreso declarado por miembro (para saldo proyectado con prorrateo estimado).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1698,7 +1738,7 @@ def sueldos_estimados_prorrateo(request):
     PUT { "montos": { "<usuario_id>": "12345.67", ... } } — Guarda y elimina
     registros de meses anteriores de la misma familia.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1815,7 +1855,7 @@ def sueldos_estimados_prorrateo(request):
 @permission_classes([AllowAny])
 def recalculo_estado(request):
     """GET estado de recálculo de snapshots históricos."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if not usuario.familia_id:
@@ -1837,7 +1877,7 @@ def recalculo_historico(request):
     - Reparación de cuotas de movimientos con tarjeta de crédito para corregir inconsistencias
       históricas (sin tocar cuotas ya pagadas).
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -1909,7 +1949,7 @@ def importar_cuenta_personal_planilla(request):
       - Si una categoría no existe, se crea como categoría personal.
       - Si el monto es negativo, se crea movimiento INGRESO en categoría "Otros".
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -2179,7 +2219,7 @@ def importar_honorarios_planilla(request):
       - Si Ingreso tiene contenido -> INGRESO.
       - El monto siempre se toma desde columna Valor.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 
@@ -2443,7 +2483,7 @@ def importar_sueldos_planilla(request):
       - Integrante (opcional, ignorado)
       - ID entrada (ignorado)
     """
-    usuario_auth, error = utils_auth.get_usuario_autenticado(request)
+    usuario_auth, espacio, error = _contexto_espacio(request)
     if error:
         return error
     if settings.DEMO:
@@ -2580,7 +2620,7 @@ def importar_gastos_comunes_planilla(request):
     Importa movimientos desde CSV para gastos comunes.
     Misma lógica de cuenta personal, pero guarda ambito=COMUN.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
+    usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
 

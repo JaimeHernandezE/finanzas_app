@@ -101,7 +101,8 @@ Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). Estado: es
 
 **Cutover por app (Fase 3→4):**
 
-- `viajes` e `inversiones` ya operan por espacio activo: lecturas con `Model.tenant.en_espacio(espacio)`, escrituras con dual-write (`espacio` + `familia`). Escrituras bloqueadas en espacios PERSONAL (hasta habilitar la operación personal) y en espacios archivados (solo lectura). `finanzas` sigue filtrando por familia (próximo incremento).
+- `viajes` e `inversiones` operan por espacio activo: lecturas con `Model.tenant.en_espacio(espacio)`, escrituras con dual-write (`espacio` + `familia`). Escrituras bloqueadas en espacios PERSONAL (hasta habilitar la operación personal) y en espacios archivados (solo lectura).
+- `finanzas` opera por espacio vía `_contexto_espacio(request)` (en `finanzas/views.py`): resuelve el espacio activo y deriva la familia legacy **desde el espacio** con un override en memoria de `usuario.familia`, de modo que los ~140 filtros `familia=` del módulo quedan scoped al tenant sin reescribirlos uno a uno. En espacio PERSONAL las lecturas se comportan como usuario sin familia (listas vacías / catálogo global) y las escrituras responden 400; espacios archivados → 403 en escrituras. El shim exige que ninguna vista del módulo persista `usuario` (verificado; mantener esa invariante).
 - **Resolución sin header `X-Espacio-Id`**: espacio FAMILIAR activo del usuario si tiene membresía, sino el personal. Esto mantiene compatibles los clientes móviles/web ya desplegados que no envían el header. Header inválido o ajeno → 403, nunca fallback.
 - **Dual-write** (`pre_save`): toda fila tenant nueva con `familia` recibe su espacio espejo automáticamente, sin importar qué vista o servicio la cree.
 
