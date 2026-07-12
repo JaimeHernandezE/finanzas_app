@@ -1,8 +1,10 @@
-# Endpoints de espacios (Fase 2): selector de espacio para el frontend y
-# configuración del espacio (modo de reparto). El aislamiento de los datos
-# financieros por espacio llega con la migración de esquema (Fase 3).
+# Endpoints de espacios (Fase 2+5): selector de espacio, configuración,
+# y export/import lógico por espacio (Fase 5 V1 — DISPOSITIVO).
+
+import json
 
 from django.conf import settings
+from django.http import JsonResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -12,6 +14,8 @@ from applications import utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
 
 from .contexto import resolver_espacio_activo
+from .exportar_espacio import exportar_espacio
+from .importar_espacio import ImportError as ImportEspacioError, importar_espacio
 from .models import Espacio, PertenenciaEspacio
 
 
@@ -142,3 +146,93 @@ def espacio_actualizar(request, pk):
 
     espacio.save(update_fields=update_fields)
     return Response(_payload_espacio(espacio, rol=pertenencia.rol))
+
+
+# ── Fase 5 V1: export/import por espacio ─────────────────────────────────────
+
+def _validar_pertenencia(usuario, espacio_id):
+    """Valida que el usuario pertenezca al espacio. Returns (espacio, pertenencia, err_response)."""
+    pertenencia = (
+        PertenenciaEspacio.objects
+        .select_related('espacio')
+        .filter(usuario=usuario, espacio_id=espacio_id, activo=True, espacio__activo=True)
+        .first()
+    )
+    if pertenencia is None:
+        return None, None, Response(
+            {'error': 'No perteneces al espacio indicado.'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return pertenencia.espacio, pertenencia, None
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def espacio_exportar(request, pk):
+    """Exporta los datos de un espacio como JSON descargable."""
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    espacio, pertenencia, err = _validar_pertenencia(usuario, pk)
+    if err:
+        return err
+
+    data = exportar_espacio(espacio)
+    response = JsonResponse(data, json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    filename = f'respaldo_{espacio.nombre.replace(" ", "_")}_{data["exportado_at"][:10]}.json'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def espacio_importar(request, pk):
+    """Importa datos desde un archivo JSON a un espacio."""
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    espacio, pertenencia, err = _validar_pertenencia(usuario, pk)
+    if err:
+        return err
+
+    if espacio.archivado:
+        return Response(
+            {'error': 'No se puede importar a un espacio archivado.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    archivo = request.FILES.get('archivo')
+    if archivo is None:
+        return Response(
+            {'error': 'Se requiere un archivo JSON (campo "archivo").'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        contenido = archivo.read().decode('utf-8')
+        data = json.loads(contenido)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        return Response(
+            {'error': f'El archivo no es un JSON válido: {e}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        conteos = importar_espacio(data, espacio, usuario)
+    except ImportEspacioError as e:
+        return Response(
+            {'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        'mensaje': 'Importación completada.',
+        'conteos': conteos,
+    })

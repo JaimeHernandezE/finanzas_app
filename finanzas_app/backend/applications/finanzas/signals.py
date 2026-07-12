@@ -130,6 +130,8 @@ def sincronizar_movimiento_desde_ingreso_comun(sender, instance, created, **kwar
     """
     Refleja cada IngresoComun como Movimiento INGRESO en efectivo en cuenta Personal.
     """
+    if getattr(instance, '_skip_signal', False):
+        return
     cuenta = _asegurar_cuenta_personal(instance.usuario)
     metodo = _obtener_metodo_efectivo()
     categoria = _obtener_categoria_ingreso_declarado()
@@ -233,6 +235,9 @@ def generar_cuotas(sender, instance, created, **kwargs):
     el día de facturación de la tarjeta asociada al movimiento.
     """
     if not created:
+        return
+
+    if getattr(instance, '_skip_cuota_signal', False):
         return
 
     if instance.metodo_pago.tipo != 'CREDITO':
