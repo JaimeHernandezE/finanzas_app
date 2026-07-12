@@ -23,6 +23,7 @@ from applications import utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
 from .demo_constants import DEMO_EMAIL_GLORI, DEMO_EMAIL_JAIME
 from .miembro_salida import puede_quitar_miembro_familia
+from .salida_familia import puede_salir_de_familia, salir_de_familia
 from .models import Usuario, Familia, InvitacionPendiente
 
 _ZONAS_VALIDAS = zoneinfo.available_timezones()
@@ -613,6 +614,38 @@ def miembro_eliminar(request, pk):
     otro.familia = None
     otro.save(update_fields=['familia'])
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def familia_salir(request):
+    """
+    GET  → Verifica si el usuario puede salir de la familia (pre-check).
+    POST → Ejecuta la salida: copia datos al espacio personal, disuelve
+           la familia si quedan ≤1 miembros.
+    """
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    if not usuario.familia_id:
+        return Response(
+            {'error': 'El usuario no pertenece a una familia.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.method == 'GET':
+        ok, msg = puede_salir_de_familia(usuario)
+        return Response({'puede_salir': ok, 'motivo': msg})
+
+    try:
+        resultado = salir_de_familia(usuario)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(resultado)
 
 
 @api_view(['GET', 'POST'])
