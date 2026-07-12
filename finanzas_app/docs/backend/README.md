@@ -99,6 +99,12 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 
 Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). Estado: esquema en transición — los modelos tenant (`Categoria`, `Movimiento`, `Presupuesto`, `IngresoComun`, snapshots, `Fondo`, `Viaje`) tienen FK `espacio` **nullable** junto a `familia`; las vistas siguen filtrando por familia hasta el cutover.
 
+**Cutover por app (Fase 3→4):**
+
+- `viajes` e `inversiones` ya operan por espacio activo: lecturas con `Model.tenant.en_espacio(espacio)`, escrituras con dual-write (`espacio` + `familia`). Escrituras bloqueadas en espacios PERSONAL (hasta habilitar la operación personal) y en espacios archivados (solo lectura). `finanzas` sigue filtrando por familia (próximo incremento).
+- **Resolución sin header `X-Espacio-Id`**: espacio FAMILIAR activo del usuario si tiene membresía, sino el personal. Esto mantiene compatibles los clientes móviles/web ya desplegados que no envían el header. Header inválido o ajeno → 403, nunca fallback.
+- **Dual-write** (`pre_save`): toda fila tenant nueva con `familia` recibe su espacio espejo automáticamente, sin importar qué vista o servicio la cree.
+
 **Transición Fase 3 (convivencia de esquemas):**
 
 - `Espacio.familia_origen` vincula cada espacio FAMILIAR con su `Familia` legacy.

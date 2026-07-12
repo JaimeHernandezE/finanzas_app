@@ -1,5 +1,7 @@
 from django.db import models
 
+from applications.espacios.models import TenantManager
+
 
 class Viaje(models.Model):
     """
@@ -20,6 +22,9 @@ class Viaje(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     nombre       = models.CharField(max_length=100, help_text="Ej: 'Vacaciones Llanquihue 2026'")
     fecha_inicio = models.DateField()
     fecha_fin    = models.DateField()

@@ -15,36 +15,10 @@ from django.db import transaction
 from applications.espacios.services import (
     crear_espacio_personal,
     espacio_para_familia,
+    modelos_tenant,
     sincronizar_pertenencia_familiar,
 )
 from applications.usuarios.models import Familia
-
-
-def modelos_tenant():
-    """Modelos con FK directa a familia que reciben espacio en la transición."""
-    from applications.finanzas.models import (
-        Categoria,
-        IngresoComun,
-        LiquidacionComunMensualSnapshot,
-        Movimiento,
-        Presupuesto,
-        ResumenHistoricoMesSnapshot,
-        SaldoMensualSnapshot,
-    )
-    from applications.inversiones.models import Fondo
-    from applications.viajes.models import Viaje
-
-    return [
-        Categoria,
-        Movimiento,
-        Presupuesto,
-        IngresoComun,
-        SaldoMensualSnapshot,
-        LiquidacionComunMensualSnapshot,
-        ResumenHistoricoMesSnapshot,
-        Fondo,
-        Viaje,
-    ]
 
 
 class Command(BaseCommand):

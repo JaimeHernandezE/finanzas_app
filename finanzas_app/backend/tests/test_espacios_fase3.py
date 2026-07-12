@@ -87,6 +87,9 @@ class TestBackfillYValidacion:
     def test_backfill_asigna_espacio_desde_familia(
         self, familia, usuario, categoria_familiar, categoria_global
     ):
+        # Simular fila legacy (pre dual-write): .update() no pasa por señales.
+        type(categoria_familiar).objects.filter(pk=categoria_familiar.pk).update(espacio=None)
+        categoria_familiar.refresh_from_db()
         assert categoria_familiar.espacio_id is None
         call_command('backfill_espacios', verbosity=0)
         categoria_familiar.refresh_from_db()
@@ -115,7 +118,8 @@ class TestBackfillYValidacion:
         assert 'validar_espacios OK' in out
 
     def test_validar_falla_con_fila_sin_espacio(self, familia, usuario, categoria_familiar):
-        # Sin backfill: la categoría familiar quedó con espacio NULL → debe fallar.
+        # Fila legacy sin espacio (creada antes del dual-write) → validar debe fallar.
+        type(categoria_familiar).objects.filter(pk=categoria_familiar.pk).update(espacio=None)
         with pytest.raises(CommandError):
             call_command('validar_espacios')
 

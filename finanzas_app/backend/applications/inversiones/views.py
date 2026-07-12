@@ -1,16 +1,43 @@
 # applications/inversiones/views.py
+#
+# Migrado al patrón multitenant (cutover Fase 3→4): lecturas y escrituras por
+# espacio activo (X-Espacio-Id o espacio por defecto), vía Fondo.tenant.
+# Durante la transición las escrituras mantienen también familia (dual-write)
+# y solo se permiten en espacios FAMILIAR con familia legacy vinculada.
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Sum, Q
-import applications.utils as utils_auth
+
+from applications.espacios.contexto import usuario_y_espacio
+
 from .models import Fondo, Aporte, RegistroValor
 from .serializers import (
     FondoListSerializer, FondoDetalleSerializer,
     AporteSerializer, RegistroValorSerializer,
 )
+
+
+def _bloqueo_escritura(espacio):
+    """Guard de escritura durante la transición multitenant."""
+    if espacio.archivado:
+        return Response(
+            {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    if espacio.es_personal or espacio.familia_origen_id is None:
+        return Response(
+            {
+                'error': (
+                    'Las inversiones aún no están habilitadas en este espacio '
+                    '(transición multitenant en curso).'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
 
 
 def calcular_metricas(fondo):
@@ -38,27 +65,32 @@ def calcular_metricas(fondo):
 def fondos(request):
     """
     GET  → Lista fondos visibles para el usuario con métricas calculadas.
-           Incluye fondos propios y compartidos de la familia.
-    POST → Crea un fondo nuevo.
+           Incluye fondos propios y compartidos del espacio activo.
+    POST → Crea un fondo nuevo en el espacio activo.
            Body: { "nombre": "...", "descripcion": "...", "es_compartido": true }
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     if request.method == 'GET':
-        qs = Fondo.objects.filter(
-            Q(usuario=usuario) | Q(familia=usuario.familia, usuario__isnull=True)
+        qs = Fondo.tenant.en_espacio(espacio).filter(
+            Q(usuario=usuario) | Q(usuario__isnull=True)
         ).prefetch_related('aportes', 'registros_valor').order_by('nombre')
 
         fondos_con_metricas = [calcular_metricas(f) for f in qs]
         return Response(FondoListSerializer(fondos_con_metricas, many=True).data)
 
     if request.method == 'POST':
+        bloqueo = _bloqueo_escritura(espacio)
+        if bloqueo is not None:
+            return bloqueo
         es_compartido = request.data.get('es_compartido', False)
         fondo = Fondo.objects.create(
             nombre      = request.data.get('nombre', ''),
             descripcion = request.data.get('descripcion', ''),
-            familia     = usuario.familia,
+            familia     = espacio.familia_origen,
+            espacio     = espacio,
             usuario     = None if es_compartido else usuario,
         )
         fondo = calcular_metricas(fondo)
@@ -77,16 +109,14 @@ def fondo_detalle(request, pk):
     PUT    → Edita nombre o descripción.
     DELETE → Elimina el fondo y todos sus registros.
     """
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     try:
-        fondo = Fondo.objects.prefetch_related(
+        fondo = Fondo.tenant.en_espacio(espacio).prefetch_related(
             'aportes', 'registros_valor'
-        ).get(
-            pk=pk,
-            familia=usuario.familia,
-        )
+        ).get(pk=pk)
     except Fondo.DoesNotExist:
         return Response(
             {'error': 'Fondo no encontrado.'},
@@ -96,6 +126,10 @@ def fondo_detalle(request, pk):
     if request.method == 'GET':
         fondo = calcular_metricas(fondo)
         return Response(FondoDetalleSerializer(fondo).data)
+
+    bloqueo = _bloqueo_escritura(espacio)
+    if bloqueo is not None:
+        return bloqueo
 
     if request.method == 'DELETE':
         fondo.delete()
@@ -116,13 +150,18 @@ def fondo_detalle(request, pk):
 @permission_classes([AllowAny])
 def agregar_aporte(request, pk):
     """POST → Agrega un aporte de capital al fondo."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     try:
-        fondo = Fondo.objects.get(pk=pk, familia=usuario.familia)
+        fondo = Fondo.tenant.en_espacio(espacio).get(pk=pk)
     except Fondo.DoesNotExist:
         return Response({'error': 'Fondo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    bloqueo = _bloqueo_escritura(espacio)
+    if bloqueo is not None:
+        return bloqueo
 
     serializer = AporteSerializer(data=request.data)
     if serializer.is_valid():
@@ -136,13 +175,18 @@ def agregar_aporte(request, pk):
 @permission_classes([AllowAny])
 def eliminar_aporte(request, pk):
     """DELETE → Elimina un aporte."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     try:
-        aporte = Aporte.objects.get(pk=pk, fondo__familia=usuario.familia)
+        aporte = Aporte.objects.get(pk=pk, fondo__espacio=espacio)
     except Aporte.DoesNotExist:
         return Response({'error': 'Aporte no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    bloqueo = _bloqueo_escritura(espacio)
+    if bloqueo is not None:
+        return bloqueo
 
     aporte.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
@@ -153,13 +197,18 @@ def eliminar_aporte(request, pk):
 @permission_classes([AllowAny])
 def agregar_valor(request, pk):
     """POST → Registra el valor actual del fondo."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     try:
-        fondo = Fondo.objects.get(pk=pk, familia=usuario.familia)
+        fondo = Fondo.tenant.en_espacio(espacio).get(pk=pk)
     except Fondo.DoesNotExist:
         return Response({'error': 'Fondo no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    bloqueo = _bloqueo_escritura(espacio)
+    if bloqueo is not None:
+        return bloqueo
 
     serializer = RegistroValorSerializer(data=request.data)
     if serializer.is_valid():
@@ -173,13 +222,18 @@ def agregar_valor(request, pk):
 @permission_classes([AllowAny])
 def eliminar_valor(request, pk):
     """DELETE → Elimina un registro de valor."""
-    usuario, error = utils_auth.get_usuario_autenticado(request)
-    if error: return error
+    usuario, espacio, error = usuario_y_espacio(request)
+    if error:
+        return error
 
     try:
-        valor = RegistroValor.objects.get(pk=pk, fondo__familia=usuario.familia)
+        valor = RegistroValor.objects.get(pk=pk, fondo__espacio=espacio)
     except RegistroValor.DoesNotExist:
         return Response({'error': 'Registro no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+    bloqueo = _bloqueo_escritura(espacio)
+    if bloqueo is not None:
+        return bloqueo
 
     valor.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)

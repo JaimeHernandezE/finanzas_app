@@ -3,6 +3,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from applications.espacios.models import TenantManager
+
 
 class Categoria(models.Model):
     """
@@ -37,6 +39,9 @@ class Categoria(models.Model):
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover. "
                   "Null también para categorías globales del sistema."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -262,6 +267,9 @@ class Movimiento(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -406,6 +414,9 @@ class Presupuesto(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -457,6 +468,9 @@ class IngresoComun(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -509,6 +523,9 @@ class SaldoMensualSnapshot(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -569,6 +586,9 @@ class LiquidacionComunMensualSnapshot(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     mes = models.DateField(help_text='Primer día del mes.')
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -613,6 +633,9 @@ class ResumenHistoricoMesSnapshot(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     mes = models.DateField(help_text='Primer día del mes.')
     payload = models.JSONField()
     calculado_at = models.DateTimeField(auto_now=True)

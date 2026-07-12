@@ -11,8 +11,8 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import F
 
-from applications.espacios.management.commands.backfill_espacios import modelos_tenant
 from applications.espacios.models import Espacio, PertenenciaEspacio
+from applications.espacios.services import modelos_tenant
 
 
 class Command(BaseCommand):

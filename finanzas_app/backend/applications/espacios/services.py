@@ -42,6 +42,32 @@ def crear_espacio_personal(usuario) -> Espacio:
 
 # ── Transición Fase 3: espejo Familia ↔ Espacio FAMILIAR ─────────────────────
 
+def modelos_tenant():
+    """Modelos con FK directa a familia que reciben espacio en la transición."""
+    from applications.finanzas.models import (
+        Categoria,
+        IngresoComun,
+        LiquidacionComunMensualSnapshot,
+        Movimiento,
+        Presupuesto,
+        ResumenHistoricoMesSnapshot,
+        SaldoMensualSnapshot,
+    )
+    from applications.inversiones.models import Fondo
+    from applications.viajes.models import Viaje
+
+    return [
+        Categoria,
+        Movimiento,
+        Presupuesto,
+        IngresoComun,
+        SaldoMensualSnapshot,
+        LiquidacionComunMensualSnapshot,
+        ResumenHistoricoMesSnapshot,
+        Fondo,
+        Viaje,
+    ]
+
 def espacio_para_familia(familia) -> Espacio:
     """Espacio FAMILIAR espejo de una Familia legacy (idempotente)."""
     espacio = Espacio.objects.filter(familia_origen=familia).first()

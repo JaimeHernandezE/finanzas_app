@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from applications.espacios.models import TenantManager
+
 
 class Fondo(models.Model):
     """
@@ -19,6 +21,9 @@ class Fondo(models.Model):
         related_name='+',
         help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
+
+    objects = models.Manager()  # legacy (familia); default durante la transición
+    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
