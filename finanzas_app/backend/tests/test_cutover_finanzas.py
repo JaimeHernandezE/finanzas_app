@@ -1,8 +1,8 @@
 # Tests del cutover multitenant en finanzas: el módulo completo resuelve el
 # espacio activo vía _contexto_espacio y deriva familia desde el espacio.
 # Cubre: regresión de compatibilidad (sin header), aislamiento entre tenants,
-# semántica del espacio personal (lecturas vacías/globales, escrituras
-# bloqueadas) y espacios archivados de solo lectura.
+# operación personal (escrituras en espacio personal), y espacios archivados
+# de solo lectura.
 
 import pytest
 from rest_framework import status
@@ -46,7 +46,6 @@ class TestLecturasPorEspacio:
         assert resp.data == []
 
     def test_movimiento_dual_write_espacio(self, movimiento_efectivo, familia):
-        # Toda fila creada con familia recibe el espacio espejo (pre_save).
         movimiento_efectivo.refresh_from_db()
         assert movimiento_efectivo.espacio_id == _espejo(familia).id
 
@@ -72,19 +71,19 @@ class TestLecturasPorEspacio:
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
     def test_dashboard_en_personal_no_falla(self, client, usuario, familia, auth_header):
-        # En espacio personal (familia derivada = None) el dashboard responde un
-        # 400 controlado ("sin familia"), no un 500. Cambiará al habilitar la
-        # operación personal de finanzas.
         personal = obtener_espacio_personal(usuario)
         resp = client.get(
-            '/api/finanzas/dashboard-resumen/', **auth_header, **_header_espacio(personal)
+            '/api/finanzas/dashboard-resumen/',
+            {'mes': 3, 'anio': 2026},
+            **auth_header,
+            **_header_espacio(personal),
         )
         assert resp.status_code in (status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST)
         assert resp.status_code != status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class TestEscriturasPorEspacio:
-    def test_crear_movimiento_en_personal_bloqueado(
+    def test_crear_movimiento_en_personal_ok(
         self, client, usuario, familia, categoria_egreso, metodo_efectivo, auth_header
     ):
         personal = obtener_espacio_personal(usuario)
@@ -93,17 +92,21 @@ class TestEscriturasPorEspacio:
             {
                 'monto': 10000,
                 'fecha': '2026-03-01',
-                'descripcion': 'Test personal',
+                'comentario': 'Test personal',
                 'categoria': categoria_egreso.id,
                 'metodo_pago': metodo_efectivo.id,
                 'tipo': 'EGRESO',
+                'ambito': 'PERSONAL',
             },
             format='json',
             **auth_header,
             **_header_espacio(personal),
         )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
-        assert 'multitenant' in resp.data['error']
+        assert resp.status_code == status.HTTP_201_CREATED, resp.data
+        mov = Movimiento.objects.get(pk=resp.data['id'])
+        assert mov.espacio_id == personal.id
+        assert mov.familia_id is None
+        assert mov.usuario_id == usuario.id
 
     def test_crear_movimiento_familiar_asigna_espacio(
         self, client, usuario, familia, categoria_egreso, metodo_efectivo, auth_header
@@ -113,7 +116,7 @@ class TestEscriturasPorEspacio:
             {
                 'monto': 12345,
                 'fecha': '2026-03-02',
-                'descripcion': 'Test familiar',
+                'comentario': 'Test familiar',
                 'categoria': categoria_egreso.id,
                 'metodo_pago': metodo_efectivo.id,
                 'tipo': 'EGRESO',
@@ -137,7 +140,7 @@ class TestEscriturasPorEspacio:
             {
                 'monto': 1000,
                 'fecha': '2026-03-03',
-                'descripcion': 'En archivado',
+                'comentario': 'En archivado',
                 'categoria': categoria_egreso.id,
                 'metodo_pago': metodo_efectivo.id,
                 'tipo': 'EGRESO',
@@ -148,18 +151,53 @@ class TestEscriturasPorEspacio:
         )
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_presupuesto_create_en_personal_bloqueado(
+    def test_presupuesto_familiar_en_personal_bloqueado(
         self, client, usuario, familia, categoria_familiar, auth_header
     ):
         personal = obtener_espacio_personal(usuario)
         resp = client.post(
             '/api/finanzas/presupuestos/',
-            {'categoria': categoria_familiar.id, 'monto': 100000, 'mes': '2026-03-01'},
+            {
+                'categoria': categoria_familiar.id,
+                'monto': 100000,
+                'mes': '2026-03-01',
+                'ambito': 'FAMILIAR',
+            },
             format='json',
             **auth_header,
             **_header_espacio(personal),
         )
         assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_movimiento_personal_visible_solo_en_espacio_personal(
+        self, client, usuario, familia, categoria_egreso, metodo_efectivo, auth_header
+    ):
+        personal = obtener_espacio_personal(usuario)
+        resp = client.post(
+            '/api/finanzas/movimientos/',
+            {
+                'monto': 5000,
+                'fecha': '2026-04-01',
+                'comentario': 'Solo en personal',
+                'categoria': categoria_egreso.id,
+                'metodo_pago': metodo_efectivo.id,
+                'tipo': 'EGRESO',
+                'ambito': 'PERSONAL',
+            },
+            format='json',
+            **auth_header,
+            **_header_espacio(personal),
+        )
+        assert resp.status_code == status.HTTP_201_CREATED
+        mov_id = resp.data['id']
+
+        resp_personal = client.get(
+            '/api/finanzas/movimientos/', **auth_header, **_header_espacio(personal)
+        )
+        assert mov_id in {m['id'] for m in resp_personal.data}
+
+        resp_familiar = client.get('/api/finanzas/movimientos/', **auth_header)
+        assert mov_id not in {m['id'] for m in resp_familiar.data}
 
 
 class TestAislamientoEntreFamilias:

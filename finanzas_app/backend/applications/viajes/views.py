@@ -29,21 +29,11 @@ def _invalidar_cache_viajes(espacio_id: int) -> None:
 
 
 def _bloqueo_escritura(espacio):
-    """Guard de escritura durante la transición multitenant."""
+    """Guard de escritura: espacios archivados son solo lectura."""
     if espacio.archivado:
         return Response(
             {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
             status=status.HTTP_403_FORBIDDEN,
-        )
-    if espacio.es_personal or espacio.familia_origen_id is None:
-        return Response(
-            {
-                'error': (
-                    'Los viajes aún no están habilitados en este espacio '
-                    '(transición multitenant en curso).'
-                ),
-            },
-            status=status.HTTP_400_BAD_REQUEST,
         )
     return None
 
@@ -80,7 +70,10 @@ def viajes(request):
             return bloqueo
         serializer = ViajeSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(espacio=espacio, familia=espacio.familia_origen)
+            save_kwargs = {'espacio': espacio}
+            if espacio.familia_origen_id:
+                save_kwargs['familia'] = espacio.familia_origen
+            serializer.save(**save_kwargs)
             _invalidar_cache_viajes(espacio.id)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

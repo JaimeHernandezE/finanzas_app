@@ -13,6 +13,7 @@ class Viaje(models.Model):
     familia      = models.ForeignKey(
         'usuarios.Familia',
         on_delete=models.CASCADE,
+        null=True, blank=True,
         related_name='viajes',
     )
     espacio      = models.ForeignKey(
@@ -20,7 +21,6 @@ class Viaje(models.Model):
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
     objects = models.Manager()  # legacy (familia); default durante la transición

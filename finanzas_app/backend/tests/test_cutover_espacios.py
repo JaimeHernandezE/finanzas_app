@@ -95,7 +95,7 @@ class TestViajesEspacio:
         assert viaje.espacio_id == _espejo(familia).id
         assert viaje.familia_id == familia.id
 
-    def test_crear_en_espacio_personal_bloqueado(self, client, usuario, familia, auth_header):
+    def test_crear_viaje_en_espacio_personal_ok(self, client, usuario, familia, auth_header):
         personal = obtener_espacio_personal(usuario)
         resp = client.post(
             '/api/viajes/',
@@ -104,7 +104,10 @@ class TestViajesEspacio:
             **auth_header,
             HTTP_X_ESPACIO_ID=str(personal.id),
         )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert resp.status_code == status.HTTP_201_CREATED
+        viaje = Viaje.objects.get(pk=resp.data['id'])
+        assert viaje.espacio_id == personal.id
+        assert viaje.familia_id is None
 
     def test_espacio_archivado_es_solo_lectura(self, client, usuario, familia, auth_header):
         viaje = _crear_viaje(familia)
@@ -173,7 +176,7 @@ class TestInversionesEspacio:
         )
         assert resp.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_crear_fondo_en_personal_bloqueado(self, client, usuario, familia, auth_header):
+    def test_crear_fondo_en_personal_ok(self, client, usuario, familia, auth_header):
         personal = obtener_espacio_personal(usuario)
         resp = client.post(
             '/api/inversiones/fondos/',
@@ -182,4 +185,7 @@ class TestInversionesEspacio:
             **auth_header,
             HTTP_X_ESPACIO_ID=str(personal.id),
         )
-        assert resp.status_code == status.HTTP_400_BAD_REQUEST
+        assert resp.status_code == status.HTTP_201_CREATED
+        fondo = Fondo.objects.get(pk=resp.data['id'])
+        assert fondo.espacio_id == personal.id
+        assert fondo.familia_id is None

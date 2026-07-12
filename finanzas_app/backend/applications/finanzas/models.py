@@ -256,9 +256,8 @@ class Movimiento(models.Model):
     familia = models.ForeignKey(
         'usuarios.Familia',
         on_delete=models.CASCADE,
+        null=True, blank=True,
         related_name='movimientos',
-        help_text="Familia a la que pertenece este movimiento. "
-                  "Todos los filtros de vistas parten por este campo."
     )
     espacio = models.ForeignKey(
         'espacios.Espacio',
@@ -405,6 +404,7 @@ class Presupuesto(models.Model):
     familia = models.ForeignKey(
         'usuarios.Familia',
         on_delete=models.CASCADE,
+        null=True, blank=True,
         related_name='presupuestos',
     )
     espacio = models.ForeignKey(
@@ -412,11 +412,10 @@ class Presupuesto(models.Model):
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -459,6 +458,7 @@ class IngresoComun(models.Model):
     familia = models.ForeignKey(
         'usuarios.Familia',
         on_delete=models.CASCADE,
+        null=True, blank=True,
         related_name='ingresos_comunes',
     )
     espacio = models.ForeignKey(
@@ -466,7 +466,6 @@ class IngresoComun(models.Model):
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
     objects = models.Manager()  # legacy (familia); default durante la transición

@@ -21,21 +21,11 @@ from .serializers import (
 
 
 def _bloqueo_escritura(espacio):
-    """Guard de escritura durante la transición multitenant."""
+    """Guard de escritura: espacios archivados son solo lectura."""
     if espacio.archivado:
         return Response(
             {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
             status=status.HTTP_403_FORBIDDEN,
-        )
-    if espacio.es_personal or espacio.familia_origen_id is None:
-        return Response(
-            {
-                'error': (
-                    'Las inversiones aún no están habilitadas en este espacio '
-                    '(transición multitenant en curso).'
-                ),
-            },
-            status=status.HTTP_400_BAD_REQUEST,
         )
     return None
 
@@ -89,7 +79,7 @@ def fondos(request):
         fondo = Fondo.objects.create(
             nombre      = request.data.get('nombre', ''),
             descripcion = request.data.get('descripcion', ''),
-            familia     = espacio.familia_origen,
+            familia     = espacio.familia_origen if espacio.familia_origen_id else None,
             espacio     = espacio,
             usuario     = None if es_compartido else usuario,
         )

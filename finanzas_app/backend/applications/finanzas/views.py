@@ -56,17 +56,16 @@ _SUELDOS_PRORRATEO_CACHE_SECONDS = 45
 
 def _contexto_espacio(request):
     """
-    Punto de entrada multitenant de este módulo (transición Fase 3→4): autentica,
-    resuelve el espacio activo (header X-Espacio-Id o espacio por defecto) y
-    deriva la familia legacy DESDE el espacio — no desde el usuario — de modo que
-    todos los filtros `familia=usuario.familia` del módulo queden scoped al
-    tenant seleccionado.
+    Punto de entrada multitenant de este módulo: autentica, resuelve el espacio
+    activo (header X-Espacio-Id o espacio por defecto) y deriva la familia
+    legacy DESDE el espacio — no desde el usuario — de modo que todos los
+    filtros `familia=usuario.familia` del módulo queden scoped al tenant
+    seleccionado.
 
     La asignación `usuario.familia` es SOLO en memoria (ninguna vista de este
     módulo persiste al usuario; verificado). En espacio PERSONAL la familia
-    derivada es None: las lecturas se comportan como usuario sin familia
-    (listas vacías / catálogo global) y las escrituras quedan bloqueadas hasta
-    habilitar la operación personal. Espacios archivados: solo lectura.
+    derivada es None y las queries usan espacio directamente.
+    Espacios archivados: solo lectura.
     """
     usuario, espacio, err = usuario_y_espacio(request)
     if err is not None:
@@ -81,17 +80,18 @@ def _contexto_espacio(request):
                 {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if espacio.es_personal or familia is None:
-            return None, None, Response(
-                {
-                    'error': (
-                        'Finanzas aún no está habilitado en este espacio '
-                        '(transición multitenant en curso).'
-                    ),
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
     return usuario, espacio, None
+
+
+def _filtro_tenant(usuario, espacio):
+    """
+    Devuelve el Q filter adecuado para aislar datos del espacio activo.
+    - Espacio FAMILIAR: familia=usuario.familia (compatibilidad legacy)
+    - Espacio PERSONAL: espacio=espacio (datos propios sin familia)
+    """
+    if espacio.es_personal:
+        return Q(espacio=espacio)
+    return Q(familia=usuario.familia)
 
 
 def _nuevo_import_debug_id():
@@ -250,6 +250,11 @@ def categorias(request):
         serializer = CategoriaSerializer(data=data)
         if serializer.is_valid():
             if ambito == 'FAMILIAR':
+                if not usuario.familia:
+                    return Response(
+                        {'error': 'Las categorías familiares requieren pertenecer a una familia.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 serializer.save(
                     familia=usuario.familia,
                     usuario=None,
@@ -261,11 +266,14 @@ def categorias(request):
                 )
                 if err_resp:
                     return err_resp
-                serializer.save(
-                    familia=usuario.familia,
-                    usuario=usuario,
-                    cuenta_personal_id=cuenta_id,
-                )
+                save_kwargs = {
+                    'usuario': usuario,
+                    'cuenta_personal_id': cuenta_id,
+                    'espacio': espacio,
+                }
+                if usuario.familia:
+                    save_kwargs['familia'] = usuario.familia
+                serializer.save(**save_kwargs)
             else:
                 return Response(
                     {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
@@ -570,7 +578,7 @@ def movimientos(request):
 
     if request.method == 'GET':
         qs = Movimiento.objects.filter(
-            familia=usuario.familia
+            _filtro_tenant(usuario, espacio)
         ).select_related(
             'categoria', 'metodo_pago', 'tarjeta', 'usuario'
         ).order_by('-fecha', '-created_at')
@@ -672,10 +680,10 @@ def movimientos(request):
     if request.method == 'POST':
         serializer = MovimientoSerializer(data=request.data)
         if serializer.is_valid():
-            instance = serializer.save(
-                usuario=usuario,
-                familia=usuario.familia,
-            )
+            save_kwargs = {'usuario': usuario, 'espacio': espacio}
+            if usuario.familia:
+                save_kwargs['familia'] = usuario.familia
+            instance = serializer.save(**save_kwargs)
             # Re-fetch con select_related para que MovimientoListSerializer
             # pueda resolver categoria_nombre, metodo_pago_tipo, etc.
             instance = _qs_movimientos_con_ingreso_comun(
@@ -704,13 +712,12 @@ def movimiento_detalle(request, pk):
 
     try:
         movimiento = _qs_movimientos_con_ingreso_comun(
-            Movimiento.objects.select_related(
+            Movimiento.objects.filter(
+                _filtro_tenant(usuario, espacio)
+            ).select_related(
                 'categoria', 'metodo_pago', 'tarjeta', 'usuario'
             ).prefetch_related('cuotas')
-        ).get(
-            pk=pk,
-            familia=usuario.familia
-        )
+        ).get(pk=pk)
     except Movimiento.DoesNotExist:
         return Response(
             {'error': 'Movimiento no encontrado.'},
@@ -752,10 +759,12 @@ def movimiento_detalle(request, pk):
             serializer.save()
             movimiento.refresh_from_db()
             movimiento = _qs_movimientos_con_ingreso_comun(
-                Movimiento.objects.select_related(
+                Movimiento.objects.filter(
+                    _filtro_tenant(usuario, espacio)
+                ).select_related(
                     'categoria', 'metodo_pago', 'tarjeta', 'usuario'
                 ).prefetch_related('cuotas')
-            ).get(pk=movimiento.pk, familia=usuario.familia)
+            ).get(pk=movimiento.pk)
             return Response(MovimientoListSerializer(movimiento).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -776,8 +785,12 @@ def cuotas(request):
     if error:
         return error
 
+    if espacio.es_personal:
+        cuota_filter = Q(movimiento__espacio=espacio)
+    else:
+        cuota_filter = Q(movimiento__familia=usuario.familia)
     qs = Cuota.objects.filter(
-        movimiento__familia=usuario.familia
+        cuota_filter
     ).select_related(
         'movimiento', 'movimiento__tarjeta', 'movimiento__categoria'
     ).order_by('mes_facturacion', 'numero')
@@ -833,7 +846,9 @@ def cuotas_deuda_pendiente(request):
         mes_facturacion__year=hoy.year,
         mes_facturacion__month=hoy.month,
     )
-    if usuario.familia_id:
+    if espacio.es_personal:
+        qs = qs.filter(movimiento__espacio=espacio)
+    elif usuario.familia_id:
         qs = qs.filter(movimiento__familia_id=usuario.familia_id)
 
     total = Decimal('0.00')
@@ -854,10 +869,13 @@ def cuota_detalle(request, pk):
     if error:
         return error
 
+    if espacio.es_personal:
+        cuota_scope = Q(movimiento__espacio=espacio)
+    else:
+        cuota_scope = Q(movimiento__familia=usuario.familia)
     try:
-        cuota = Cuota.objects.select_related('movimiento').get(
-            pk=pk,
-            movimiento__familia=usuario.familia
+        cuota = Cuota.objects.filter(cuota_scope).select_related('movimiento').get(
+            pk=pk
         )
     except Cuota.DoesNotExist:
         return Response(
@@ -906,7 +924,7 @@ def ingresos_comunes(request):
 
     if request.method == 'GET':
         qs = IngresoComun.objects.filter(
-            familia=usuario.familia
+            _filtro_tenant(usuario, espacio)
         ).select_related('usuario').order_by('-mes', 'usuario__first_name')
 
         mes = request.GET.get('mes')
@@ -923,10 +941,10 @@ def ingresos_comunes(request):
     if request.method == 'POST':
         serializer = IngresoComunSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(
-                usuario=usuario,
-                familia=usuario.familia,
-            )
+            save_kwargs = {'usuario': usuario, 'espacio': espacio}
+            if usuario.familia:
+                save_kwargs['familia'] = usuario.familia
+            serializer.save(**save_kwargs)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -944,7 +962,9 @@ def ingreso_comun_detalle(request, pk):
         return error
 
     try:
-        ingreso = IngresoComun.objects.get(pk=pk, familia=usuario.familia)
+        ingreso = IngresoComun.objects.filter(
+            _filtro_tenant(usuario, espacio)
+        ).get(pk=pk)
     except IngresoComun.DoesNotExist:
         return Response(
             {'error': 'Ingreso no encontrado.'},
@@ -981,6 +1001,8 @@ def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
 
     qs = Categoria.objects.filter(pk=cid)
     if ambito == 'FAMILIAR':
+        if not usuario.familia:
+            return None
         return qs.filter(
             familia=usuario.familia,
             usuario__isnull=True,
@@ -995,7 +1017,7 @@ def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
 
 
 def _puede_editar_presupuesto(usuario, presupuesto):
-    if presupuesto.familia_id != usuario.familia_id:
+    if presupuesto.familia_id and presupuesto.familia_id != usuario.familia_id:
         return False
     if presupuesto.usuario_id is None:
         return True
@@ -1019,8 +1041,6 @@ def presupuesto_mes(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
-        return Response(presupuesto_mes_vacio())
 
     try:
         mes = int(request.GET.get('mes', 0))
@@ -1030,7 +1050,7 @@ def presupuesto_mes(request):
             {'error': 'mes y anio deben ser numéricos.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    ambito = (request.GET.get('ambito') or 'FAMILIAR').upper()
+    ambito = (request.GET.get('ambito') or ('FAMILIAR' if usuario.familia_id else 'PERSONAL')).upper()
     cuenta_id, err_resp = _parse_cuenta_personal_usuario(
         usuario, request.GET.get('cuenta')
     )
@@ -1041,6 +1061,8 @@ def presupuesto_mes(request):
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    if ambito == 'FAMILIAR' and not usuario.familia_id:
+        return Response(presupuesto_mes_vacio())
     if not (1 <= mes <= 12) or anio < 2000 or anio > 2100:
         return Response(
             {'error': 'mes o anio inválido.'},
@@ -1062,16 +1084,16 @@ def presupuestos_create(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
-        return Response(
-            {'error': 'Usuario sin familia.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
 
-    ambito = (request.data.get('ambito') or 'FAMILIAR').upper()
+    ambito = (request.data.get('ambito') or ('FAMILIAR' if usuario.familia_id else 'PERSONAL')).upper()
     if ambito not in ('FAMILIAR', 'PERSONAL'):
         return Response(
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if ambito == 'FAMILIAR' and not usuario.familia_id:
+        return Response(
+            {'error': 'Los presupuestos familiares requieren pertenecer a una familia.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     cuenta_id, err_resp = _parse_cuenta_personal_usuario(
@@ -1125,18 +1147,15 @@ def presupuestos_create(request):
             mes=mes_first,
             defaults={'monto': monto},
         )
-    elif ambito == 'PERSONAL':
-        p, _ = Presupuesto.objects.update_or_create(
-            familia=usuario.familia,
-            usuario=usuario,
-            categoria=cat,
-            mes=mes_first,
-            defaults={'monto': monto},
-        )
     else:
-        return Response(
-            {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
-            status=status.HTTP_400_BAD_REQUEST,
+        lookup = {'usuario': usuario, 'categoria': cat, 'mes': mes_first}
+        if usuario.familia:
+            lookup['familia'] = usuario.familia
+        else:
+            lookup['familia__isnull'] = True
+        p, _ = Presupuesto.objects.update_or_create(
+            **lookup,
+            defaults={'monto': monto, 'espacio': espacio},
         )
 
     return Response(PresupuestoSerializer(p).data, status=status.HTTP_201_CREATED)
@@ -1152,7 +1171,9 @@ def presupuesto_detalle_finanzas(request, pk):
         return error
 
     try:
-        p = Presupuesto.objects.get(pk=pk, familia_id=usuario.familia_id)
+        p = Presupuesto.objects.filter(
+            _filtro_tenant(usuario, espacio)
+        ).get(pk=pk)
     except Presupuesto.DoesNotExist:
         return Response(
             {'error': 'Presupuesto no encontrado.'},
@@ -1357,6 +1378,14 @@ def liquidacion(request):
 
     mes = int(mes)
     anio = int(anio)
+
+    if not usuario.familia_id:
+        return Response({
+            'periodo': {'mes': mes, 'anio': anio},
+            'ingresos': [],
+            'gastos_comunes': [],
+            'recalculo': {'pendiente': False, 'dirty_from': None},
+        })
 
     snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
         usuario.familia_id, mes, anio
