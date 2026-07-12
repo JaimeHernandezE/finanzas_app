@@ -1,5 +1,16 @@
 // Tipos compartidos entre web y mobile
 
+export type TipoEspacio = 'PERSONAL' | 'FAMILIAR'
+
+export interface Espacio {
+  id:           number
+  nombre:       string
+  tipo:         TipoEspacio
+  modo_reparto: string
+  archivado:    boolean
+  rol:          string
+}
+
 export interface Usuario {
   id:     number
   uid?:   string
@@ -8,6 +19,7 @@ export interface Usuario {
   foto:   string | null
   rol:    string
   familia: { id: number; nombre: string } | null
+  espacios?: Espacio[]
 }
 
 export interface Familia {

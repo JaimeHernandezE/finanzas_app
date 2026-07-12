@@ -12,6 +12,12 @@ export function setMemToken(token: string | null): void {
   _memToken = token
 }
 
+let _espacioId: number | null = null
+
+export function setEspacioId(id: number | null): void {
+  _espacioId = id
+}
+
 // Callback registrado por AuthContext para refrescar el token Firebase al recibir 401.
 // Retorna el nuevo token, o null si la sesión expiró definitivamente.
 type RefreshFn = () => Promise<string | null>
@@ -90,6 +96,9 @@ client.interceptors.request.use(async (config) => {
   const token = await getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (_espacioId != null) {
+    config.headers['X-Espacio-Id'] = String(_espacioId)
   }
   return config
 })

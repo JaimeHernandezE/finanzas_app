@@ -1,10 +1,12 @@
 import { Tabs } from 'expo-router'
 import { Platform, Text } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useEspacio } from '../../context/EspacioContext'
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets()
   const tabBarBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 8)
+  const { esFamiliar } = useEspacio()
 
   return (
     <Tabs
@@ -43,6 +45,7 @@ export default function TabsLayout() {
         name="gastos"
         options={{
           title: 'Gastos comunes',
+          href: esFamiliar ? '/(tabs)/gastos' : null,
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⊕</Text>,
         }}
       />
@@ -50,6 +53,7 @@ export default function TabsLayout() {
         name="liquidacion"
         options={{
           title: 'Resumen común',
+          href: esFamiliar ? '/(tabs)/liquidacion' : null,
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⇄</Text>,
         }}
       />

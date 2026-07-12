@@ -6,10 +6,19 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+let _espacioId: number | null = null
+
+export function setEspacioId(id: number | null): void {
+  _espacioId = id
+}
+
 client.interceptors.request.use((config) => {
   const token = localStorage.getItem('auth_token')
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  if (_espacioId != null) {
+    config.headers['X-Espacio-Id'] = String(_espacioId)
   }
   return config
 })

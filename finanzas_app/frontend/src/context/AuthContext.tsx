@@ -20,6 +20,15 @@ import {
 } from 'firebase/auth'
 import { auth, provider, esViteDemo } from '../firebase'
 
+export interface EspacioMe {
+  id:           number
+  nombre:       string
+  tipo:         'PERSONAL' | 'FAMILIAR'
+  modo_reparto: string
+  archivado:    boolean
+  rol:          string
+}
+
 export interface Usuario {
   id:              number
   uid?:            string
@@ -30,6 +39,7 @@ export interface Usuario {
   /** Cuenta habilitada en la app (false = deshabilitada por un administrador). */
   activo?:         boolean
   familia:         { id: number; nombre: string } | null
+  espacios?:       EspacioMe[]
   idioma_ui:       'es' | 'en'
   moneda_display:  string
   zona_horaria:    string

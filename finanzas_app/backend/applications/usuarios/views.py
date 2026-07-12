@@ -55,6 +55,24 @@ def obtener_usuario_desde_token(request):
 
 
 def _payload_me(usuario: Usuario, decoded: dict | None = None):
+    from applications.espacios.models import PertenenciaEspacio
+    pertenencias = (
+        PertenenciaEspacio.objects
+        .select_related('espacio')
+        .filter(usuario=usuario, activo=True, espacio__activo=True)
+        .order_by('espacio__tipo', 'espacio__nombre')
+    )
+    espacios = [
+        {
+            'id': p.espacio_id,
+            'nombre': p.espacio.nombre,
+            'tipo': p.espacio.tipo,
+            'modo_reparto': p.espacio.modo_reparto,
+            'archivado': p.espacio.archivado,
+            'rol': p.rol,
+        }
+        for p in pertenencias
+    ]
     return {
         'id': usuario.id,
         'email': usuario.email,
@@ -66,6 +84,7 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
             'id': usuario.familia.id,
             'nombre': usuario.familia.nombre,
         } if usuario.familia else None,
+        'espacios': espacios,
         'idioma_ui': usuario.idioma_ui,
         'moneda_display': usuario.moneda_display,
         'zona_horaria': usuario.zona_horaria,

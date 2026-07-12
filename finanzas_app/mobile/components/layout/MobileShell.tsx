@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { usePathname, useRouter } from 'expo-router'
 import { useAuth } from '../../context/AuthContext'
+import { useEspacio } from '../../context/EspacioContext'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 
@@ -66,6 +67,7 @@ export function MobileShell({ title, children }: MobileShellProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout } = useAuth()
+  const { espacios, espacioActivo, setEspacioActivoId, esFamiliar } = useEspacio()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { data: cuentasRaw, loading: cuentasLoading } = useApi<CuentaPersonalApi[]>(
@@ -216,6 +218,29 @@ export function MobileShell({ title, children }: MobileShellProps) {
               </View>
             </View>
 
+            {/* Selector de espacio */}
+            {user && espacios.filter((e) => !e.archivado).length > 1 && (
+              <View className="px-4 py-3 border-b border-white/10">
+                <View className="bg-white/10 rounded-xl overflow-hidden">
+                  {espacios.filter((e) => !e.archivado).map((e) => (
+                    <TouchableOpacity
+                      key={e.id}
+                      onPress={() => setEspacioActivoId(e.id)}
+                      className={`px-4 py-3 flex-row items-center ${
+                        espacioActivo?.id === e.id ? 'bg-accent/20' : ''
+                      }`}
+                    >
+                      <Text className={`text-sm font-medium ${
+                        espacioActivo?.id === e.id ? 'text-accent' : 'text-white/80'
+                      }`}>
+                        {e.tipo === 'PERSONAL' ? '● Personal' : `● ${e.nombre}`}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <ScrollView className="flex-1">
               <GroupLabel>Personal</GroupLabel>
               <View className="px-3 gap-1">
@@ -233,14 +258,18 @@ export function MobileShell({ title, children }: MobileShellProps) {
                 )}
               </View>
 
-              <GroupLabel>Familia</GroupLabel>
-              <View className="px-3 gap-1">
-                {user && !cuentasLoading && tuteladas.map((c) => filaCuenta(c))}
-                {FAMILIA_FIJOS.map((item) => filaEstatica(item))}
-              </View>
+              {esFamiliar && (
+                <>
+                  <GroupLabel>Familia</GroupLabel>
+                  <View className="px-3 gap-1">
+                    {user && !cuentasLoading && tuteladas.map((c) => filaCuenta(c))}
+                    {FAMILIA_FIJOS.map((item) => filaEstatica(item))}
+                  </View>
 
-              <GroupLabel>Análisis</GroupLabel>
-              <View className="px-3 gap-1">{ANALISIS_ITEMS.map((item) => filaEstatica(item))}</View>
+                  <GroupLabel>Análisis</GroupLabel>
+                  <View className="px-3 gap-1">{ANALISIS_ITEMS.map((item) => filaEstatica(item))}</View>
+                </>
+              )}
 
               <GroupLabel>Más</GroupLabel>
               <View className="px-3 gap-1">{MAS_ITEMS.map((item) => filaEstatica(item))}</View>

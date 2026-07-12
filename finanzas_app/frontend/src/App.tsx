@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from '@/components/layout/MainLayout'
 import { ConfigProvider } from '@/context/ConfigContext'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { EspacioProvider } from '@/context/EspacioContext'
 import { ViajeProvider } from '@/context/ViajeContext'
 import { PantallaCarga } from '@/components/ui/PantallaCarga'
 import { RutaProtegida } from '@/components/auth/RutaProtegida'
@@ -174,11 +175,13 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ConfigProvider>
-          <ViajeProvider>
-            <AppRoutes />
-          </ViajeProvider>
-        </ConfigProvider>
+        <EspacioProvider>
+          <ConfigProvider>
+            <ViajeProvider>
+              <AppRoutes />
+            </ViajeProvider>
+          </ConfigProvider>
+        </EspacioProvider>
       </AuthProvider>
     </BrowserRouter>
   )

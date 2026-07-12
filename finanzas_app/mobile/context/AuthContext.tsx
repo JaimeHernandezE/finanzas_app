@@ -20,6 +20,15 @@ import { getFirebaseAuth } from '../lib/firebase'
 import { API_BASE_URL } from '../lib/apiConfig'
 import { setMemToken, setRefreshTokenFn } from '../../shared/api/client'
 
+export interface EspacioMe {
+  id:           number
+  nombre:       string
+  tipo:         'PERSONAL' | 'FAMILIAR'
+  modo_reparto: string
+  archivado:    boolean
+  rol:          string
+}
+
 export interface Usuario {
   id:      number
   uid?:    string
@@ -28,6 +37,7 @@ export interface Usuario {
   foto:    string | null
   rol:     string
   familia: { id: number; nombre: string } | null
+  espacios?: EspacioMe[]
   /** IANA, coincide con `Usuario.zona_horaria` en Django (ej. America/Santiago). */
   zona_horaria?: string
   idioma_ui?: string

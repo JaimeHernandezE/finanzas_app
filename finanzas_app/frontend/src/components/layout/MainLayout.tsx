@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useEspacio } from '@/context/EspacioContext'
 import { useViaje } from '@/context/ViajeContext'
 import { useConfig } from '@/context/ConfigContext'
 import { useEffect, useMemo } from 'react'
@@ -34,10 +35,10 @@ const MAS_ITEMS = [
   { icon: '⚙', label: 'Configuración', to: '/configuracion' },
 ] as const
 
-const BOTTOM_NAV = [
-  { icon: '◈', label: 'Dashboard',      to: '/dashboard',      end: false },
-  { icon: '⊕', label: 'Gastos comunes', to: '/gastos/comunes', end: false },
-  { icon: '⇄', label: 'Resumen común',  to: '/liquidacion',    end: false },
+const BOTTOM_NAV_ALL = [
+  { icon: '◈', label: 'Dashboard',      to: '/dashboard',      end: false, soloFamiliar: false },
+  { icon: '⊕', label: 'Gastos comunes', to: '/gastos/comunes', end: false, soloFamiliar: true  },
+  { icon: '⇄', label: 'Resumen común',  to: '/liquidacion',    end: false, soloFamiliar: true  },
 ] as const
 
 const EVENTO_CUENTAS_ACTUALIZADAS = 'cuentas:actualizadas'
@@ -108,6 +109,7 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, loading, logout, cambiarUsuarioDemo } = useAuth()
+  const { espacios, espacioActivo, setEspacioActivoId, esPersonal, esFamiliar } = useEspacio()
   const esDemoUi = esViteDemo() || Boolean(user?.esDemo)
   const { viajeActivo } = useViaje()
   const { formatMonto } = useConfig()
@@ -192,6 +194,23 @@ export default function MainLayout() {
           </div>
         )}
 
+        {/* Selector de espacio */}
+        {user && espacios.length > 1 && (
+          <div className={styles.espacioSelector}>
+            <select
+              value={espacioActivo?.id ?? ''}
+              onChange={e => setEspacioActivoId(Number(e.target.value))}
+              className={styles.espacioSelect}
+            >
+              {espacios.filter(e => !e.archivado).map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.tipo === 'PERSONAL' ? '● Personal' : `● ${e.nombre}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <ul className={styles.nav}>
 
           {/* Personal */}
@@ -205,12 +224,16 @@ export default function MainLayout() {
           )}
           {propias.map(c => <CuentaItem key={c.id} cuenta={c} />)}
 
-          {/* Familia */}
-          <GroupLabel label="Familia" />
-          {tuteladas.map(c => <CuentaItem key={c.id} cuenta={c} />)}
-          {FAMILIA_FIJOS.map(item => (
-            <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
-          ))}
+          {/* Familia (hidden in personal mode) */}
+          {esFamiliar && (
+            <>
+              <GroupLabel label="Familia" />
+              {tuteladas.map(c => <CuentaItem key={c.id} cuenta={c} />)}
+              {FAMILIA_FIJOS.map(item => (
+                <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
+              ))}
+            </>
+          )}
 
           {/* Análisis */}
           <GroupLabel label="Análisis" />
@@ -265,7 +288,9 @@ export default function MainLayout() {
 
       {/* ── Barra inferior fija ── */}
       <nav className={styles.bottomBar}>
-        {BOTTOM_NAV.map(item => (
+        {BOTTOM_NAV_ALL
+          .filter(item => !item.soloFamiliar || esFamiliar)
+          .map(item => (
           <NavLink
             key={item.to}
             to={item.to}

@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { Slot } from 'expo-router'
 import { ConfigProvider } from '@finanzas/shared/context/ConfigContext'
 import { AuthProvider } from '../context/AuthContext'
+import { EspacioProvider } from '../context/EspacioContext'
 import { ViajeProvider } from '../context/ViajeContext'
 import { AppLock } from '../components/AppLock'
 import { ConfiguracionFaltante } from '../components/ConfiguracionFaltante'
@@ -46,13 +47,15 @@ export default function RootLayout() {
     >
       <ConfigProvider>
         <AuthProvider>
-          <ViajeProvider>
-            <AppLock>
-              <SyncStatusBanner />
-              <MovimientosOutboxSync />
-              <Slot />
-            </AppLock>
-          </ViajeProvider>
+          <EspacioProvider>
+            <ViajeProvider>
+              <AppLock>
+                <SyncStatusBanner />
+                <MovimientosOutboxSync />
+                <Slot />
+              </AppLock>
+            </ViajeProvider>
+          </EspacioProvider>
         </AuthProvider>
       </ConfigProvider>
     </PersistQueryClientProvider>
