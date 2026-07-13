@@ -104,9 +104,10 @@ class PertenenciaEspacio(models.Model):
 
 class ConfiguracionRespaldoUsuario(models.Model):
     """
-    Destinos de respaldo por usuario (Fase 5 del plan).
-    Los tokens OAuth de Drive llegan con el flujo por usuario en Fase 5,
-    junto con su cifrado en reposo; no almacenar credenciales aquí antes.
+    Destinos de respaldo por usuario (Fase 5).
+    drive_refresh_token_enc almacena el refresh token cifrado con Fernet
+    (clave derivada de SECRET_KEY). drive_email es informativo (mostrar al
+    usuario qué cuenta conectó).
     """
 
     usuario = models.OneToOneField(
@@ -116,6 +117,9 @@ class ConfiguracionRespaldoUsuario(models.Model):
     )
     drive_folder_id = models.CharField(max_length=200, blank=True, default='')
     sheet_id = models.CharField(max_length=200, blank=True, default='')
+    drive_refresh_token_enc = models.TextField(blank=True, default='')
+    drive_email = models.EmailField(blank=True, default='')
+    drive_connected = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

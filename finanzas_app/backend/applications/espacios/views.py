@@ -1,10 +1,13 @@
 # Endpoints de espacios (Fase 2+5): selector de espacio, configuración,
-# y export/import lógico por espacio (Fase 5 V1 — DISPOSITIVO).
+# export/import lógico por espacio (Fase 5 V1 — DISPOSITIVO), y flujo
+# OAuth de Google Drive por usuario (Fase 5 V2 — DRIVE).
 
 import json
+import logging
 
 from django.conf import settings
 from django.http import JsonResponse
+from django.shortcuts import redirect as django_redirect
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -16,7 +19,9 @@ from applications.demo_guard import respuesta_demo_no_disponible
 from .contexto import resolver_espacio_activo
 from .exportar_espacio import exportar_espacio
 from .importar_espacio import ImportError as ImportEspacioError, importar_espacio
-from .models import Espacio, PertenenciaEspacio
+from .models import ConfiguracionRespaldoUsuario, Espacio, PertenenciaEspacio
+
+logger = logging.getLogger(__name__)
 
 
 def _payload_espacio(espacio: Espacio, rol: str | None = None) -> dict:
@@ -235,4 +240,192 @@ def espacio_importar(request, pk):
     return Response({
         'mensaje': 'Importación completada.',
         'conteos': conteos,
+    })
+
+
+# ── Fase 5 V2: Google Drive por usuario ──────────────────────────────────────
+
+def _get_or_create_config(usuario):
+    config, _ = ConfiguracionRespaldoUsuario.objects.get_or_create(usuario=usuario)
+    return config
+
+
+def _drive_redirect_uri(request):
+    """URI de callback OAuth — debe coincidir con la configurada en Google Cloud Console."""
+    scheme = 'https' if request.is_secure() else 'http'
+    host = request.get_host()
+    return f'{scheme}://{host}/api/espacios/drive/callback/'
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_status(request):
+    """Estado de conexión Drive del usuario."""
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+    config = _get_or_create_config(usuario)
+    return Response({
+        'connected': config.drive_connected,
+        'email': config.drive_email,
+        'folder_id': config.drive_folder_id,
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_connect(request):
+    """Inicia el flujo OAuth: devuelve la URL de autorización de Google."""
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    from .drive_usuario import generar_auth_url, generar_state_token
+
+    redirect_uri = _drive_redirect_uri(request)
+    state = generar_state_token(usuario.id)
+
+    try:
+        url = generar_auth_url(redirect_uri, state)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({'auth_url': url})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_callback(request):
+    """Callback OAuth de Google. Intercambia el code por tokens y redirige al frontend."""
+    from .drive_usuario import (
+        encrypt_token,
+        intercambiar_codigo,
+        obtener_email_google,
+        validar_state_token,
+    )
+
+    code = request.GET.get('code')
+    state = request.GET.get('state', '')
+    error = request.GET.get('error')
+
+    frontend_base = getattr(settings, 'FRONTEND_URL', '')
+
+    if error:
+        return django_redirect(f'{frontend_base}/configuracion?drive_error={error}')
+
+    if not code:
+        return django_redirect(f'{frontend_base}/configuracion?drive_error=no_code')
+
+    usuario_id = validar_state_token(state)
+    if usuario_id is None:
+        return django_redirect(f'{frontend_base}/configuracion?drive_error=invalid_state')
+
+    from applications.usuarios.models import Usuario
+    try:
+        usuario = Usuario.objects.get(pk=usuario_id)
+    except Usuario.DoesNotExist:
+        return django_redirect(f'{frontend_base}/configuracion?drive_error=user_not_found')
+
+    redirect_uri = _drive_redirect_uri(request)
+
+    try:
+        tokens = intercambiar_codigo(code, redirect_uri)
+    except ValueError as e:
+        logger.warning('Drive OAuth code exchange failed: %s', e)
+        return django_redirect(f'{frontend_base}/configuracion?drive_error=token_exchange')
+
+    email = obtener_email_google(tokens.get('access_token', ''))
+
+    config = _get_or_create_config(usuario)
+    config.drive_refresh_token_enc = encrypt_token(tokens['refresh_token'])
+    config.drive_email = email
+    config.drive_connected = True
+    config.save(update_fields=[
+        'drive_refresh_token_enc', 'drive_email', 'drive_connected', 'updated_at',
+    ])
+
+    return django_redirect(f'{frontend_base}/configuracion?drive_connected=1')
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_disconnect(request):
+    """Revoca el token y desconecta Drive."""
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    from .drive_usuario import revocar_token
+
+    config = _get_or_create_config(usuario)
+    if not config.drive_connected:
+        return Response({'error': 'Drive no está conectado.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    revocar_token(config)
+    return Response({'ok': True, 'mensaje': 'Google Drive desconectado.'})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_backup_espacio(request, pk):
+    """Exporta un espacio y lo sube al Drive del usuario."""
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    espacio, pertenencia, err = _validar_pertenencia(usuario, pk)
+    if err:
+        return err
+
+    from .drive_usuario import (
+        asegurar_carpeta_backup,
+        build_drive_service_usuario,
+        limpiar_backups_antiguos,
+        subir_backup_espacio,
+    )
+
+    config = _get_or_create_config(usuario)
+    if not config.drive_connected:
+        return Response(
+            {'error': 'Conecta tu cuenta de Google Drive primero.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        service = build_drive_service_usuario(config)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        folder_id = config.drive_folder_id
+        if not folder_id:
+            folder_id = asegurar_carpeta_backup(service)
+            config.drive_folder_id = folder_id
+            config.save(update_fields=['drive_folder_id', 'updated_at'])
+
+        datos = exportar_espacio(espacio)
+        archivo = subir_backup_espacio(service, folder_id, espacio, datos)
+        eliminados = limpiar_backups_antiguos(service, folder_id, espacio.nombre)
+    except Exception as e:
+        logger.exception('Error subiendo backup a Drive')
+        return Response(
+            {'error': f'Error al subir a Drive: {e}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    return Response({
+        'ok': True,
+        'archivo': archivo,
+        'eliminados': len(eliminados),
     })

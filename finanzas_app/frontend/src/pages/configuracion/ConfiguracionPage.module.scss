@@ -163,6 +163,17 @@
   }
 }
 
+.accionBtnSecondary {
+  background: transparent;
+  border-color: #dadad4;
+  color: $color-text-muted;
+
+  &:hover:not(:disabled) {
+    background: #f7f7f5;
+    color: $color-text;
+  }
+}
+
 .msgOk {
   margin: $space-2 0 0;
   font-size: 13px;

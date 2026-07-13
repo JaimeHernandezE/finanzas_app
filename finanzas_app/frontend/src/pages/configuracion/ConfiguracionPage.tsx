@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { useEspacio } from '@/context/EspacioContext'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
 import { exportApi, familiaApi, finanzasApi } from '@/api'
+import { driveApi } from '@/api/drive'
 import { apiErrorMessage } from '@/utils/apiErrorMessage'
 import { esViteDemo } from '@/firebase'
 import styles from './ConfiguracionPage.module.scss'
@@ -104,6 +106,88 @@ export default function ConfiguracionPage() {
   const [msgSheets, setMsgSheets] = useState<string | null>(null)
   const [errSheets, setErrSheets] = useState<string | null>(null)
   const esAdmin = user?.rol === 'ADMIN'
+  const { espacioActivo } = useEspacio()
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [driveConnected, setDriveConnected] = useState(false)
+  const [driveEmail, setDriveEmail] = useState('')
+  const [driveLoading, setDriveLoading] = useState(true)
+  const [driveConnecting, setDriveConnecting] = useState(false)
+  const [driveBacking, setDriveBacking] = useState(false)
+  const [msgDrive, setMsgDrive] = useState<string | null>(null)
+  const [errDrive, setErrDrive] = useState<string | null>(null)
+
+  useEffect(() => {
+    driveApi.status()
+      .then(({ data }) => {
+        setDriveConnected(data.connected)
+        setDriveEmail(data.email)
+      })
+      .catch(() => {})
+      .finally(() => setDriveLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (searchParams.get('drive_connected') === '1') {
+      setMsgDrive('Google Drive conectado correctamente.')
+      setDriveConnected(true)
+      driveApi.status().then(({ data }) => {
+        setDriveEmail(data.email)
+        setDriveConnected(data.connected)
+      }).catch(() => {})
+      searchParams.delete('drive_connected')
+      setSearchParams(searchParams, { replace: true })
+    }
+    const driveError = searchParams.get('drive_error')
+    if (driveError) {
+      setErrDrive(`Error al conectar Drive: ${driveError}`)
+      searchParams.delete('drive_error')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  const handleDriveConnect = async () => {
+    setDriveConnecting(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.connect()
+      window.location.href = data.auth_url
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo iniciar la conexión con Drive.')
+      setDriveConnecting(false)
+    }
+  }
+
+  const handleDriveDisconnect = async () => {
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      await driveApi.disconnect()
+      setDriveConnected(false)
+      setDriveEmail('')
+      setMsgDrive('Google Drive desconectado.')
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo desconectar Drive.')
+    }
+  }
+
+  const handleDriveBackup = async () => {
+    if (!espacioActivo || driveBacking) return
+    setDriveBacking(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.backupEspacio(espacioActivo.id)
+      const msg = `Respaldo subido: ${data.archivo.nombre}`
+        + (data.eliminados > 0 ? ` (${data.eliminados} antiguo(s) eliminado(s))` : '')
+      setMsgDrive(msg)
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo subir el respaldo a Drive.')
+    } finally {
+      setDriveBacking(false)
+    }
+  }
 
   const ejecutarRecalculoHistorico = async () => {
     if (recalculando) return
@@ -248,6 +332,55 @@ export default function ConfiguracionPage() {
         </div>
         {msgRecalculo ? <p className={styles.msgOk}>{msgRecalculo}</p> : null}
         {errRecalculo ? <p className={styles.msgErr}>{errRecalculo}</p> : null}
+
+        {!driveLoading && (
+          <div className={`${styles.accionBox} ${styles.accionBoxSpaced}`}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>Google Drive</h3>
+              {driveConnected ? (
+                <p className={styles.accionTexto}>
+                  Conectado como <strong>{driveEmail || '—'}</strong>. Los respaldos se guardan en
+                  la carpeta "Finanzas App Backups" de tu Drive.
+                </p>
+              ) : (
+                <p className={styles.accionTexto}>
+                  Conecta tu cuenta de Google para guardar respaldos de tus espacios directamente
+                  en tu Google Drive personal.
+                </p>
+              )}
+            </div>
+            {driveConnected ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className={styles.accionBtn}
+                  onClick={handleDriveBackup}
+                  disabled={driveBacking || !espacioActivo}
+                >
+                  {driveBacking ? 'Subiendo...' : `Respaldar ${espacioActivo?.nombre ?? 'espacio'}`}
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.accionBtn} ${styles.accionBtnSecondary}`}
+                  onClick={handleDriveDisconnect}
+                >
+                  Desconectar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className={styles.accionBtn}
+                onClick={handleDriveConnect}
+                disabled={driveConnecting}
+              >
+                {driveConnecting ? 'Redirigiendo...' : 'Conectar Google Drive'}
+              </button>
+            )}
+          </div>
+        )}
+        {msgDrive ? <p className={styles.msgOk}>{msgDrive}</p> : null}
+        {errDrive ? <p className={styles.msgErr}>{errDrive}</p> : null}
 
         {esAdmin ? (
           <>

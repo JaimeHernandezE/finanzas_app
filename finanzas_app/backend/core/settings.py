@@ -59,6 +59,8 @@ elif DEBUG:
 else:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',

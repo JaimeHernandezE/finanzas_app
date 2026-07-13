@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
+  Linking,
   ScrollView,
   Text,
   TextInput,
@@ -9,7 +10,9 @@ import {
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { apiErrorMessage, exportApi } from '@finanzas/shared/api'
+import { driveApi } from '@finanzas/shared/api/drive'
 import { useAuth } from '../../context/AuthContext'
+import { useEspacio } from '../../context/EspacioContext'
 import { MobileShell } from '../../components/layout/MobileShell'
 
 function rolLabel(rol: string): string {
@@ -33,6 +36,65 @@ export default function PerfilScreen() {
   const [sincronizandoSheets, setSincronizandoSheets] = useState(false)
   const [msgSheets, setMsgSheets] = useState<string | null>(null)
   const [errSheets, setErrSheets] = useState<string | null>(null)
+  const { espacioActivo } = useEspacio()
+  const [driveConnected, setDriveConnected] = useState(false)
+  const [driveEmail, setDriveEmail] = useState('')
+  const [driveLoading, setDriveLoading] = useState(true)
+  const [driveConnecting, setDriveConnecting] = useState(false)
+  const [driveBacking, setDriveBacking] = useState(false)
+  const [msgDrive, setMsgDrive] = useState<string | null>(null)
+  const [errDrive, setErrDrive] = useState<string | null>(null)
+
+  useEffect(() => {
+    driveApi.status()
+      .then(({ data }) => { setDriveConnected(data.connected); setDriveEmail(data.email) })
+      .catch(() => {})
+      .finally(() => setDriveLoading(false))
+  }, [])
+
+  const handleDriveConnect = async () => {
+    setDriveConnecting(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.connect()
+      await Linking.openURL(data.auth_url)
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo iniciar la conexión con Drive.')
+    } finally {
+      setDriveConnecting(false)
+    }
+  }
+
+  const handleDriveDisconnect = async () => {
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      await driveApi.disconnect()
+      setDriveConnected(false)
+      setDriveEmail('')
+      setMsgDrive('Google Drive desconectado.')
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo desconectar Drive.')
+    }
+  }
+
+  const handleDriveBackup = async () => {
+    if (!espacioActivo || driveBacking) return
+    setDriveBacking(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.backupEspacio(espacioActivo.id)
+      const msg = `Respaldo subido: ${data.archivo.nombre}`
+        + (data.eliminados > 0 ? ` (${data.eliminados} antiguo(s) eliminado(s))` : '')
+      setMsgDrive(msg)
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo subir el respaldo a Drive.')
+    } finally {
+      setDriveBacking(false)
+    }
+  }
 
   if (!user) {
     return (
@@ -205,6 +267,57 @@ export default function PerfilScreen() {
             <Text className="text-muted text-sm">›</Text>
           </TouchableOpacity>
         </View>
+
+        {!driveLoading && (
+          <View className="bg-white border border-border rounded-xl p-4 mb-4">
+            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Google Drive</Text>
+            {driveConnected ? (
+              <>
+                <Text className="text-dark text-sm mb-3">
+                  Conectado como {driveEmail || '—'}. Los respaldos se guardan en "Finanzas App Backups".
+                </Text>
+                <TouchableOpacity
+                  disabled={driveBacking || !espacioActivo}
+                  onPress={() => void handleDriveBackup()}
+                  className={`rounded-xl py-3 items-center mb-2 ${driveBacking ? 'bg-border' : 'bg-dark'}`}
+                >
+                  {driveBacking ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text className="text-white font-semibold">
+                      Respaldar {espacioActivo?.nombre ?? 'espacio'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => void handleDriveDisconnect()}
+                  className="rounded-xl py-3 items-center border border-border"
+                >
+                  <Text className="text-muted font-semibold">Desconectar</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <Text className="text-dark text-sm mb-3">
+                  Conecta tu cuenta de Google para guardar respaldos en tu Drive personal.
+                </Text>
+                <TouchableOpacity
+                  disabled={driveConnecting}
+                  onPress={() => void handleDriveConnect()}
+                  className={`rounded-xl py-3 items-center ${driveConnecting ? 'bg-border' : 'bg-dark'}`}
+                >
+                  {driveConnecting ? (
+                    <ActivityIndicator color="#ffffff" />
+                  ) : (
+                    <Text className="text-white font-semibold">Conectar Google Drive</Text>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+            {msgDrive ? <Text className="text-success text-xs mt-2">{msgDrive}</Text> : null}
+            {errDrive ? <Text className="text-danger text-xs mt-2">{errDrive}</Text> : null}
+          </View>
+        )}
 
         {user.rol === 'ADMIN' ? (
           <View className="bg-white border border-border rounded-xl p-4 mb-4">
