@@ -209,3 +209,51 @@ Chat con consultas en lenguaje natural sobre los datos del usuario. **No impleme
 4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto.
 
 Las alertas de presupuesto de la fase 1 comparten `NotificacionUsuario` y podrían referenciarse en respuestas del asistente (“ya te avisamos el 12 jul…”).
+
+## Sincronización automática de movimientos (fase 3 — planificado)
+
+Registro automático de ingresos y egresos desde fuentes externas (banco, correo, archivos). **No implementado aún.** Hoy el flujo manual más cercano es `importar_movimientos_csv` y la carga desde la UI.
+
+### Contexto: cómo lo hacen otras apps
+
+No se configura cada banco a mano en el código de la app. En la práctica se combinan enfoques según país y madurez del producto:
+
+| Enfoque | Descripción | Viabilidad para este proyecto |
+|---------|-------------|-------------------------------|
+| **Import CSV/Excel** | El usuario exporta desde el home banking y sube el archivo. | **Alta** — ya existe `importar_movimientos_csv`; falta UX (preview, mapeo por banco, dedup). |
+| **Parsing de correo** | Lectura de alertas del banco (“abono”, “compra en…”) vía Gmail API o reenvío a una dirección de ingesta. Parsers por plantilla (`BCI`, `Santander`, etc.). | **Media** — pragmático en Chile/LATAM donde open finance aún no cubre todo; frágil si cambian plantillas. |
+| **SMS / notificaciones** | Similar al correo: reenvío o lectura de alertas móviles. | **Media** — útil en móvil; mismas limitaciones que el correo. |
+| **Agregador bancario** | Tercero (p. ej. Fintoc, Belvo, Plaid) conecta vía open banking u otros conectores; la app recibe movimientos normalizados. | **Media-alta** a largo plazo — coste de licencia, compliance y dependencia de terceros. |
+| **Scraping de home banking** | Login automatizado al sitio del banco. | **No recomendado** — frágil, bloqueado por bancos, riesgo legal. |
+
+Para **ingresos** (sueldo, transferencias) el correo suele ser más fiable que para gastos diarios con tarjeta, porque no todos los movimientos generan alerta por mail.
+
+### Diseño previsto por etapas
+
+1. **Corto plazo — import mejorado**
+   - Endpoint/UI de subida con preview antes de persistir.
+   - Mapeo de columnas por banco conocido.
+   - Dedup por `(fecha, monto, comentario_normalizado, origen_ingesta)`.
+   - Reutilizar `RecalculoContext.suprimir_notificaciones` en importaciones masivas.
+
+2. **Medio plazo — ingesta por correo**
+   - Conexión OAuth a Gmail/Outlook con permisos mínimos (solo lectura de remitentes/plantillas acordadas) o reenvío a `ingest@…`.
+   - Cola de **movimientos sugeridos** (`MovimientoPendiente` o similar): el usuario confirma, edita categoría y aprueba antes de crear `Movimiento`.
+   - Parsers por plantilla; registro de `origen_ingesta` y hash del mensaje para no duplicar.
+
+3. **Largo plazo — agregador open finance**
+   - Integración con proveedor externo si el producto escala.
+   - Misma cola de confirmación al inicio; automatización total solo cuando la confianza y dedup sean altas.
+
+### Principios de producto
+
+- **Confirmación humana** al principio: nada escribe en `Movimiento` sin revisión explícita (evita datos fantasma y errores de parser).
+- **Trazabilidad**: cada movimiento importado lleva `origen_ingesta` (csv, email, agregador) y referencia externa.
+- **Multitenancy**: la ingesta siempre se asocia al `espacio` activo del usuario; sin cruces entre familias.
+- **Privacidad**: no persistir cuerpos completos de correo si no hace falta; retención acotada de payloads crudos.
+- **Separación de dominios**: la ingesta crea o sugiere movimientos; no altera lógica de efectivo, liquidación ni compensación sin pasar por el flujo normal de `Movimiento`.
+
+### Relación con otras fases
+
+- **Fase 1 (alertas):** un movimiento confirmado desde ingesta dispara las mismas señales que uno manual.
+- **Fase 2 (asistente):** podría responder “¿de dónde salió este abono?” consultando `origen_ingesta` y el mensaje parseado.
