@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { setEspacioId } from '../../shared/api/client'
 import { useAuth } from './AuthContext'
 import type { Espacio } from '@finanzas/shared/types'
-import AsyncStorage from '@react-native-async-storage/async-storage'
 
 interface EspacioContextType {
   espacios: Espacio[]
+  familiaresActivos: Espacio[]
+  necesitaSelectorFamilia: boolean
   espacioActivo: Espacio | null
   setEspacioActivoId: (id: number) => void
   esPersonal: boolean
@@ -17,56 +19,98 @@ interface EspacioContextType {
 
 const EspacioContext = createContext<EspacioContextType | null>(null)
 
-const STORAGE_KEY = 'espacio_activo_id'
+const STORAGE_KEY = 'espacio_familiar_activo_id'
+const STORAGE_KEY_LEGACY = 'espacio_activo_id'
 const OCULTAR_FAMILIAR_KEY = 'ocultar_modulos_familiares'
 
-function espacioPorDefecto(espacios: Espacio[]): Espacio | null {
+function familiaresNoArchivados(espacios: Espacio[]): Espacio[] {
+  return espacios.filter(e => e.tipo === 'FAMILIAR' && !e.archivado)
+}
+
+function resolverEspacioActivo(
+  espacios: Espacio[],
+  familiarPreferidoId: number | null,
+): Espacio | null {
   if (espacios.length === 0) return null
-  return (
-    espacios.find(e => e.tipo === 'PERSONAL') ??
-    espacios.find(e => e.tipo === 'FAMILIAR' && !e.archivado) ??
-    espacios[0]
-  )
+
+  const familiares = familiaresNoArchivados(espacios)
+  const personal = espacios.find(e => e.tipo === 'PERSONAL')
+
+  if (familiares.length === 0) {
+    return personal ?? espacios[0]
+  }
+  if (familiares.length === 1) {
+    return familiares[0]
+  }
+  if (familiarPreferidoId != null) {
+    const elegido = familiares.find(e => e.id === familiarPreferidoId)
+    if (elegido) return elegido
+  }
+  return familiares[0]
 }
 
 export function EspacioProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const espacios = useMemo(() => (user as { espacios?: Espacio[] } | null)?.espacios ?? [], [user])
+  const familiaresActivos = useMemo(() => familiaresNoArchivados(espacios), [espacios])
+  const necesitaSelectorFamilia = familiaresActivos.length > 1
 
-  const [activoId, setActivoId] = useState<number | null>(null)
+  const [familiarPreferidoId, setFamiliarPreferidoId] = useState<number | null>(null)
   const [storageLoaded, setStorageLoaded] = useState(false)
   const [ocultarModulosFamiliares, setOcultarModulosFamiliaresState] = useState(false)
 
   useEffect(() => {
     Promise.all([
       AsyncStorage.getItem(STORAGE_KEY),
+      AsyncStorage.getItem(STORAGE_KEY_LEGACY),
       AsyncStorage.getItem(OCULTAR_FAMILIAR_KEY),
     ])
-      .then(([espacioVal, ocultarVal]) => {
-        if (espacioVal) setActivoId(Number(espacioVal))
+      .then(([nuevoVal, legacyVal, ocultarVal]) => {
+        const raw = nuevoVal ?? legacyVal
+        if (raw) {
+          const id = Number(raw)
+          if (Number.isFinite(id)) setFamiliarPreferidoId(id)
+        }
         if (ocultarVal === '1') setOcultarModulosFamiliaresState(true)
       })
       .catch(() => {})
       .finally(() => setStorageLoaded(true))
   }, [])
 
-  const espacioActivo = useMemo(() => {
-    if (espacios.length === 0) return null
-    const found = activoId != null ? espacios.find((e: Espacio) => e.id === activoId) : null
-    if (found) return found
-    return espacioPorDefecto(espacios)
-  }, [espacios, activoId])
+  const espacioActivo = useMemo(
+    () => resolverEspacioActivo(espacios, familiarPreferidoId),
+    [espacios, familiarPreferidoId],
+  )
 
   useEffect(() => {
+    if (!storageLoaded) return
     const id = espacioActivo?.id ?? null
     setEspacioId(id)
-    if (id != null && storageLoaded) {
-      AsyncStorage.setItem(STORAGE_KEY, String(id)).catch(() => {})
+    if (
+      necesitaSelectorFamilia &&
+      espacioActivo?.tipo === 'FAMILIAR' &&
+      espacioActivo.id !== familiarPreferidoId
+    ) {
+      setFamiliarPreferidoId(espacioActivo.id)
+      AsyncStorage.setItem(STORAGE_KEY, String(espacioActivo.id)).catch(() => {})
     }
-  }, [espacioActivo?.id, storageLoaded])
+  }, [
+    storageLoaded,
+    espacioActivo?.id,
+    espacioActivo?.tipo,
+    familiarPreferidoId,
+    necesitaSelectorFamilia,
+  ])
 
   function setEspacioActivoId(id: number) {
-    setActivoId(id)
+    const espacio = espacios.find(e => e.id === id)
+    if (espacio?.tipo === 'FAMILIAR') {
+      setFamiliarPreferidoId(id)
+      AsyncStorage.setItem(STORAGE_KEY, String(id)).catch(() => {})
+      return
+    }
+    setFamiliarPreferidoId(null)
+    AsyncStorage.multiRemove([STORAGE_KEY, STORAGE_KEY_LEGACY]).catch(() => {})
   }
 
   function setOcultarModulosFamiliares(v: boolean) {
@@ -76,10 +120,12 @@ export function EspacioProvider({ children }: { children: ReactNode }) {
 
   const esPersonal = espacioActivo?.tipo === 'PERSONAL'
   const esFamiliar = espacioActivo?.tipo === 'FAMILIAR'
-  const mostrarModulosFamiliares = esFamiliar && !ocultarModulosFamiliares
+  const mostrarModulosFamiliares = familiaresActivos.length > 0 && !ocultarModulosFamiliares
 
   const value: EspacioContextType = {
     espacios,
+    familiaresActivos,
+    necesitaSelectorFamilia,
     espacioActivo,
     setEspacioActivoId,
     esPersonal,

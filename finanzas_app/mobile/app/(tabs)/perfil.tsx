@@ -48,7 +48,15 @@ export default function PerfilScreen() {
   const [sincronizandoSheets, setSincronizandoSheets] = useState(false)
   const [msgSheets, setMsgSheets] = useState<string | null>(null)
   const [errSheets, setErrSheets] = useState<string | null>(null)
-  const { espacioActivo, esFamiliar, ocultarModulosFamiliares, setOcultarModulosFamiliares, setEspacioActivoId } = useEspacio()
+  const {
+    espacioActivo,
+    esFamiliar,
+    familiaresActivos,
+    necesitaSelectorFamilia,
+    ocultarModulosFamiliares,
+    setOcultarModulosFamiliares,
+    setEspacioActivoId,
+  } = useEspacio()
   const [exportandoEspacio, setExportandoEspacio] = useState(false)
   const [importandoEspacio, setImportandoEspacio] = useState(false)
   const [msgEspacio, setMsgEspacio] = useState<string | null>(null)
@@ -415,6 +423,34 @@ export default function PerfilScreen() {
             />
           </View>
         </View>
+
+        {necesitaSelectorFamilia && (
+          <View className="bg-white border border-border rounded-xl p-4 mb-4">
+            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
+              Familia activa
+            </Text>
+            <Text className="text-dark text-sm mb-3">
+              Perteneces a varias familias. Elige cuál usar para movimientos, liquidación y respaldos.
+            </Text>
+            {familiaresActivos.map(e => (
+              <TouchableOpacity
+                key={e.id}
+                onPress={() => setEspacioActivoId(e.id)}
+                className={`rounded-xl py-3 px-4 mb-2 border ${
+                  espacioActivo?.id === e.id ? 'border-accent bg-accent/10' : 'border-border'
+                }`}
+              >
+                <Text
+                  className={`font-medium ${
+                    espacioActivo?.id === e.id ? 'text-dark' : 'text-muted'
+                  }`}
+                >
+                  {e.nombre}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {espacioActivo && (
           <View className="bg-white border border-border rounded-xl p-4 mb-4">

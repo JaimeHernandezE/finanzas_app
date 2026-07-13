@@ -67,7 +67,7 @@ export function MobileShell({ title, children }: MobileShellProps) {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout } = useAuth()
-  const { espacios, espacioActivo, setEspacioActivoId, esFamiliar } = useEspacio()
+  const { mostrarModulosFamiliares } = useEspacio()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const { data: cuentasRaw, loading: cuentasLoading } = useApi<CuentaPersonalApi[]>(
@@ -218,29 +218,6 @@ export function MobileShell({ title, children }: MobileShellProps) {
               </View>
             </View>
 
-            {/* Selector de espacio */}
-            {user && espacios.filter((e) => !e.archivado).length > 1 && (
-              <View className="px-4 py-3 border-b border-white/10">
-                <View className="bg-white/10 rounded-xl overflow-hidden">
-                  {espacios.filter((e) => !e.archivado).map((e) => (
-                    <TouchableOpacity
-                      key={e.id}
-                      onPress={() => setEspacioActivoId(e.id)}
-                      className={`px-4 py-3 flex-row items-center ${
-                        espacioActivo?.id === e.id ? 'bg-accent/20' : ''
-                      }`}
-                    >
-                      <Text className={`text-sm font-medium ${
-                        espacioActivo?.id === e.id ? 'text-accent' : 'text-white/80'
-                      }`}>
-                        {e.tipo === 'PERSONAL' ? '● Personal' : `● ${e.nombre}`}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
             <ScrollView className="flex-1">
               <GroupLabel>Personal</GroupLabel>
               <View className="px-3 gap-1">
@@ -258,7 +235,7 @@ export function MobileShell({ title, children }: MobileShellProps) {
                 )}
               </View>
 
-              {esFamiliar && (
+              {mostrarModulosFamiliares && (
                 <>
                   <GroupLabel>Familia</GroupLabel>
                   <View className="px-3 gap-1">

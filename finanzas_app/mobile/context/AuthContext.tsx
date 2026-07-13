@@ -198,6 +198,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const handleAuthError = useCallback(
     (err: unknown, fallbackMessage: string) => {
       if (axios.isAxiosError(err)) {
+        if (!err.response) {
+          setError(
+            `No se pudo conectar al backend (${API_BASE_URL}). ` +
+              'Comprueba que Docker esté arriba, que EXPO_PUBLIC_API_URL use la IP actual de tu PC ' +
+              '(ipconfig) y reinicia Expo tras cambiar .env.'
+          )
+          return
+        }
         if (err.response?.status === 404) {
           setError('Tu cuenta no está registrada en ninguna familia.')
           return

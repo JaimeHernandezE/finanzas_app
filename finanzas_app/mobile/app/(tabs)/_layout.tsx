@@ -6,7 +6,7 @@ import { useEspacio } from '../../context/EspacioContext'
 export default function TabsLayout() {
   const insets = useSafeAreaInsets()
   const tabBarBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 8)
-  const { esFamiliar } = useEspacio()
+  const { mostrarModulosFamiliares } = useEspacio()
 
   return (
     <Tabs
@@ -45,7 +45,7 @@ export default function TabsLayout() {
         name="gastos"
         options={{
           title: 'Gastos comunes',
-          href: esFamiliar ? '/(tabs)/gastos' : null,
+          href: mostrarModulosFamiliares ? '/(tabs)/gastos' : null,
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⊕</Text>,
         }}
       />
@@ -53,7 +53,7 @@ export default function TabsLayout() {
         name="liquidacion"
         options={{
           title: 'Resumen común',
-          href: esFamiliar ? '/(tabs)/liquidacion' : null,
+          href: mostrarModulosFamiliares ? '/(tabs)/liquidacion' : null,
           tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 20 }}>⇄</Text>,
         }}
       />
