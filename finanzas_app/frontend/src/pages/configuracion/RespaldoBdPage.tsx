@@ -121,6 +121,12 @@ export default function RespaldoBdPage() {
       </Link>
       <h1 className={styles.titulo}>Respaldo PostgreSQL</h1>
 
+      <p className={styles.advertenciaInstancia}>
+        Herramienta de <strong>operación de instancia</strong>: afecta a toda la base de datos
+        del servidor (todos los usuarios y espacios). No sustituye al respaldo por espacio en
+        Configuración → Respaldo espacio.
+      </p>
+
       <p className={styles.advertencia}>
         Solo administradores. Los archivos son volcados en formato SQL plano comprimido (.sql.gz), compatibles
         con la importación de esta misma pantalla. La importación <strong>reemplaza por completo</strong> los

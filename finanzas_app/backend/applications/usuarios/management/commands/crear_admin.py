@@ -2,6 +2,8 @@ import os
 
 from django.core.management.base import BaseCommand
 
+from applications.espacios.models import PertenenciaEspacio
+from applications.espacios.services import espacio_para_familia
 from applications.usuarios.models import Familia, Usuario
 
 
@@ -28,19 +30,25 @@ class Command(BaseCommand):
         if creada:
             self.stdout.write(f'Familia "{familia_nombre}" creada.')
 
-        Usuario.objects.create_user(
+        espacio_familiar = espacio_para_familia(familia)
+
+        usuario = Usuario.objects.create_user(
             username=email,
             email=email,
             password="no-se-usa",  # Firebase maneja la autenticacion
             firebase_uid="pendiente",  # Se actualiza en el primer login
-            familia=familia,
             rol="ADMIN",
             first_name=nombre,
             last_name=apellido,
         )
+        PertenenciaEspacio.objects.get_or_create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            defaults={'rol': PertenenciaEspacio.ROL_ADMIN},
+        )
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Admin {nombre} ({email}) creado en familia "{familia_nombre}".'
+                f'Admin {nombre} ({email}) creado en espacio familiar "{familia_nombre}".'
             )
         )

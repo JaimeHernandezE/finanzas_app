@@ -65,4 +65,14 @@ export const familiaApi = {
 
   rechazarInvitacionRecibida: (id: number) =>
     client.delete(`/api/usuarios/familia/invitaciones-recibidas/${id}/rechazar/`),
+
+  salirFamiliaPrecheck: () =>
+    client.get<{ puede_salir: boolean; motivo: string }>('/api/usuarios/familia/salir/'),
+
+  salirFamilia: () =>
+    client.post<{
+      disolucion: boolean
+      miembros_con_copia: number[]
+      espacio_personal_id?: number
+    }>('/api/usuarios/familia/salir/', {}),
 }

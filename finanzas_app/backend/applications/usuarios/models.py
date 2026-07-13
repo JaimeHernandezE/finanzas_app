@@ -47,13 +47,6 @@ class Usuario(AbstractUser):
         help_text="UID del usuario en Firebase Authentication. "
                   "Se usa para validar tokens JWT entrantes."
     )
-    familia = models.ForeignKey(
-        Familia,
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='miembros',
-        help_text="Familia a la que pertenece este usuario."
-    )
     rol = models.CharField(max_length=10, choices=ROL_CHOICES, default='MIEMBRO')
     activo = models.BooleanField(
         default=True,
@@ -104,10 +97,11 @@ class InvitacionPendiente(models.Model):
     El invitado debe aceptar explícitamente en la app (p. ej. Configuración).
     """
 
-    familia = models.ForeignKey(
-        Familia,
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
         on_delete=models.CASCADE,
         related_name='invitaciones_pendientes',
+        help_text='Espacio familiar al que se invita.',
     )
     email = models.EmailField()
     invitador = models.ForeignKey(
@@ -118,9 +112,14 @@ class InvitacionPendiente(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = [('familia', 'email')]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['espacio', 'email'],
+                name='uniq_invitacion_espacio_email',
+            ),
+        ]
         verbose_name = 'invitación pendiente'
         verbose_name_plural = 'invitaciones pendientes'
 
     def __str__(self):
-        return f'{self.email} → {self.familia}'
+        return f'{self.email} → {self.espacio}'

@@ -9,7 +9,7 @@ from .models import (
 
 @admin.register(Categoria)
 class CategoriaAdmin(admin.ModelAdmin):
-    list_display  = ['nombre', 'tipo', 'es_inversion', 'familia', 'usuario']
+    list_display  = ['nombre', 'tipo', 'es_inversion', 'espacio', 'usuario']
     list_filter   = ['tipo', 'es_inversion']
     search_fields = ['nombre']
 
@@ -35,7 +35,7 @@ class CuentaPersonalAdmin(admin.ModelAdmin):
 @admin.register(Movimiento)
 class MovimientoAdmin(admin.ModelAdmin):
     list_display  = ['fecha', 'tipo', 'ambito', 'monto', 'categoria', 'usuario', 'oculto']
-    list_filter   = ['tipo', 'ambito', 'categoria', 'oculto', 'familia']
+    list_filter   = ['tipo', 'ambito', 'categoria', 'oculto', 'espacio']
     search_fields = ['comentario']
     date_hierarchy = 'fecha'
 
@@ -63,14 +63,14 @@ class CuotaAdmin(admin.ModelAdmin):
 
 @admin.register(Presupuesto)
 class PresupuestoAdmin(admin.ModelAdmin):
-    list_display = ['categoria', 'mes', 'monto', 'familia', 'usuario']
-    list_filter  = ['familia']
+    list_display = ['categoria', 'mes', 'monto', 'espacio', 'usuario']
+    list_filter  = ['espacio']
 
 
 @admin.register(IngresoComun)
 class IngresoComunAdmin(admin.ModelAdmin):
-    list_display = ['usuario', 'mes', 'monto', 'origen', 'familia', 'movimiento']
-    list_filter  = ['familia']
+    list_display = ['usuario', 'mes', 'monto', 'origen', 'espacio', 'movimiento']
+    list_filter  = ['espacio']
     readonly_fields = ['movimiento']
 
 

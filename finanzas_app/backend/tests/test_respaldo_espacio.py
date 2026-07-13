@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from applications.espacios.exportar_espacio import exportar_espacio
 from applications.espacios.importar_espacio import importar_espacio, validar_formato, ImportError
 from applications.espacios.models import Espacio, PertenenciaEspacio
-from applications.espacios.services import obtener_espacio_personal
+from applications.espacios.services import espacio_para_familia, obtener_espacio_personal
 from applications.finanzas.models import (
     Categoria, CuentaPersonal, Cuota, IngresoComun, MetodoPago,
     Movimiento, Presupuesto, Tarjeta,
@@ -29,10 +29,8 @@ def client():
 
 
 def _espejo(familia):
-    return Espacio.objects.get(familia_origen=familia)
+    return espacio_para_familia(familia)
 
-
-# ── Helpers para poblar datos ────────────────────────────────────────────────
 
 def _poblar_espacio(espacio, usuario, familia=None):
     """Crea un conjunto completo de datos en un espacio para test."""
@@ -40,16 +38,14 @@ def _poblar_espacio(espacio, usuario, familia=None):
     metodo_cred = MetodoPago.objects.get_or_create(nombre='Crédito', tipo='CREDITO')[0]
 
     cat = Categoria.objects.create(
-        nombre='Test Cat', tipo='EGRESO', espacio=espacio,
-        familia=familia, usuario=usuario,
+        nombre='Test Cat', tipo='EGRESO', espacio=espacio, usuario=usuario,
     )
     cat_padre = Categoria.objects.create(
-        nombre='Padre', tipo='EGRESO', espacio=espacio,
-        familia=familia, usuario=None,
+        nombre='Padre', tipo='EGRESO', espacio=espacio, usuario=None,
     )
     cat_hija = Categoria.objects.create(
         nombre='Hija', tipo='EGRESO', espacio=espacio,
-        familia=familia, usuario=None, categoria_padre=cat_padre,
+        usuario=None, categoria_padre=cat_padre,
     )
 
     tarjeta = Tarjeta.objects.create(
@@ -61,23 +57,24 @@ def _poblar_espacio(espacio, usuario, familia=None):
         usuario=usuario, nombre='Cuenta Test', descripcion='desc',
     )
 
-    viaje = Viaje.objects.create(
-        espacio=espacio, familia=familia, nombre='Vacaciones',
-        fecha_inicio=date(2026, 1, 10), fecha_fin=date(2026, 1, 20),
-    )
+    viaje_kwargs = {'espacio': espacio, 'nombre': 'Vacaciones',
+                    'fecha_inicio': date(2026, 1, 10), 'fecha_fin': date(2026, 1, 20)}
+    if familia is not None:
+        viaje_kwargs['familia'] = familia
+    viaje = Viaje.objects.create(**viaje_kwargs)
     PresupuestoViaje.objects.create(
         viaje=viaje, categoria=cat, monto_planificado=500000,
     )
 
     mov = Movimiento.objects.create(
-        espacio=espacio, familia=familia, usuario=usuario,
+        espacio=espacio, usuario=usuario,
         tipo='EGRESO', ambito='PERSONAL', categoria=cat,
         fecha=date(2026, 3, 15), monto=45000, comentario='Bencina',
         metodo_pago=metodo, tarjeta=None, viaje=viaje, cuenta=cuenta,
     )
 
     mov_cred = Movimiento.objects.create(
-        espacio=espacio, familia=familia, usuario=usuario,
+        espacio=espacio, usuario=usuario,
         tipo='EGRESO', ambito='PERSONAL', categoria=cat,
         fecha=date(2026, 3, 1), monto=120000, comentario='Compra',
         metodo_pago=metodo_cred, tarjeta=tarjeta,
@@ -85,19 +82,22 @@ def _poblar_espacio(espacio, usuario, familia=None):
     )
 
     Presupuesto.objects.create(
-        espacio=espacio, familia=familia, usuario=usuario,
+        espacio=espacio, usuario=usuario,
         categoria=cat, mes=date(2026, 3, 1), monto=100000,
     )
 
     IngresoComun.objects.create(
-        espacio=espacio, familia=familia, usuario=usuario,
+        espacio=espacio, usuario=usuario,
         mes=date(2026, 3, 1), monto=500000, origen='Sueldo',
     )
 
-    fondo = Fondo.objects.create(
-        espacio=espacio, familia=familia, usuario=usuario,
-        nombre='Mi Fondo', descripcion='Test',
-    )
+    fondo_kwargs = {
+        'espacio': espacio, 'usuario': usuario,
+        'nombre': 'Mi Fondo', 'descripcion': 'Test',
+    }
+    if familia is not None:
+        fondo_kwargs['familia'] = familia
+    fondo = Fondo.objects.create(**fondo_kwargs)
     Aporte.objects.create(fondo=fondo, fecha=date(2026, 1, 15), monto=100000)
     RegistroValor.objects.create(fondo=fondo, fecha=date(2026, 2, 1), valor_cuota=Decimal('1.05'))
 
@@ -120,6 +120,8 @@ class TestExportar:
         assert data['formato'] == 'finanzas_app_export_v1'
         assert data['version'] == 1
         assert data['espacio']['tipo'] == 'FAMILIAR'
+        assert 'modo_reparto' in data['espacio']
+        assert 'archivado' in data['espacio']
 
         d = data['datos']
         assert len(d['categorias']) == 3
@@ -365,12 +367,11 @@ class TestEndpointExportar:
         espejo = _espejo(familia)
         MetodoPago.objects.get_or_create(nombre='Efectivo', tipo='EFECTIVO')
         cat = Categoria.objects.create(
-            nombre='E Cat', tipo='EGRESO', espacio=espejo,
-            familia=familia, usuario=usuario,
+            nombre='E Cat', tipo='EGRESO', espacio=espejo, usuario=usuario,
         )
         metodo = MetodoPago.objects.get(nombre='Efectivo')
         Movimiento.objects.create(
-            espacio=espejo, familia=familia, usuario=usuario,
+            espacio=espejo, usuario=usuario,
             tipo='EGRESO', ambito='PERSONAL', categoria=cat,
             fecha=date(2026, 6, 1), monto=5000, metodo_pago=metodo,
         )
@@ -385,7 +386,7 @@ class TestEndpointExportar:
 
     def test_export_espacio_ajeno_403(self, client, usuario, familia, auth_header):
         otra = Familia.objects.create(nombre='Otra')
-        espejo_otra = Espacio.objects.get(familia_origen=otra)
+        espejo_otra = espacio_para_familia(otra)
         resp = client.get(f'/api/espacios/{espejo_otra.id}/exportar/', **auth_header)
         assert resp.status_code == status.HTTP_403_FORBIDDEN
 
@@ -467,7 +468,7 @@ class TestEndpointImportar:
 
     def test_import_espacio_ajeno_403(self, client, usuario, familia, auth_header):
         otra = Familia.objects.create(nombre='Otra')
-        espejo_otra = Espacio.objects.get(familia_origen=otra)
+        espejo_otra = espacio_para_familia(otra)
 
         archivo = io.BytesIO(json.dumps({
             'formato': 'finanzas_app_export_v1',

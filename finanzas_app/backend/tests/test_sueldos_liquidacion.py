@@ -19,12 +19,12 @@ class TestIngresosComunes:
         assert len(res.json()) == 2
 
     def test_filtro_por_mes(
-        self, client, auth_header, ingreso_jaime, usuario, familia
+        self, client, auth_header, ingreso_jaime, usuario, espacio_familiar
     ):
         """Filtra ingresos por mes y año."""
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-02-01',
             monto='1800000.00',
             origen='Sueldo',
@@ -170,12 +170,12 @@ class TestLiquidacion:
         assert totales['Glori'] == Decimal('1000000.00')
 
     def test_suma_multiples_ingresos_del_mismo_usuario(
-        self, client, auth_header, ingreso_jaime, usuario, familia
+        self, client, auth_header, ingreso_jaime, usuario, espacio_familiar
     ):
         """Si un usuario tiene múltiples ingresos, los suma correctamente."""
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-03-01',
             monto='300000.00',
             origen='Honorarios',
@@ -241,12 +241,12 @@ class TestLiquidacion:
         assert res.json()['gastos_comunes'] == []
 
     def test_incluye_cuota_credito_comun_pendiente_en_gastos(
-        self, client, auth_header, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, client, auth_header, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """Cuotas de crédito comunes pendientes cuentan en liquidación del mes facturado."""
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-05',
             tipo='EGRESO',
             ambito='COMUN',
@@ -268,7 +268,7 @@ class TestLiquidacion:
         client,
         auth_header,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_credito,
         metodo_efectivo,
@@ -277,7 +277,7 @@ class TestLiquidacion:
         """Si la cuota ya está pagada, no se suma de nuevo además del pago efectivo."""
         mov_credito = Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-05',
             tipo='EGRESO',
             ambito='COMUN',
@@ -294,7 +294,7 @@ class TestLiquidacion:
 
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-20',
             tipo='EGRESO',
             ambito='COMUN',

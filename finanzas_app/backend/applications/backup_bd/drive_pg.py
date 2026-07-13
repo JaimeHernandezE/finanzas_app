@@ -564,6 +564,18 @@ def validate_sql_gz_backup_file(gz_path: str) -> None:
                 pass
 
 
+def restore_from_sql_file(database_url: str, sql_path: str) -> None:
+    """
+    Restaura BD desde un .sql plano (sin comprimir).
+
+    Misma semántica que restore_from_sql_gz_file: sustituye el esquema public.
+    """
+    _assert_sql_dump_app_completo(sql_path)
+    _reset_public_schema(database_url)
+    _run_psql(database_url, ['-f', sql_path])
+    _assert_restauracion_app_completa(database_url)
+
+
 def restore_from_sql_gz_file(database_url: str, gz_path: str) -> None:
     """
     Restaura BD desde .sql.gz (plain SQL comprimido).

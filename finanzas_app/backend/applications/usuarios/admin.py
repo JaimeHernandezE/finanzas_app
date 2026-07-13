@@ -11,15 +11,15 @@ class FamiliaAdmin(admin.ModelAdmin):
 
 @admin.register(Usuario)
 class UsuarioAdmin(UserAdmin):
-    list_display = ['username', 'email', 'familia', 'rol', 'activo', 'is_active']
-    list_filter  = ['rol', 'familia', 'activo', 'is_active']
+    list_display = ['username', 'email', 'rol', 'activo', 'is_active']
+    list_filter  = ['rol', 'activo', 'is_active']
     fieldsets    = UserAdmin.fieldsets + (
-        ('App Finanzas', {'fields': ('firebase_uid', 'familia', 'rol', 'activo')}),
+        ('App Finanzas', {'fields': ('firebase_uid', 'rol', 'activo')}),
     )
 
 
 @admin.register(InvitacionPendiente)
 class InvitacionPendienteAdmin(admin.ModelAdmin):
-    list_display = ['email', 'familia', 'invitador', 'created_at']
-    list_filter = ['familia']
+    list_display = ['email', 'espacio', 'invitador', 'created_at']
+    list_filter = ['espacio']
     search_fields = ['email']

@@ -5,10 +5,8 @@ relevantes (movimientos, cuentas, etc.).
 
 from __future__ import annotations
 
-from django.contrib.auth import get_user_model
-
+from applications.espacios.models import PertenenciaEspacio
 from applications.finanzas.models import (
-    Categoria,
     CuentaPersonal,
     IngresoComun,
     LiquidacionComunMensualSnapshot,
@@ -23,14 +21,13 @@ from applications.inversiones.models import Fondo
 
 from .models import InvitacionPendiente
 
-Usuario = get_user_model()
 
-
-def usuario_tiene_registros_en_familia(usuario_id: int, familia_id: int) -> tuple[bool, str]:
+def usuario_tiene_registros_en_espacio(usuario_id: int, espacio_id: int) -> tuple[bool, str]:
     """
-    True si el usuario tiene algún dato que impide quitarlo de la familia sin limpieza previa.
+    True si el usuario tiene algún dato que impide quitarlo del espacio familiar
+    sin limpieza previa.
     """
-    if Movimiento.objects.filter(usuario_id=usuario_id, familia_id=familia_id).exists():
+    if Movimiento.objects.filter(usuario_id=usuario_id, espacio_id=espacio_id).exists():
         return True, 'Tiene movimientos registrados en la familia.'
 
     if Tarjeta.objects.filter(usuario_id=usuario_id).exists():
@@ -46,19 +43,19 @@ def usuario_tiene_registros_en_familia(usuario_id: int, familia_id: int) -> tupl
     if TutorCuenta.objects.filter(cuenta__usuario_id=usuario_id).exists():
         return True, 'Tiene cuentas con tutores asignados.'
 
-    if Presupuesto.objects.filter(familia_id=familia_id, usuario_id=usuario_id).exists():
+    if Presupuesto.objects.filter(espacio_id=espacio_id, usuario_id=usuario_id).exists():
         return True, 'Tiene presupuestos personales en la familia.'
 
-    if IngresoComun.objects.filter(usuario_id=usuario_id, familia_id=familia_id).exists():
+    if IngresoComun.objects.filter(usuario_id=usuario_id, espacio_id=espacio_id).exists():
         return True, 'Tiene ingresos comunes declarados.'
 
     if SueldoEstimadoProrrateoMensual.objects.filter(usuario_id=usuario_id).exists():
         return True, 'Tiene sueldos estimados de prorrateo guardados.'
 
-    if Fondo.objects.filter(familia_id=familia_id, usuario_id=usuario_id).exists():
+    if Fondo.objects.filter(espacio_id=espacio_id, usuario_id=usuario_id).exists():
         return True, 'Tiene fondos de inversión asociados.'
 
-    if InvitacionPendiente.objects.filter(familia_id=familia_id, invitador_id=usuario_id).exists():
+    if InvitacionPendiente.objects.filter(espacio_id=espacio_id, invitador_id=usuario_id).exists():
         return True, 'Tiene invitaciones pendientes registradas como invitador.'
 
     return False, ''
@@ -69,10 +66,10 @@ def puede_quitar_miembro_familia(
     usuario_solicitante_rol: str,
     objetivo_id: int,
     objetivo_rol: str,
-    familia_id: int,
+    espacio_id: int,
 ) -> tuple[bool, str]:
     """
-    Reglas de negocio + datos: ¿puede un admin quitar a `objetivo` de la familia?
+    Reglas de negocio + datos: ¿puede un admin quitar a `objetivo` del espacio familiar?
     """
     if usuario_solicitante_rol != 'ADMIN':
         return False, 'Solo un administrador puede quitar miembros.'
@@ -80,12 +77,16 @@ def puede_quitar_miembro_familia(
     if objetivo_id == usuario_solicitante_id:
         return False, 'No puedes quitarte a ti mismo de la familia desde aquí.'
 
-    bloqueado, msg = usuario_tiene_registros_en_familia(objetivo_id, familia_id)
+    bloqueado, msg = usuario_tiene_registros_en_espacio(objetivo_id, espacio_id)
     if bloqueado:
         return False, msg
 
     if objetivo_rol == 'ADMIN':
-        otros = Usuario.objects.filter(familia_id=familia_id, rol='ADMIN').exclude(pk=objetivo_id)
+        otros = (
+            PertenenciaEspacio.objects
+            .filter(espacio_id=espacio_id, rol=PertenenciaEspacio.ROL_ADMIN, activo=True)
+            .exclude(usuario_id=objetivo_id)
+        )
         if not otros.exists():
             return (
                 False,
@@ -93,3 +94,7 @@ def puede_quitar_miembro_familia(
             )
 
     return True, ''
+
+
+# Alias legacy para imports existentes en tests u otros módulos.
+usuario_tiene_registros_en_familia = usuario_tiene_registros_en_espacio

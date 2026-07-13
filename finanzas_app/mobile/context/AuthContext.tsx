@@ -65,6 +65,7 @@ interface AuthContextType {
   ) => Promise<void>
   changePassword: (newPassword: string) => Promise<void>
   updateNombre: (nombre: string) => Promise<void>
+  refreshUsuario: () => Promise<void>
   logout:  () => Promise<void>
 }
 
@@ -487,6 +488,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  async function refreshUsuario() {
+    const firebaseUser = getFirebaseAuth().currentUser
+    if (!firebaseUser) return
+    const token = await firebaseUser.getIdToken(false)
+    const res = await getMeConReintento(token)
+    const data = res.data as Usuario
+    setUsuario((prev) => {
+      if (!prev) return data
+      return {
+        ...prev,
+        ...data,
+        foto: data?.foto ?? prev.foto ?? null,
+      }
+    })
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -501,6 +518,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         linkEmailToGoogleAccount,
         changePassword,
         updateNombre,
+        refreshUsuario,
         logout,
       }}
     >

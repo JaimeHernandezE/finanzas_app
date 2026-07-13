@@ -21,6 +21,23 @@ from .models import (
     ResumenHistoricoMesSnapshot,
     SaldoMensualSnapshot,
 )
+from .tenant_helpers import calcular_esperado_prorrateo, miembros_prorrateo, resolver_espacio_id
+
+
+def _tiene_miembros_espacio(espacio_id: int) -> bool:
+    from applications.espacios.models import PertenenciaEspacio
+
+    return PertenenciaEspacio.objects.filter(espacio_id=espacio_id).exists()
+
+
+def _usuarios_en_espacio(espacio_id: int):
+    from applications.espacios.models import PertenenciaEspacio
+
+    User = get_user_model()
+    ids = PertenenciaEspacio.objects.filter(espacio_id=espacio_id).values_list(
+        'usuario_id', flat=True
+    )
+    return User.objects.filter(pk__in=ids)
 
 
 def primer_dia_mes(d: date | str) -> date:
@@ -62,7 +79,7 @@ def _plan_cuotas_esperado(mov: Movimiento) -> list[dict]:
     return plan
 
 
-def reparar_cuotas_credito_familia(familia_id: int) -> dict:
+def reparar_cuotas_credito_familia(espacio_id: int) -> dict:
     """
     Repara cuotas de movimientos CREDITO preservando historia de pagos:
     - Actualiza monto y, si incluir=True, mes_facturacion de cuotas no pagadas.
@@ -79,7 +96,7 @@ def reparar_cuotas_credito_familia(familia_id: int) -> dict:
     }
 
     movimientos = (
-        Movimiento.objects.filter(familia_id=familia_id, metodo_pago__tipo='CREDITO')
+        Movimiento.objects.filter(espacio_id=espacio_id, metodo_pago__tipo='CREDITO')
         .select_related('tarjeta')
         .order_by('id')
     )
@@ -165,23 +182,21 @@ def meses_desde_hasta(inicio: date, fin: date) -> list[date]:
     return out
 
 
-def miembros_para_prorrateo_fondo_comun(familia_id: int, mes_pd: date) -> list:
+def miembros_para_prorrateo_fondo_comun(espacio_id: int, mes_pd: date) -> list:
     """
     Miembros que participan en el prorrateo de gastos comunes para ese mes calendario.
-
-    Meses estrictamente anteriores al mes en curso: todos los de la familia (no se reescribe
-    el historial al deshabilitar alguien). Mes en curso y futuros: solo usuarios con activo=True.
+    Delega en miembros_activos_espacio (pertenencias al espacio familiar).
     """
-    User = get_user_model()
-    base = User.objects.filter(familia_id=familia_id)
-    hoy = timezone.localdate()
-    mes_actual = primer_dia_mes(hoy)
-    if mes_pd < mes_actual:
-        return list(base.order_by('first_name', 'id'))
-    return list(base.filter(activo=True).order_by('first_name', 'id'))
+    from applications.espacios.models import Espacio
+    from applications.espacios.services import miembros_activos_espacio
+
+    espacio = Espacio.objects.filter(pk=espacio_id).first()
+    if espacio is None:
+        return []
+    return miembros_activos_espacio(espacio, mes_pd)
 
 
-def get_recalculo_estado(familia_id: int) -> dict:
+def get_recalculo_estado(espacio_id: int) -> dict:
     return {
         'pendiente': False,
         'dirty_from': None,
@@ -221,15 +236,15 @@ def _efectivo_neto_personal_qs(qs):
     return ingresos - egresos, n, ingresos, egresos
 
 
-def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> None:
+def recalcular_mes_liquidacion_comun(espacio_id: int, mes_primer_dia: date) -> None:
     LiquidacionComunMensualSnapshot.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         mes=mes_primer_dia,
     ).delete()
 
     ingresos_qs = (
         IngresoComun.objects.filter(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             mes__month=mes_primer_dia.month,
             mes__year=mes_primer_dia.year,
         )
@@ -238,7 +253,7 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
     )
     for row in ingresos_qs:
         LiquidacionComunMensualSnapshot.objects.create(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             mes=mes_primer_dia,
             usuario_id=row['usuario_id'],
             tipo_linea='INGRESO_COMUN',
@@ -248,7 +263,7 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
 
     gastos_qs = (
         Movimiento.objects.filter(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             ambito='COMUN',
             tipo='EGRESO',
             fecha__month=mes_primer_dia.month,
@@ -261,7 +276,7 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
     )
     cuotas_comunes_pendientes_qs = (
         Cuota.objects.filter(
-            movimiento__familia_id=familia_id,
+            movimiento__espacio_id=espacio_id,
             movimiento__ambito='COMUN',
             movimiento__tipo='EGRESO',
             movimiento__oculto=False,
@@ -291,7 +306,7 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
         }
     for usuario_id, data in gastos_por_usuario.items():
         LiquidacionComunMensualSnapshot.objects.create(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             mes=mes_primer_dia,
             usuario_id=usuario_id,
             tipo_linea='GASTO_COMUN_NO_CREDITO',
@@ -301,15 +316,15 @@ def recalcular_mes_liquidacion_comun(familia_id: int, mes_primer_dia: date) -> N
 
 
 def recalcular_mes_saldos_personales_usuario(
-    familia_id: int, usuario_id: int, mes_primer_dia: date
+    espacio_id: int, usuario_id: int, mes_primer_dia: date
 ) -> None:
     """Snapshots SaldoMensualSnapshot para un usuario y mes (ámbito PERSONAL)."""
     SaldoMensualSnapshot.objects.filter(
-        familia_id=familia_id, usuario_id=usuario_id, mes=mes_primer_dia
+        espacio_id=espacio_id, usuario_id=usuario_id, mes=mes_primer_dia
     ).delete()
 
     base = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario_id,
         ambito='PERSONAL',
         oculto=False,
@@ -329,7 +344,7 @@ def recalcular_mes_saldos_personales_usuario(
             ck = int(cid)
         efectivo, cnt, ing, egr = _efectivo_neto_personal_qs(sub)
         SaldoMensualSnapshot.objects.update_or_create(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             usuario_id=usuario_id,
             mes=mes_primer_dia,
             cuenta_id=ck,
@@ -342,61 +357,60 @@ def recalcular_mes_saldos_personales_usuario(
         )
 
 
-def recalcular_mes_saldos_personales_familia(familia_id: int, mes_primer_dia: date) -> None:
-    SaldoMensualSnapshot.objects.filter(familia_id=familia_id, mes=mes_primer_dia).delete()
+def recalcular_mes_saldos_personales_familia(espacio_id: int, mes_primer_dia: date) -> None:
+    SaldoMensualSnapshot.objects.filter(espacio_id=espacio_id, mes=mes_primer_dia).delete()
 
-    User = get_user_model()
-    for usuario in User.objects.filter(familia_id=familia_id):
-        recalcular_mes_saldos_personales_usuario(familia_id, usuario.pk, mes_primer_dia)
+    for usuario in _usuarios_en_espacio(espacio_id):
+        recalcular_mes_saldos_personales_usuario(espacio_id, usuario.pk, mes_primer_dia)
 
 
-def _primer_mes_movimiento_personal_usuario(familia_id: int, usuario_id: int) -> date | None:
+def _primer_mes_movimiento_personal_usuario(espacio_id: int, usuario_id: int) -> date | None:
     m = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario_id,
         ambito='PERSONAL',
     ).aggregate(m=Min('fecha'))['m']
     return primer_dia_mes(m) if m else None
 
 
-def backfill_saldos_personales_usuario(usuario_id: int, familia_id: int) -> int:
+def backfill_saldos_personales_usuario(usuario_id: int, espacio_id: int) -> int:
     """
     Recalcula SaldoMensualSnapshot del usuario desde el primer mes con movimientos PERSONAL
     hasta el mes calendario actual (inclusive).
     """
-    primero = _primer_mes_movimiento_personal_usuario(familia_id, usuario_id)
+    primero = _primer_mes_movimiento_personal_usuario(espacio_id, usuario_id)
     if not primero:
         return 0
     hoy = timezone.localdate()
     fin = primer_dia_mes(hoy)
     n = 0
     for mes_pd in meses_desde_hasta(primero, fin):
-        recalcular_mes_saldos_personales_usuario(familia_id, usuario_id, mes_pd)
+        recalcular_mes_saldos_personales_usuario(espacio_id, usuario_id, mes_pd)
         n += 1
     return n
 
 
-def recalcular_familia_desde(familia_id: int, mes_inicio: date) -> None:
+def recalcular_familia_desde(espacio_id: int, mes_inicio: date) -> None:
     """Recalcula snapshots desde mes_inicio (inclusive) hasta el mes actual."""
     mes_inicio = primer_dia_mes(mes_inicio)
     hoy = timezone.localdate()
     fin = primer_dia_mes(hoy)
     for mes in meses_desde_hasta(mes_inicio, fin):
-        recalcular_mes_liquidacion_comun(familia_id, mes)
-        recalcular_mes_saldos_personales_familia(familia_id, mes)
+        recalcular_mes_liquidacion_comun(espacio_id, mes)
+        recalcular_mes_saldos_personales_familia(espacio_id, mes)
 
 
-def recalcular_familia_meses(familia_id: int, meses: Iterable[date]) -> None:
+def recalcular_familia_meses(espacio_id: int, meses: Iterable[date]) -> None:
     """Recalcula snapshots solo para los meses especificados."""
     meses_norm = sorted({primer_dia_mes(m) for m in meses})
     for mes in meses_norm:
-        recalcular_mes_liquidacion_comun(familia_id, mes)
-        recalcular_mes_saldos_personales_familia(familia_id, mes)
+        recalcular_mes_liquidacion_comun(espacio_id, mes)
+        recalcular_mes_saldos_personales_familia(espacio_id, mes)
 
 
-def dispatch_recalculo_tras_cambio(familia_id: int, mes_afectado: date) -> None:
+def dispatch_recalculo_tras_cambio(espacio_id: int, mes_afectado: date) -> None:
     """Tras crear/editar/borrar datos: recalcula snapshots del mes afectado."""
-    recalcular_familia_meses(familia_id, [mes_afectado])
+    recalcular_familia_meses(espacio_id, [mes_afectado])
 
 
 def meses_afectados_por_movimiento(
@@ -421,11 +435,11 @@ def meses_afectados_por_ingreso_comun(
     return meses
 
 
-def dispatch_recalculo_multiples_meses(familia_id: int, meses: set[date]) -> None:
+def dispatch_recalculo_multiples_meses(espacio_id: int, meses: set[date]) -> None:
     """Varios meses afectados (p. ej. cambio de fecha): recálculo inmediato puntual."""
     if not meses:
         return
-    recalcular_familia_meses(familia_id, meses)
+    recalcular_familia_meses(espacio_id, meses)
 
 
 def procesar_recalculos_pendientes(limit_familias: int | None = None) -> int:
@@ -449,14 +463,14 @@ def nombre_para_liquidacion_valores(
     return full or (username or '').strip() or ''
 
 
-def liquidacion_datos_desde_snapshot_o_query(familia_id: int, mes: int, anio: int):
+def liquidacion_datos_desde_snapshot_o_query(espacio_id: int, mes: int, anio: int):
     """
     Retorna (ingresos_list, gastos_list) como listas de dicts compatibles con la vista liquidacion,
     o None si no hay snapshots y debe usarse query directa.
     """
     mes_pd = date(anio, mes, 1)
     qs = LiquidacionComunMensualSnapshot.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         mes=mes_pd,
     ).select_related('usuario')
     if not qs.exists():
@@ -485,12 +499,12 @@ def liquidacion_datos_desde_snapshot_o_query(familia_id: int, mes: int, anio: in
     return ingresos, gastos
 
 
-def efectivo_por_cuenta_live(usuario, familia_id: int, mes: int, anio: int):
+def efectivo_por_cuenta_live(usuario, espacio_id: int, mes: int, anio: int):
     """Calcula efectivo neto por cuenta sin persistir snapshot (fallback)."""
     from .models import CuentaPersonal
 
     base = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario.pk,
         ambito='PERSONAL',
         oculto=False,
@@ -524,27 +538,27 @@ def efectivo_por_cuenta_live(usuario, familia_id: int, mes: int, anio: int):
     return sorted(out, key=lambda x: x['cuenta_id'])
 
 
-def _primer_mes_datos_familia(familia_id: int) -> date | None:
-    m1 = Movimiento.objects.filter(familia_id=familia_id).aggregate(m=Min('fecha'))['m']
-    m2 = IngresoComun.objects.filter(familia_id=familia_id).aggregate(m=Min('mes'))['m']
+def _primer_mes_datos_familia(espacio_id: int) -> date | None:
+    m1 = Movimiento.objects.filter(espacio_id=espacio_id).aggregate(m=Min('fecha'))['m']
+    m2 = IngresoComun.objects.filter(espacio_id=espacio_id).aggregate(m=Min('mes'))['m']
     cands = [d for d in (m1, m2) if d is not None]
     if not cands:
         return None
     return primer_dia_mes(min(cands))
 
 
-def _total_ingresos_comunes_mes(familia_id: int, mes_pd: date) -> Decimal:
+def _total_ingresos_comunes_mes(espacio_id: int, mes_pd: date) -> Decimal:
     t = IngresoComun.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         mes__year=mes_pd.year,
         mes__month=mes_pd.month,
     ).aggregate(t=Sum('monto'))['t']
     return t if t is not None else Decimal('0')
 
 
-def _ingreso_comun_usuario_mes(familia_id: int, usuario_id: int, mes_pd: date) -> Decimal:
+def _ingreso_comun_usuario_mes(espacio_id: int, usuario_id: int, mes_pd: date) -> Decimal:
     t = IngresoComun.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario_id,
         mes__year=mes_pd.year,
         mes__month=mes_pd.month,
@@ -552,13 +566,13 @@ def _ingreso_comun_usuario_mes(familia_id: int, usuario_id: int, mes_pd: date) -
     return t if t is not None else Decimal('0')
 
 
-def _total_comun_neto_familia_mes(familia_id: int, mes_pd: date) -> Decimal:
+def _total_comun_neto_familia_mes(espacio_id: int, mes_pd: date) -> Decimal:
     """
     Neto familia en ámbito COMÚN (efectivo/débito): suma ingresos − suma egresos del mes.
     Egresos en categoría de inversión/patrimonio (es_inversion) no cuentan en liquidación/prorrateo.
     """
     qs = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         ambito='COMUN',
         oculto=False,
         fecha__year=mes_pd.year,
@@ -579,13 +593,13 @@ def _total_comun_neto_familia_mes(familia_id: int, mes_pd: date) -> Decimal:
     return ing - egr
 
 
-def _efectivo_comun_neto_usuario_mes(usuario_id: int, familia_id: int, mes_pd: date) -> Decimal:
+def _efectivo_comun_neto_usuario_mes(usuario_id: int, espacio_id: int, mes_pd: date) -> Decimal:
     """
     Neto efectivo/débito ámbito COMÚN en el mes: suma ingresos como positivo y egresos como negativo
     (excluye crédito). Misma convención que el listado de gastos comunes en la app.
     """
     qs = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario_id,
         ambito='COMUN',
         oculto=False,
@@ -608,33 +622,52 @@ def _efectivo_comun_neto_usuario_mes(usuario_id: int, familia_id: int, mes_pd: d
     return ing - egr
 
 
-def efectivo_disponible_dashboard(usuario) -> dict:
+def efectivo_disponible_dashboard(usuario, espacio=None) -> dict:
     """
-    Efectivo para el dashboard (usuario autenticado):
-
-    - A: total IngresoComun del usuario (todos los meses excepto el calendario actual).
-    - B: total IngresoComun del mes calendario en curso (sueldo declarado).
-    - C: suma de todos los netos mensuales (ingresos − egresos) de resumen_cuenta_personal_mensual
-      por cada cuenta personal del usuario, más resumen_sin_cuenta_personal_mensual (igual que la UI).
-    - D: suma de |gasto_prorrateado| en snapshots de meses distintos al actual (magnitud a restar).
-    - E: neto mes actual personal (sin duplicar sueldos declarados; excluye ingreso vinculado
-      a IngresoComun) + neto común efectivo/débito del mes.
-
-    efectivo = A + B + C − D + E (mismo orden en desglose: a…e, e_personal, e_comun).
+    Efectivo para el dashboard (usuario autenticado).
+    Con espacio PERSONAL: solo movimientos del espacio personal (sin prorrateo).
     """
-    familia_id = usuario.familia_id
+    espacio_id = resolver_espacio_id(usuario, espacio)
     z = Decimal('0')
-    if not familia_id:
-        zq = z.quantize(Decimal('0.01'))
-        vacio = {
+    zq = z.quantize(Decimal('0.01'))
+    vacio = {
+        'a': zq, 'b': zq, 'c': zq, 'd': zq, 'e': zq,
+        'e_personal': zq, 'e_comun': zq,
+    }
+
+    if espacio is not None and espacio.es_personal:
+        hoy = timezone.localdate()
+        mes_actual_pd = primer_dia_mes(hoy)
+        qs = Movimiento.objects.filter(
+            espacio_id=espacio.pk,
+            usuario_id=usuario.pk,
+            oculto=False,
+        )
+        neto_total, _, _, _ = _efectivo_neto_personal_qs(qs)
+        qs_mes = qs.filter(
+            fecha__year=mes_actual_pd.year,
+            fecha__month=mes_actual_pd.month,
+        )
+        neto_mes, _, _, _ = _efectivo_neto_personal_qs(qs_mes)
+        neto_hist = neto_total - neto_mes
+        desglose = {
             'a': zq,
             'b': zq,
-            'c': zq,
+            'c': neto_hist.quantize(Decimal('0.01')),
             'd': zq,
-            'e': zq,
-            'e_personal': zq,
+            'e': neto_mes.quantize(Decimal('0.01')),
+            'e_personal': neto_mes.quantize(Decimal('0.01')),
             'e_comun': zq,
         }
+        return {
+            'efectivo': neto_total.quantize(Decimal('0.01')),
+            'personal_historico': neto_hist.quantize(Decimal('0.01')),
+            'comun_movimientos_historico': zq,
+            'prorrateo_gastos_comunes_acumulado': zq,
+            'desglose': desglose,
+        }
+
+    if not espacio_id:
         return {
             'efectivo': zq,
             'personal_historico': zq,
@@ -649,19 +682,21 @@ def efectivo_disponible_dashboard(usuario) -> dict:
 
     # A — Total sueldos declarados (IngresoComun), todos los meses excepto el actual
     sueldos_historico = (
-        IngresoComun.objects.filter(familia_id=familia_id, usuario_id=uid)
+        IngresoComun.objects.filter(espacio_id=espacio_id, usuario_id=uid)
         .exclude(mes__year=mes_actual_pd.year, mes__month=mes_actual_pd.month)
         .aggregate(t=Sum('monto'))['t']
         or z
     )
 
     # B — Suma de efectivo_neto de cada mes en el resumen de cada cuenta + sin cuenta (como la pantalla)
-    personal_snap_historico = _total_b_resumen_mensual_todas_cuentas_personales(usuario)
+    personal_snap_historico = _total_b_resumen_mensual_todas_cuentas_personales(
+        usuario, espacio_id
+    )
 
     # C — Sueldo declarado (IngresoComun) del mes calendario en curso
     sueldo_mes_actual = (
         IngresoComun.objects.filter(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             usuario_id=uid,
             mes__year=mes_actual_pd.year,
             mes__month=mes_actual_pd.month,
@@ -673,7 +708,7 @@ def efectivo_disponible_dashboard(usuario) -> dict:
     # En payloads puede venir con signo negativo; siempre restamos la magnitud para no convertir
     # "− D" en suma cuando D acumulado es negativo.
     gastos_prorrateados_resumen = z
-    for snap in ResumenHistoricoMesSnapshot.objects.filter(familia_id=familia_id).exclude(
+    for snap in ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id).exclude(
         mes=mes_actual_pd
     ):
         for row in snap.payload.get('compensacion', {}).get('por_usuario', []):
@@ -685,7 +720,7 @@ def efectivo_disponible_dashboard(usuario) -> dict:
 
     # E — Mes actual: neto personal sin duplicar sueldos (excluye ingreso vinculado a IngresoComun) + neto común
     qs_pers_mes = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=uid,
         ambito='PERSONAL',
         oculto=False,
@@ -693,7 +728,7 @@ def efectivo_disponible_dashboard(usuario) -> dict:
         fecha__month=mes_actual_pd.month,
     )
     neto_pers_base, _, _, _ = _efectivo_neto_personal_qs(qs_pers_mes)
-    neto_comun_mes_actual = _efectivo_comun_neto_usuario_mes(uid, familia_id, mes_actual_pd)
+    neto_comun_mes_actual = _efectivo_comun_neto_usuario_mes(uid, espacio_id, mes_actual_pd)
     e_total = neto_pers_base + neto_comun_mes_actual
 
     efectivo_total = (
@@ -706,7 +741,7 @@ def efectivo_disponible_dashboard(usuario) -> dict:
     efectivo_total = efectivo_total.quantize(Decimal('0.01'))
 
     qs_com = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=uid,
         ambito='COMUN',
         oculto=False,
@@ -735,25 +770,24 @@ def efectivo_disponible_dashboard(usuario) -> dict:
     }
 
 
-def datos_compensacion_proyectada(usuario, mes: int, anio: int) -> dict | None:
+def datos_compensacion_proyectada(usuario, mes: int, anio: int, espacio=None) -> dict | None:
     """
-    Base para compensación como Resumen común del mes indicado:
-    neto familiar COMÚN (ingresos − egresos COMÚN sin crédito) y, por miembro, neto común real en ese mes.
-    ingreso_declarado_mes sirve para restarlo de la base guardada en SueldoEstimadoProrrateoMensual
-    en el mes en curso (sueldo proyectado neto y pesos del prorrateo sin duplicar ingreso real).
+    Base para compensación como Resumen común del mes indicado.
     """
-    familia_id = usuario.familia_id
-    if not familia_id:
+    espacio_id = resolver_espacio_id(usuario, espacio)
+    if espacio is not None and espacio.es_personal:
+        return None
+    if not espacio_id:
         return None
     mes_pd = date(anio, mes, 1)
-    neto_familiar = _total_comun_neto_familia_mes(familia_id, mes_pd)
-    miembros = miembros_para_prorrateo_fondo_comun(familia_id, mes_pd)
+    neto_familiar = _total_comun_neto_familia_mes(espacio_id, mes_pd)
+    miembros = miembros_prorrateo(usuario, espacio, mes_pd)
     if not miembros:
         return None
     out_miembros = []
     for u in miembros:
-        neto_mes = _efectivo_comun_neto_usuario_mes(u.pk, familia_id, mes_pd)
-        ing_decl = _ingreso_comun_usuario_mes(familia_id, u.pk, mes_pd)
+        neto_mes = _efectivo_comun_neto_usuario_mes(u.pk, espacio_id, mes_pd)
+        ing_decl = _ingreso_comun_usuario_mes(espacio_id, u.pk, mes_pd)
         nombre = (u.get_full_name() or u.first_name or u.email or str(u.pk)).strip()
         out_miembros.append(
             {
@@ -808,16 +842,21 @@ def _transferencias_compensacion(
     return transfers
 
 
-def invalidar_snapshots_resumen_historico(familia_id: int, meses: Iterable[date]) -> None:
+def invalidar_snapshots_resumen_historico(espacio_id: int, meses: Iterable[date]) -> None:
     """Elimina snapshots del resumen histórico para los meses indicados (primer día de mes)."""
-    if not familia_id:
+    if not espacio_id:
         return
     for m in meses:
         mp = primer_dia_mes(m)
-        ResumenHistoricoMesSnapshot.objects.filter(familia_id=familia_id, mes=mp).delete()
+        ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id, mes=mp).delete()
 
 
-def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = None) -> dict | None:
+def calcular_resumen_mes(
+    espacio_id: int,
+    mes_pd: date,
+    miembros: list | None = None,
+    espacio=None,
+) -> dict | None:
     """
     Un mes calendario: neto familiar COMÚN (ingresos − egresos), neto por usuario, sueldos
     declarados, prorrateo sobre el neto familiar, compensación (neto vs esperado) y
@@ -829,7 +868,11 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
     El total de ingresos comunes para porcentajes es la suma solo de esos miembros.
     """
     if miembros is None:
-        miembros = miembros_para_prorrateo_fondo_comun(familia_id, mes_pd)
+        if espacio is not None:
+            from applications.espacios.services import miembros_activos_espacio
+            miembros = miembros_activos_espacio(espacio, mes_pd)
+        else:
+            miembros = miembros_para_prorrateo_fondo_comun(espacio_id, mes_pd)
     if not miembros:
         return None
     miembros_ids = [u.pk for u in miembros]
@@ -839,9 +882,9 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
         for u in miembros
     }
 
-    neto_familiar = _total_comun_neto_familia_mes(familia_id, mes_pd)
+    neto_familiar = _total_comun_neto_familia_mes(espacio_id, mes_pd)
     tot_ing = sum(
-        (_ingreso_comun_usuario_mes(familia_id, uid, mes_pd) for uid in miembros_ids),
+        (_ingreso_comun_usuario_mes(espacio_id, uid, mes_pd) for uid in miembros_ids),
         start=Decimal('0'),
     )
 
@@ -853,23 +896,12 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
     deltas: dict[int, Decimal] = {}
 
     for uid in miembros_ids:
-        neto_mes = _efectivo_comun_neto_usuario_mes(uid, familia_id, mes_pd)
-        ing_mes = _ingreso_comun_usuario_mes(familia_id, uid, mes_pd)
+        neto_mes = _efectivo_comun_neto_usuario_mes(uid, espacio_id, mes_pd)
+        ing_mes = _ingreso_comun_usuario_mes(espacio_id, uid, mes_pd)
 
-        if tot_ing > 0:
-            pct = (ing_mes / tot_ing) * Decimal('100')
-            esperado = (ing_mes / tot_ing) * neto_familiar
-        else:
-            pct = (
-                (Decimal('100') / Decimal(n_miembros))
-                if n_miembros
-                else Decimal('0')
-            )
-            esperado = (
-                (neto_familiar / Decimal(n_miembros)).quantize(Decimal('0.01'))
-                if n_miembros
-                else Decimal('0')
-            )
+        pct, esperado = calcular_esperado_prorrateo(
+            espacio, uid, miembros_ids, tot_ing, neto_familiar, ing_mes
+        )
 
         diff = neto_mes - esperado
         deltas[uid] = diff
@@ -936,49 +968,47 @@ def calcular_resumen_mes(familia_id: int, mes_pd: date, miembros: list | None = 
 
 
 def refrescar_resumen_historico_ultimo_mes_cerrado(
-    familia_id: int, hoy: date | None = None
+    espacio_id: int, hoy: date | None = None
 ) -> int:
     """
     Persiste solo el snapshot del último mes calendario cerrado (útil en cron de inicio de mes).
     Retorna 1 si hubo fila guardada, 0 si no aplicaba.
     """
-    User = get_user_model()
-    if not User.objects.filter(familia_id=familia_id).exists():
+    if not _tiene_miembros_espacio(espacio_id):
         return 0
     if hoy is None:
         hoy = timezone.localdate()
     mes_pd = ultimo_mes_cerrado(hoy)
-    row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
+    row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
     if row is None:
         return 0
     ResumenHistoricoMesSnapshot.objects.update_or_create(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         mes=mes_pd,
         defaults={'payload': row},
     )
     return 1
 
 
-def backfill_resumen_historico_snapshots(familia_id: int) -> int:
+def backfill_resumen_historico_snapshots(espacio_id: int) -> int:
     """
     Recalcula y persiste snapshots para todos los meses con datos hasta el último mes cerrado
     (no incluye el mes calendario en curso).
     Útil tras migraciones o para reparar datos.
     """
-    User = get_user_model()
-    if not User.objects.filter(familia_id=familia_id).exists():
+    if not _tiene_miembros_espacio(espacio_id):
         return 0
-    primero = _primer_mes_datos_familia(familia_id)
+    primero = _primer_mes_datos_familia(espacio_id)
     if not primero:
         return 0
     mes_fin = ultimo_mes_cerrado()
     n = 0
     for mes_pd in meses_desde_hasta(primero, mes_fin):
-        row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
+        row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
         if row is None:
             continue
         ResumenHistoricoMesSnapshot.objects.update_or_create(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             mes=mes_pd,
             defaults={'payload': row},
         )
@@ -986,18 +1016,17 @@ def backfill_resumen_historico_snapshots(familia_id: int) -> int:
     return n
 
 
-def resumen_historico_familia(familia_id: int) -> list[dict]:
+def resumen_historico_familia(espacio_id: int) -> list[dict]:
     """
     Por cada mes calendario cerrado con datos: neto familiar COMÚN (ing. − egr.), neto por usuario,
     sueldos declarados, prorrateo sobre el neto familiar, compensación y transferencias.
     No incluye el mes calendario en curso (pasa a formar parte del resumen al cambiar de mes).
     Usa snapshots persistidos; si falta un mes, calcula y guarda.
     """
-    User = get_user_model()
-    if not User.objects.filter(familia_id=familia_id).exists():
+    if not _tiene_miembros_espacio(espacio_id):
         return []
 
-    primero = _primer_mes_datos_familia(familia_id)
+    primero = _primer_mes_datos_familia(espacio_id)
     if not primero:
         return []
     hoy = timezone.localdate()
@@ -1006,16 +1035,16 @@ def resumen_historico_familia(familia_id: int) -> list[dict]:
 
     for mes_pd in meses_desde_hasta(primero, mes_fin):
         snap = ResumenHistoricoMesSnapshot.objects.filter(
-            familia_id=familia_id, mes=mes_pd
+            espacio_id=espacio_id, mes=mes_pd
         ).first()
         if snap is not None:
             out.append(snap.payload)
             continue
-        row = calcular_resumen_mes(familia_id, mes_pd, miembros=None)
+        row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
         if row is None:
             continue
         ResumenHistoricoMesSnapshot.objects.update_or_create(
-            familia_id=familia_id,
+            espacio_id=espacio_id,
             mes=mes_pd,
             defaults={'payload': row},
         )
@@ -1023,14 +1052,14 @@ def resumen_historico_familia(familia_id: int) -> list[dict]:
     return out
 
 
-def saldo_efectivo_cuentas_desde_snapshot(usuario, familia_id: int, mes: int, anio: int):
+def saldo_efectivo_cuentas_desde_snapshot(usuario, espacio_id: int, mes: int, anio: int):
     """
     Lista {cuenta_id, nombre, efectivo, ingresos, egresos} desde snapshots; None si falta snapshot.
     cuenta_id 0 = sin cuenta.
     """
     mes_pd = date(anio, mes, 1)
     qs = SaldoMensualSnapshot.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario.pk,
         mes=mes_pd,
     )
@@ -1057,7 +1086,7 @@ def saldo_efectivo_cuentas_desde_snapshot(usuario, familia_id: int, mes: int, an
     return out
 
 
-def resumen_cuenta_personal_mensual(familia_id: int, cuenta_id: int) -> list[dict]:
+def resumen_cuenta_personal_mensual(espacio_id: int, cuenta_id: int) -> list[dict]:
     """
     Por mes calendario cerrado (desde el primer movimiento en la cuenta hasta el mes anterior al actual):
     ingresos/egresos/n neto con la misma regla que snapshots personales (sin sueldos declarados
@@ -1065,7 +1094,7 @@ def resumen_cuenta_personal_mensual(familia_id: int, cuenta_id: int) -> list[dic
     No incluye el mes en curso. Solo movimientos de esta cuenta (cuenta_id) y ámbito PERSONAL.
     """
     base_q = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         cuenta_id=cuenta_id,
         ambito='PERSONAL',
         oculto=False,
@@ -1098,13 +1127,13 @@ def resumen_cuenta_personal_mensual(familia_id: int, cuenta_id: int) -> list[dic
     return rows
 
 
-def resumen_sin_cuenta_personal_mensual(familia_id: int, usuario_id: int) -> list[dict]:
+def resumen_sin_cuenta_personal_mensual(espacio_id: int, usuario_id: int) -> list[dict]:
     """
     Igual que resumen_cuenta_personal_mensual pero para movimientos PERSONAL del usuario
     sin cuenta asignada (cuenta_id nulo).
     """
     base_q = Movimiento.objects.filter(
-        familia_id=familia_id,
+        espacio_id=espacio_id,
         usuario_id=usuario_id,
         cuenta_id__isnull=True,
         ambito='PERSONAL',
@@ -1138,18 +1167,19 @@ def resumen_sin_cuenta_personal_mensual(familia_id: int, usuario_id: int) -> lis
     return rows
 
 
-def _total_b_resumen_mensual_todas_cuentas_personales(usuario) -> Decimal:
+def _total_b_resumen_mensual_todas_cuentas_personales(
+    usuario, espacio_id: int | None = None
+) -> Decimal:
     """
     Suma de los netos mensuales (ingresos − egresos) del resumen de cada cuenta personal
     del usuario, más el resumen «sin cuenta». Misma fuente que la pantalla de resumen por cuenta.
     """
-    familia_id = usuario.familia_id
-    if not familia_id:
+    if not espacio_id:
         return Decimal('0')
     total = Decimal('0')
     for cuenta in CuentaPersonal.objects.filter(usuario=usuario):
-        for row in resumen_cuenta_personal_mensual(familia_id, cuenta.pk):
+        for row in resumen_cuenta_personal_mensual(espacio_id, cuenta.pk):
             total += Decimal(row['efectivo_neto'])
-    for row in resumen_sin_cuenta_personal_mensual(familia_id, usuario.pk):
+    for row in resumen_sin_cuenta_personal_mensual(espacio_id, usuario.pk):
         total += Decimal(row['efectivo_neto'])
     return total

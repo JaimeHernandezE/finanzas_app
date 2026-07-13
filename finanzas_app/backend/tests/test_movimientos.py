@@ -37,11 +37,11 @@ class TestMovimientosListado:
 
     def test_filtro_por_tipo_egreso(
         self, client, auth_header, movimiento_efectivo,
-        usuario, familia, categoria_ingreso, metodo_efectivo
+        usuario, espacio_familiar, categoria_ingreso, metodo_efectivo
     ):
         """Filtra movimientos por tipo EGRESO."""
         Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-15', tipo='INGRESO', ambito='PERSONAL',
             categoria=categoria_ingreso, monto='1500000.00',
             comentario='Sueldo', metodo_pago=metodo_efectivo,
@@ -52,12 +52,12 @@ class TestMovimientosListado:
 
     def test_filtro_por_mes_y_anio(
         self, client, auth_header, movimiento_efectivo,
-        usuario, familia, categoria_egreso, metodo_efectivo
+        usuario, espacio_familiar, categoria_egreso, metodo_efectivo
     ):
         """Filtra movimientos por mes y año."""
         # Crear movimiento en mes diferente
         Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-02-10', tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='20000.00',
             comentario='Febrero', metodo_pago=metodo_efectivo,
@@ -313,12 +313,12 @@ class TestMovimientosEdicionEliminacion:
         assert res.status_code == 403
 
     def test_patch_movimiento_vinculado_ingreso_sincroniza_ingreso_comun(
-        self, client, auth_header, usuario, familia
+        self, client, auth_header, usuario, espacio_familiar
     ):
         """PATCH en movimiento generado por IngresoComun actualiza mes/monto/origen."""
         ing = IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-03-01',
             monto='1000000.00',
             origen='Sueldo',
@@ -367,11 +367,11 @@ class TestMovimientosEdicionEliminacion:
         assert cuota_1.monto == Decimal('30000.00')
 
     def test_patch_movimiento_vinculado_no_permite_cambiar_tipo(
-        self, client, auth_header, usuario, familia, categoria_egreso
+        self, client, auth_header, usuario, espacio_familiar, categoria_egreso
     ):
         ing = IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-03-01',
             monto='500000.00',
             origen='X',
@@ -387,11 +387,11 @@ class TestMovimientosEdicionEliminacion:
         assert 'tipo' in res.json()
 
     def test_delete_movimiento_vinculado_ingreso_retorna_400(
-        self, client, auth_header, usuario, familia
+        self, client, auth_header, usuario, espacio_familiar
     ):
         ing = IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-03-01',
             monto='100.00',
         )
@@ -441,7 +441,7 @@ class TestCuotasEndpoint:
         client,
         auth_header,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_credito,
         tarjeta,
@@ -453,7 +453,7 @@ class TestCuotasEndpoint:
 
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-02-21',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -465,7 +465,7 @@ class TestCuotasEndpoint:
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-20',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -489,7 +489,7 @@ class TestCuotasEndpoint:
         client,
         auth_header,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_credito,
         tarjeta,
@@ -501,7 +501,7 @@ class TestCuotasEndpoint:
 
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-21',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -513,7 +513,7 @@ class TestCuotasEndpoint:
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-04-20',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -570,7 +570,7 @@ class TestCuotasEndpoint:
         auth_header,
         monkeypatch,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_credito,
         tarjeta,
@@ -595,7 +595,7 @@ class TestCuotasEndpoint:
 
         mov_1 = Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-03',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -607,7 +607,7 @@ class TestCuotasEndpoint:
         )
         mov_2 = Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-05-10',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -619,7 +619,7 @@ class TestCuotasEndpoint:
         )
         mov_3 = Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-06-08',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -655,7 +655,7 @@ class TestCuotasEndpoint:
         auth_header,
         monkeypatch,
         usuario_2,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_credito,
     ):
@@ -671,7 +671,7 @@ class TestCuotasEndpoint:
         )
         Movimiento.objects.create(
             usuario=usuario_2,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-04-15',
             tipo='EGRESO',
             ambito='PERSONAL',

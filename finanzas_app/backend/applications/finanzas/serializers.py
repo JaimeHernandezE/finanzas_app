@@ -28,20 +28,20 @@ class CategoriaSerializer(serializers.ModelSerializer):
             'nombre',
             'tipo',
             'es_inversion',
-            'familia',
+            'espacio',
             'usuario',
             'cuenta_personal',
             'categoria_padre',
             'es_padre',
         ]
-        read_only_fields = ['familia', 'usuario']
+        read_only_fields = ['espacio', 'usuario']
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         instancia = self.instance
 
         usuario = attrs.get('usuario', getattr(instancia, 'usuario', None))
-        familia = attrs.get('familia', getattr(instancia, 'familia', None))
+        espacio = attrs.get('espacio', getattr(instancia, 'espacio', None))
         cuenta_personal = attrs.get(
             'cuenta_personal',
             getattr(instancia, 'cuenta_personal', None),
@@ -66,7 +66,7 @@ class CategoriaSerializer(serializers.ModelSerializer):
                     {'categoria_padre': 'La categoría padre debe tener el mismo tipo.'}
                 )
 
-        if familia is not None and usuario is None and cuenta_personal is not None:
+        if espacio is not None and usuario is None and cuenta_personal is not None:
             raise serializers.ValidationError(
                 {
                     'cuenta_personal': (

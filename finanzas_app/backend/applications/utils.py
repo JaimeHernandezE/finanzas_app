@@ -30,7 +30,7 @@ def env_flag(name: str) -> bool:
 def _usuario_desde_jwt_demo(token: str):
     access = AccessToken(token)
     uid = access['user_id']
-    return Usuario.objects.select_related('familia').get(pk=uid)
+    return Usuario.objects.get(pk=uid)
 
 
 def _cache_key_firebase_token(token: str) -> str:
@@ -99,7 +99,7 @@ def get_usuario_autenticado(request):
             )
 
         candidatos = list(
-            Usuario.objects.select_related('familia').filter(email__iexact=email)[:5]
+            Usuario.objects.filter(email__iexact=email)[:5]
         )
         if not candidatos:
             raise Usuario.DoesNotExist()

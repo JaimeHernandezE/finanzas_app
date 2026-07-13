@@ -24,24 +24,23 @@ class Categoria(models.Model):
         help_text="Si es True, los movimientos de esta categoría se contabilizan "
                   "como patrimonio y quedan excluidos del cálculo de gastos corrientes."
     )
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        null=True, blank=True,
-        related_name='categorias',
-        help_text="Si es null, la categoría es global del sistema."
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover. "
-                  "Null también para categorías globales del sistema."
+        help_text="Tenant del espacio. Null para categorías globales del sistema."
+    )
+    origen_familia = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='+',
+        help_text="Espacio familiar de origen si el registro fue copiado al salir de una familia.",
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -92,8 +91,8 @@ class Categoria(models.Model):
                             'La categoría padre debe tener el mismo tipo.'
                         )
 
-        # Categoría familiar (familia + usuario null): no puede ir ligada a cuenta.
-        if self.familia_id and self.usuario_id is None and self.cuenta_personal_id is not None:
+        # Categoría compartida del espacio (espacio + usuario null): no puede ir ligada a cuenta.
+        if self.espacio_id and self.usuario_id is None and self.cuenta_personal_id is not None:
             errors['cuenta_personal'] = (
                 'Las categorías familiares no pueden vincularse a una cuenta personal.'
             )
@@ -253,22 +252,21 @@ class Movimiento(models.Model):
     AMBITO_CHOICES = [('PERSONAL', 'Personal'), ('COMUN', 'Común')]
 
     # --- Contexto ---
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        null=True, blank=True,
-        related_name='movimientos',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
+        related_name='+',
+    )
+    origen_familia = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
+        help_text="Espacio familiar de origen si el registro fue copiado al salir de una familia.",
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -401,17 +399,17 @@ class Presupuesto(models.Model):
     Se compara on-the-fly contra los movimientos reales del mismo mes y categoría
     para mostrar el avance de gasto vs. lo planificado.
     """
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        null=True, blank=True,
-        related_name='presupuestos',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
+        related_name='+',
+    )
+    origen_familia = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='+',
+        help_text="Espacio familiar de origen si el registro fue copiado al salir de una familia.",
     )
 
     objects = models.Manager()
@@ -436,7 +434,12 @@ class Presupuesto(models.Model):
         return f"Presupuesto {self.categoria} — {self.mes:%Y-%m} (${self.monto})"
 
     class Meta:
-        unique_together = [['familia', 'usuario', 'categoria', 'mes']]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['espacio', 'usuario', 'categoria', 'mes'],
+                name='uniq_presupuesto_espacio_usuario_categoria_mes',
+            ),
+        ]
 
 
 # Categoría global del movimiento generado desde IngresoComun (ver signals). Mismo texto en signals.
@@ -455,21 +458,14 @@ class IngresoComun(models.Model):
     Ejemplo: si el usuario A gana $1.000.000 y el usuario B gana $500.000,
     A aporta el 66.7% y B el 33.3% de los gastos comunes del mes.
     """
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        null=True, blank=True,
-        related_name='ingresos_comunes',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
-        null=True, blank=True,
         related_name='+',
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -510,21 +506,14 @@ class SaldoMensualSnapshot(models.Model):
     y efectivo_neto = ingresos_efectivo − egresos_efectivo.
     cuenta_id=0 representa movimientos personales sin cuenta asignada.
     """
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        related_name='saldos_mensuales_snapshot',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
-        null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -554,12 +543,12 @@ class SaldoMensualSnapshot(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['familia', 'usuario', 'mes', 'cuenta_id'],
-                name='uniq_saldo_mensual_snapshot',
+                fields=['espacio', 'usuario', 'mes', 'cuenta_id'],
+                name='uniq_saldo_mensual_snapshot_espacio',
             ),
         ]
         indexes = [
-            models.Index(fields=['familia', 'usuario', 'mes']),
+            models.Index(fields=['espacio', 'usuario', 'mes']),
         ]
 
     def __str__(self):
@@ -573,21 +562,14 @@ class LiquidacionComunMensualSnapshot(models.Model):
         ('GASTO_COMUN_NO_CREDITO', 'Gasto común (efectivo/débito)'),
     ]
 
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        related_name='liquidaciones_comun_snapshot',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
-        null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     mes = models.DateField(help_text='Primer día del mes.')
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -602,16 +584,16 @@ class LiquidacionComunMensualSnapshot(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['familia', 'mes', 'usuario', 'tipo_linea'],
-                name='uniq_liquidacion_comun_mensual',
+                fields=['espacio', 'mes', 'usuario', 'tipo_linea'],
+                name='uniq_liquidacion_comun_mensual_espacio',
             ),
         ]
         indexes = [
-            models.Index(fields=['familia', 'mes']),
+            models.Index(fields=['espacio', 'mes']),
         ]
 
     def __str__(self):
-        return f'{self.tipo_linea} {self.familia_id} {self.mes:%Y-%m} u={self.usuario_id}'
+        return f'{self.tipo_linea} {self.espacio_id} {self.mes:%Y-%m} u={self.usuario_id}'
 
 
 class ResumenHistoricoMesSnapshot(models.Model):
@@ -620,21 +602,14 @@ class ResumenHistoricoMesSnapshot(models.Model):
     El payload replica la estructura devuelta por la API resumen-historico por mes.
     """
 
-    familia = models.ForeignKey(
-        'usuarios.Familia',
-        on_delete=models.CASCADE,
-        related_name='resumenes_historicos_mes',
-    )
     espacio = models.ForeignKey(
         'espacios.Espacio',
         on_delete=models.PROTECT,
-        null=True, blank=True,
         related_name='+',
-        help_text="Tenant (transición multitenant Fase 3); reemplazará a familia en el cutover."
     )
 
-    objects = models.Manager()  # legacy (familia); default durante la transición
-    tenant = TenantManager()    # lecturas multitenant: .en_espacio(espacio)
+    objects = models.Manager()
+    tenant = TenantManager()
     mes = models.DateField(help_text='Primer día del mes.')
     payload = models.JSONField()
     calculado_at = models.DateTimeField(auto_now=True)
@@ -642,16 +617,16 @@ class ResumenHistoricoMesSnapshot(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['familia', 'mes'],
-                name='uniq_resumen_historico_mes_familia',
+                fields=['espacio', 'mes'],
+                name='uniq_resumen_historico_mes_espacio',
             ),
         ]
         indexes = [
-            models.Index(fields=['familia', 'mes']),
+            models.Index(fields=['espacio', 'mes']),
         ]
 
     def __str__(self):
-        return f'Resumen histórico {self.familia_id} {self.mes:%Y-%m}'
+        return f'Resumen histórico {self.espacio_id} {self.mes:%Y-%m}'
 
 
 class SueldoEstimadoProrrateoMensual(models.Model):

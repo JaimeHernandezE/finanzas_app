@@ -9,6 +9,7 @@ from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand
 
+from applications.espacios.services import espacio_para_familia
 from applications.finanzas.models import Movimiento
 from applications.usuarios.demo_constants import FAMILIA_DEMO_NOMBRE
 from applications.usuarios.models import Familia
@@ -27,7 +28,8 @@ class Command(BaseCommand):
                 self.style.WARNING('seed_demo_if_empty: no hay familia Demo; omite (¿ensure_demo_seed?).')
             )
             return
-        if Movimiento.objects.filter(familia=familia).exists():
+        espacio = espacio_para_familia(familia)
+        if Movimiento.objects.filter(espacio=espacio).exists():
             self.stdout.write(
                 self.style.SUCCESS('seed_demo_if_empty: ya hay movimientos demo; omite.')
             )

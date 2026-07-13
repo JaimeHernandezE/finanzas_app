@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useEspacio } from '@/context/EspacioContext'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
-import { exportApi, familiaApi, finanzasApi } from '@/api'
+import { exportApi, espaciosApi, familiaApi, finanzasApi } from '@/api'
+import type { ModoReparto } from '@/api/espacios'
 import { driveApi } from '@/api/drive'
 import { apiErrorMessage } from '@/utils/apiErrorMessage'
 import { esViteDemo } from '@/firebase'
@@ -73,9 +74,29 @@ const GRUPOS_SOLO_DEMO = [
   },
 ] as const
 
+const MODOS_REPARTO: { value: ModoReparto; label: string }[] = [
+  { value: 'PROPORCIONAL', label: 'Proporcional a los ingresos' },
+  { value: 'PARTES_IGUALES', label: 'Partes iguales' },
+  { value: 'SIN_REPARTO', label: 'Sin repartición' },
+]
+
+function descargarJson(data: unknown, nombre: string) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nombre
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
+
 export default function ConfiguracionPage() {
-  const { user } = useAuth()
+  const { user, refreshUsuario } = useAuth()
   const perfilResumen = user?.nombre ?? ''
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const {
     data: categoriasRaw,
@@ -106,7 +127,28 @@ export default function ConfiguracionPage() {
   const [msgSheets, setMsgSheets] = useState<string | null>(null)
   const [errSheets, setErrSheets] = useState<string | null>(null)
   const esAdmin = user?.rol === 'ADMIN'
-  const { espacioActivo } = useEspacio()
+  const {
+    espacioActivo,
+    esFamiliar,
+    familiaresActivos,
+    necesitaSelectorFamilia,
+    ocultarModulosFamiliares,
+    setOcultarModulosFamiliares,
+    setEspacioActivoId,
+  } = useEspacio()
+
+  const [exportandoEspacio, setExportandoEspacio] = useState(false)
+  const [importandoEspacio, setImportandoEspacio] = useState(false)
+  const [msgEspacio, setMsgEspacio] = useState<string | null>(null)
+  const [errEspacio, setErrEspacio] = useState<string | null>(null)
+  const [modoReparto, setModoReparto] = useState<ModoReparto>('PROPORCIONAL')
+  const [guardandoReparto, setGuardandoReparto] = useState(false)
+  const [msgReparto, setMsgReparto] = useState<string | null>(null)
+  const [errReparto, setErrReparto] = useState<string | null>(null)
+  const [salirPrecheck, setSalirPrecheck] = useState<{ puede_salir: boolean; motivo: string } | null>(null)
+  const [saliendoFamilia, setSaliendoFamilia] = useState(false)
+  const [msgSalir, setMsgSalir] = useState<string | null>(null)
+  const [errSalir, setErrSalir] = useState<string | null>(null)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const [driveConnected, setDriveConnected] = useState(false)
@@ -145,6 +187,96 @@ export default function ConfiguracionPage() {
       setSearchParams(searchParams, { replace: true })
     }
   }, [searchParams, setSearchParams])
+
+  useEffect(() => {
+    if (espacioActivo?.modo_reparto) {
+      setModoReparto(espacioActivo.modo_reparto as ModoReparto)
+    }
+  }, [espacioActivo?.id, espacioActivo?.modo_reparto])
+
+  useEffect(() => {
+    if (!user?.familia || ES_DEMO) {
+      setSalirPrecheck(null)
+      return
+    }
+    familiaApi.salirFamiliaPrecheck()
+      .then(({ data }) => setSalirPrecheck(data))
+      .catch(() => setSalirPrecheck(null))
+  }, [user?.familia?.id])
+
+  const handleExportarEspacio = async () => {
+    if (!espacioActivo || exportandoEspacio) return
+    setExportandoEspacio(true)
+    setMsgEspacio(null)
+    setErrEspacio(null)
+    try {
+      const { data } = await espaciosApi.exportar(espacioActivo.id)
+      const nombre = `respaldo_${espacioActivo.nombre.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`
+      descargarJson(data, nombre)
+      setMsgEspacio('Respaldo descargado.')
+    } catch (e) {
+      setErrEspacio(apiErrorMessage(e) || 'No se pudo exportar el espacio.')
+    } finally {
+      setExportandoEspacio(false)
+    }
+  }
+
+  const handleImportarEspacio = async (file: File | null) => {
+    if (!espacioActivo || !file || importandoEspacio) return
+    setImportandoEspacio(true)
+    setMsgEspacio(null)
+    setErrEspacio(null)
+    try {
+      const { data } = await espaciosApi.importar(espacioActivo.id, file)
+      setMsgEspacio(data.mensaje ?? 'Importación completada.')
+    } catch (e) {
+      setErrEspacio(apiErrorMessage(e) || 'No se pudo importar el respaldo.')
+    } finally {
+      setImportandoEspacio(false)
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
+  }
+
+  const handleGuardarModoReparto = async () => {
+    if (!espacioActivo || guardandoReparto) return
+    setGuardandoReparto(true)
+    setMsgReparto(null)
+    setErrReparto(null)
+    try {
+      const { data } = await espaciosApi.actualizar(espacioActivo.id, { modo_reparto: modoReparto })
+      setMsgReparto('Modo de reparto actualizado.')
+      setModoReparto(data.modo_reparto)
+      await refreshUsuario()
+    } catch (e) {
+      setErrReparto(apiErrorMessage(e) || 'No se pudo actualizar el modo de reparto.')
+    } finally {
+      setGuardandoReparto(false)
+    }
+  }
+
+  const handleSalirFamilia = async () => {
+    if (saliendoFamilia) return
+    if (!window.confirm('¿Salir de la familia? Se copiarán tus datos al espacio personal.')) return
+    setSaliendoFamilia(true)
+    setMsgSalir(null)
+    setErrSalir(null)
+    try {
+      const { data: resultado } = await familiaApi.salirFamilia()
+      await refreshUsuario()
+      if (resultado.espacio_personal_id) {
+        setEspacioActivoId(resultado.espacio_personal_id)
+      } else {
+        const personal = user?.espacios?.find(e => e.tipo === 'PERSONAL')
+        if (personal) setEspacioActivoId(personal.id)
+      }
+      setMsgSalir('Has salido de la familia. Tus datos están en tu espacio personal.')
+      setSalirPrecheck(null)
+    } catch (e) {
+      setErrSalir(apiErrorMessage(e) || 'No se pudo salir de la familia.')
+    } finally {
+      setSaliendoFamilia(false)
+    }
+  }
 
   const handleDriveConnect = async () => {
     setDriveConnecting(true)
@@ -256,7 +388,13 @@ export default function ConfiguracionPage() {
     [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC, user?.familia]
   )
 
-  const gruposIndice = ES_DEMO ? GRUPOS_SOLO_DEMO : GRUPOS
+  const gruposIndice = useMemo(() => {
+    const base = ES_DEMO ? GRUPOS_SOLO_DEMO : GRUPOS
+    if (familiaresActivos.length === 0 || ocultarModulosFamiliares) {
+      return base.filter(g => g.grupo !== 'FAMILIA')
+    }
+    return base
+  }, [familiaresActivos.length, ocultarModulosFamiliares])
 
   return (
     <div className={`${styles.page} ${styles.fadeUp}`}>
@@ -292,6 +430,159 @@ export default function ConfiguracionPage() {
           </ul>
         </section>
       ))}
+
+      {!ES_DEMO && necesitaSelectorFamilia && (
+        <section className={styles.section}>
+          <h2 className={styles.groupHeader}>FAMILIA ACTIVA</h2>
+          <div className={styles.accionBox}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>Familia para operar en la app</h3>
+              <p className={styles.accionTexto}>
+                Perteneces a varias familias. Elige cuál usar para movimientos compartidos,
+                liquidación, presupuesto y respaldos. Las cuentas personales del menú siguen
+                siendo tuyas dentro de esa familia.
+              </p>
+            </div>
+            <select
+              className={styles.selectReparto}
+              value={espacioActivo?.id ?? ''}
+              onChange={e => setEspacioActivoId(Number(e.target.value))}
+            >
+              {familiaresActivos.map(e => (
+                <option key={e.id} value={e.id}>
+                  {e.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        </section>
+      )}
+
+      {!ES_DEMO && (
+        <section className={styles.section}>
+          <h2 className={styles.groupHeader}>INTERFAZ</h2>
+          <div className={styles.accionBox}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>Ocultar módulos familiares</h3>
+              <p className={styles.accionTexto}>
+                Oculta menús y accesos de familia en el sidebar. Útil si aún no perteneces a
+                una familia o quieres enfocarte solo en tus cuentas personales.
+              </p>
+            </div>
+            <label className={styles.toggleLabel}>
+              <input
+                type="checkbox"
+                checked={ocultarModulosFamiliares}
+                onChange={e => setOcultarModulosFamiliares(e.target.checked)}
+              />
+              <span>{ocultarModulosFamiliares ? 'Ocultos' : 'Visibles'}</span>
+            </label>
+          </div>
+        </section>
+      )}
+
+      {!ES_DEMO && espacioActivo && (
+        <section className={styles.section}>
+          <h2 className={styles.groupHeader}>RESPALDO ESPACIO</h2>
+          <div className={styles.accionBox}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>
+                Respaldo de {espacioActivo.tipo === 'PERSONAL' ? 'espacio personal' : espacioActivo.nombre}
+              </h3>
+              <p className={styles.accionTexto}>
+                Descarga o restaura un JSON con los datos del espacio activo ({espacioActivo.nombre}).
+                La importación reemplaza los datos actuales del espacio.
+              </p>
+            </div>
+            <div className={styles.accionBtnsRow}>
+              <button
+                type="button"
+                className={styles.accionBtn}
+                onClick={() => void handleExportarEspacio()}
+                disabled={exportandoEspacio}
+              >
+                {exportandoEspacio ? 'Exportando…' : 'Descargar JSON'}
+              </button>
+              <button
+                type="button"
+                className={`${styles.accionBtn} ${styles.accionBtnSecondary}`}
+                onClick={() => importInputRef.current?.click()}
+                disabled={importandoEspacio || espacioActivo.archivado}
+              >
+                {importandoEspacio ? 'Importando…' : 'Restaurar desde JSON'}
+              </button>
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json,application/json"
+                className={styles.hiddenFile}
+                onChange={e => void handleImportarEspacio(e.target.files?.[0] ?? null)}
+              />
+            </div>
+          </div>
+          {msgEspacio ? <p className={styles.msgOk}>{msgEspacio}</p> : null}
+          {errEspacio ? <p className={styles.msgErr}>{errEspacio}</p> : null}
+        </section>
+      )}
+
+      {!ES_DEMO && esFamiliar && espacioActivo?.rol === 'ADMIN' && !espacioActivo?.archivado && (
+        <section className={styles.section}>
+          <h2 className={styles.groupHeader}>REPARTO FAMILIAR</h2>
+          <div className={styles.accionBox}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>Modo de reparto</h3>
+              <p className={styles.accionTexto}>
+                Define cómo se calcula la liquidación de gastos comunes en este espacio familiar.
+              </p>
+              <select
+                className={styles.selectReparto}
+                value={modoReparto}
+                onChange={e => setModoReparto(e.target.value as ModoReparto)}
+              >
+                {MODOS_REPARTO.map(m => (
+                  <option key={m.value} value={m.value}>{m.label}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              className={styles.accionBtn}
+              onClick={() => void handleGuardarModoReparto()}
+              disabled={guardandoReparto || modoReparto === espacioActivo?.modo_reparto}
+            >
+              {guardandoReparto ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+          {msgReparto ? <p className={styles.msgOk}>{msgReparto}</p> : null}
+          {errReparto ? <p className={styles.msgErr}>{errReparto}</p> : null}
+        </section>
+      )}
+
+      {!ES_DEMO && user?.familia && (
+        <section className={styles.section}>
+          <h2 className={styles.groupHeader}>FAMILIA</h2>
+          <div className={styles.accionBox}>
+            <div className={styles.accionInfo}>
+              <h3 className={styles.accionTitulo}>Salir de la familia</h3>
+              <p className={styles.accionTexto}>
+                {salirPrecheck?.puede_salir
+                  ? 'Se copiarán tus datos al espacio personal. El espacio familiar puede quedar archivado si eres el último miembro.'
+                  : salirPrecheck?.motivo ?? 'Comprobando si puedes salir…'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className={`${styles.accionBtn} ${styles.accionBtnDanger}`}
+              onClick={() => void handleSalirFamilia()}
+              disabled={saliendoFamilia || salirPrecheck?.puede_salir === false}
+            >
+              {saliendoFamilia ? 'Saliendo…' : 'Salir de la familia'}
+            </button>
+          </div>
+          {msgSalir ? <p className={styles.msgOk}>{msgSalir}</p> : null}
+          {errSalir ? <p className={styles.msgErr}>{errSalir}</p> : null}
+        </section>
+      )}
 
       {ES_DEMO ? null : (
       <section className={styles.section}>

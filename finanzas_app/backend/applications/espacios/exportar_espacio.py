@@ -229,6 +229,8 @@ def exportar_espacio(espacio) -> dict:
         'espacio': {
             'nombre': espacio.nombre,
             'tipo': espacio.tipo,
+            'modo_reparto': espacio.modo_reparto,
+            'archivado': espacio.archivado,
         },
         'datos': {
             'metodos_pago': [_ser_metodo(m) for m in metodos],

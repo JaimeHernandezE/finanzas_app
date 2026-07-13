@@ -5,26 +5,26 @@ from applications.viajes.models import Viaje, PresupuestoViaje
 
 
 @pytest.fixture
-def viaje(db, familia):
+def viaje(db, espacio_familiar):
     return Viaje.objects.create(
         nombre='Vacaciones Llanquihue 2026',
         fecha_inicio='2026-07-01',
         fecha_fin='2026-07-15',
         color_tema='#2E86AB',
-        familia=familia,
+        espacio=espacio_familiar,
         es_activo=False,
         archivado=False,
     )
 
 
 @pytest.fixture
-def viaje_2(db, familia):
+def viaje_2(db, espacio_familiar):
     return Viaje.objects.create(
         nombre='Fin de semana Valdivia',
         fecha_inicio='2026-04-18',
         fecha_fin='2026-04-20',
         color_tema='#c8f060',
-        familia=familia,
+        espacio=espacio_familiar,
         es_activo=False,
         archivado=False,
     )

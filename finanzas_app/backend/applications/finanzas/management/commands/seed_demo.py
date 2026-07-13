@@ -214,38 +214,61 @@ def _asegurar_metodos():
             MetodoPago.objects.create(nombre=nombre, tipo=tipo)
 
 
+def _limpiar_datos_espacio(espacio_id: int):
+    """Borra datos tenant de un espacio (finanzas + snapshots)."""
+    ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id).delete()
+    LiquidacionComunMensualSnapshot.objects.filter(espacio_id=espacio_id).delete()
+    SaldoMensualSnapshot.objects.filter(espacio_id=espacio_id).delete()
+    Cuota.objects.filter(movimiento__espacio_id=espacio_id).delete()
+    Movimiento.objects.filter(espacio_id=espacio_id).delete()
+    IngresoComun.objects.filter(espacio_id=espacio_id).delete()
+    Presupuesto.objects.filter(espacio_id=espacio_id).delete()
+    Categoria.objects.filter(espacio_id=espacio_id).delete()
+
+
 def _wipe_familia_demo():
-    try:
-        familia = Familia.objects.get(nombre=FAMILIA_DEMO_NOMBRE)
-    except Familia.DoesNotExist:
-        return None
+    from applications.espacios.models import Espacio, PertenenciaEspacio
+    from applications.espacios.services import obtener_espacio_personal
 
-    fid = familia.id
-    uids = list(Usuario.objects.filter(familia_id=fid).values_list('id', flat=True))
+    demo_emails = [DEMO_EMAIL_JAIME, DEMO_EMAIL_GLORI]
+    usuarios = list(Usuario.objects.filter(email__in=demo_emails))
+    uids = [u.id for u in usuarios]
 
-    InvitacionPendiente.objects.filter(familia_id=fid).delete()
-    ResumenHistoricoMesSnapshot.objects.filter(familia_id=fid).delete()
-    LiquidacionComunMensualSnapshot.objects.filter(familia_id=fid).delete()
-    SaldoMensualSnapshot.objects.filter(familia_id=fid).delete()
+    espacio_familiar = Espacio.objects.filter(
+        tipo=Espacio.TIPO_FAMILIAR,
+        nombre=FAMILIA_DEMO_NOMBRE,
+    ).first()
+
+    if espacio_familiar:
+        from applications.usuarios.models import InvitacionPendiente
+
+        InvitacionPendiente.objects.filter(espacio_id=espacio_familiar.id).delete()
+        _limpiar_datos_espacio(espacio_familiar.id)
+        PertenenciaEspacio.objects.filter(espacio_id=espacio_familiar.id).delete()
+        espacio_familiar.delete()
+
     if uids:
         SueldoEstimadoProrrateoMensual.objects.filter(usuario_id__in=uids).delete()
-
-    Cuota.objects.filter(movimiento__familia_id=fid).delete()
-    Movimiento.objects.filter(familia_id=fid).delete()
-    IngresoComun.objects.filter(familia_id=fid).delete()
-    Presupuesto.objects.filter(familia_id=fid).delete()
-
-    if uids:
         Tarjeta.objects.filter(usuario_id__in=uids).delete()
         TutorCuenta.objects.filter(
             Q(tutor_id__in=uids) | Q(cuenta__usuario_id__in=uids)
         ).delete()
-        Categoria.objects.filter(Q(familia_id=fid) | Q(usuario_id__in=uids)).delete()
+        Categoria.objects.filter(usuario_id__in=uids).delete()
         CuentaPersonal.objects.filter(usuario_id__in=uids).delete()
+
+    for usuario in usuarios:
+        personal = obtener_espacio_personal(usuario)
+        if personal:
+            _limpiar_datos_espacio(personal.id)
+            PertenenciaEspacio.objects.filter(usuario=usuario, espacio=personal).delete()
+            personal.delete()
+        PertenenciaEspacio.objects.filter(usuario=usuario).delete()
+
+    if uids:
         Usuario.objects.filter(pk__in=uids).delete()
 
-    familia.delete()
-    return True
+    Familia.objects.filter(nombre=FAMILIA_DEMO_NOMBRE).delete()
+    return bool(usuarios or espacio_familiar)
 
 
 class Command(BaseCommand):

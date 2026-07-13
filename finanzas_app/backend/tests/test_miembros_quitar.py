@@ -1,6 +1,7 @@
 # backend/tests/test_miembros_quitar.py
 
 import pytest
+from applications.espacios.models import PertenenciaEspacio
 
 
 @pytest.mark.django_db
@@ -23,14 +24,16 @@ class TestMiembrosQuitarApi:
         for m in res.json():
             assert m['puede_quitar'] is False
 
-    def test_admin_quita_miembro_sin_datos(self, client, auth_header, usuario_2):
+    def test_admin_quita_miembro_sin_datos(self, client, auth_header, usuario_2, espacio_familiar):
         res = client.delete(
             f'/api/usuarios/familia/miembros/{usuario_2.id}/',
             **auth_header,
         )
         assert res.status_code == 204
         usuario_2.refresh_from_db()
-        assert usuario_2.familia_id is None
+        assert not PertenenciaEspacio.objects.filter(
+            usuario=usuario_2, espacio=espacio_familiar, activo=True,
+        ).exists()
 
     def test_no_quitar_a_si_mismo(self, client, auth_header, usuario):
         res = client.delete(

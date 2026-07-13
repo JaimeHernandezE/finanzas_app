@@ -153,6 +153,60 @@ Si en tu entorno los cambios no se reflejan, reinicia el servicio: `docker-compo
 - Admin Django: **http://localhost:8000/admin/**
 - Login con Firebase (POST): **http://localhost:8000/api/usuarios/auth/firebase/**
 
+## Entornos A/B (cutover multitenant)
+
+Para validar migraciones multitenant sin tocar el entorno estable, usa dos stacks Docker con proyectos y bases de datos separados. Detalle de producto en [PLAN-MULTITENANT-Y-ENTORNO-A-B.md](PLAN-MULTITENANT-Y-ENTORNO-A-B.md).
+
+### Preparación
+
+Desde `backend/`:
+
+```powershell
+Copy-Item .env.a.example .env.a
+Copy-Item .env.b.example .env.b
+# Editar .env.a y .env.b con SECRET_KEY y DB_PASSWORD distintos
+```
+
+### Levantar entorno A (estable)
+
+```powershell
+docker compose --env-file .env.a -p gastos_a up -d --build
+```
+
+### Respaldo y clonación a B
+
+```powershell
+New-Item -ItemType Directory -Force -Path ".\backups" | Out-Null
+docker compose --env-file .env.a -p gastos_a exec -T db sh -lc 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ".\backups\dump_a.sql"
+
+docker compose -p gastos_b down -v
+docker compose --env-file .env.b -p gastos_b -f docker-compose.yml -f docker-compose.override-b.yml up -d --build
+docker compose --env-file .env.b -p gastos_b exec -T db sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ".\backups\dump_a.sql"
+```
+
+### Migrar solo en B
+
+```powershell
+docker compose --env-file .env.b -p gastos_b exec web python manage.py makemigrations
+docker compose --env-file .env.b -p gastos_b exec web python manage.py migrate
+docker compose --env-file .env.b -p gastos_b exec web python manage.py backfill_espacios
+docker compose --env-file .env.b -p gastos_b exec web python manage.py validar_espacios
+```
+
+### Alternar A y B
+
+```powershell
+# Ir a B (puertos 5433 / 8001 / 5174)
+docker compose -p gastos_a down
+docker compose --env-file .env.b -p gastos_b -f docker-compose.yml -f docker-compose.override-b.yml up -d
+
+# Volver a A (puertos 5432 / 8000 / 5173)
+docker compose -p gastos_b down
+docker compose --env-file .env.a -p gastos_a up -d
+```
+
+Apunta el frontend al stack activo: `VITE_API_URL=http://localhost:8000` (A) o `http://localhost:8001` (B).
+
 ## Documentación relacionada
 
 - [Despliegue en producción](DEPLOYMENT-PRODUCTION.md) — Render, variables de entorno en la nube, próximas guías detalladas.

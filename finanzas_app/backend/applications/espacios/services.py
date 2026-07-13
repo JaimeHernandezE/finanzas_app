@@ -16,12 +16,22 @@ def obtener_espacio_personal(usuario) -> Espacio | None:
     return pertenencia.espacio if pertenencia else None
 
 
+def obtener_espacio_familiar_activo(usuario) -> Espacio | None:
+    """Espacio familiar activo del usuario, o None si no tiene membresía."""
+    pertenencia = (
+        PertenenciaEspacio.objects
+        .select_related('espacio')
+        .filter(usuario=usuario, activo=True, espacio__tipo=Espacio.TIPO_FAMILIAR)
+        .first()
+    )
+    return pertenencia.espacio if pertenencia else None
+
+
 @transaction.atomic
 def crear_espacio_personal(usuario) -> Espacio:
     """
     Garantiza el espacio personal del usuario (idempotente): si ya existe lo
-    retorna; si no, lo crea con el usuario como ADMIN. Regla del plan: todo
-    usuario tiene exactamente 1 espacio personal.
+    retorna; si no, lo crea con el usuario como ADMIN.
     """
     existente = obtener_espacio_personal(usuario)
     if existente is not None:
@@ -40,10 +50,8 @@ def crear_espacio_personal(usuario) -> Espacio:
     return espacio
 
 
-# ── Transición Fase 3: espejo Familia ↔ Espacio FAMILIAR ─────────────────────
-
 def modelos_tenant():
-    """Modelos con FK directa a familia que reciben espacio en la transición."""
+    """Modelos con FK directa a espacio (validación y backfill)."""
     from applications.finanzas.models import (
         Categoria,
         IngresoComun,
@@ -68,45 +76,51 @@ def modelos_tenant():
         Viaje,
     ]
 
+
 def espacio_para_familia(familia) -> Espacio:
-    """Espacio FAMILIAR espejo de una Familia legacy (idempotente)."""
-    espacio = Espacio.objects.filter(familia_origen=familia).first()
+    """
+    Espacio FAMILIAR asociado a una Familia legacy (idempotente).
+    Durante la transición se vincula por nombre; tras el cutover Familia es solo
+    fixture de tests.
+    """
+    nombre = (familia.nombre or 'Familia')[:150]
+    espacio = Espacio.objects.filter(tipo=Espacio.TIPO_FAMILIAR, nombre=nombre).first()
     if espacio is not None:
         return espacio
-    return Espacio.objects.create(
-        tipo=Espacio.TIPO_FAMILIAR,
-        nombre=(familia.nombre or 'Familia')[:150],
-        familia_origen=familia,
+    return Espacio.objects.create(tipo=Espacio.TIPO_FAMILIAR, nombre=nombre)
+
+
+def miembros_activos_espacio(espacio, mes_pd=None) -> list:
+    """
+    Usuarios con pertenencia activa al espacio. En espacios FAMILIAR aplica la misma
+    regla histórica que miembros_para_prorrateo: meses pasados incluyen inactivos.
+    """
+    from django.utils import timezone
+
+    from applications.finanzas.services_recalculo import primer_dia_mes
+
+    pertenencias = (
+        PertenenciaEspacio.objects
+        .filter(espacio=espacio, activo=True)
+        .select_related('usuario')
+        .order_by('usuario__first_name', 'usuario__id')
     )
+    if espacio.tipo != Espacio.TIPO_FAMILIAR:
+        return [p.usuario for p in pertenencias]
 
-
-def sincronizar_pertenencia_familiar(usuario) -> None:
-    """
-    Espeja Usuario.familia / rol / activo en PertenenciaEspacio mientras conviven
-    ambos esquemas. Al cambiar o abandonar la familia, las pertenencias familiares
-    anteriores quedan inactivas (el espacio persiste como registro histórico).
-    """
-    if usuario.familia_id:
-        espacio = espacio_para_familia(usuario.familia)
-        pertenencia, created = PertenenciaEspacio.objects.get_or_create(
-            usuario=usuario,
-            espacio=espacio,
-            defaults={'rol': usuario.rol, 'activo': usuario.activo},
+    if mes_pd is None:
+        mes_pd = primer_dia_mes(timezone.localdate())
+    mes_actual = primer_dia_mes(timezone.localdate())
+    if mes_pd < mes_actual:
+        pertenencias = (
+            PertenenciaEspacio.objects
+            .filter(espacio=espacio)
+            .select_related('usuario')
+            .order_by('usuario__first_name', 'usuario__id')
         )
-        if not created and (
-            pertenencia.rol != usuario.rol or pertenencia.activo != usuario.activo
-        ):
-            pertenencia.rol = usuario.rol
-            pertenencia.activo = usuario.activo
-            pertenencia.save(update_fields=['rol', 'activo'])
-        PertenenciaEspacio.objects.filter(
-            usuario=usuario,
-            activo=True,
-            espacio__tipo=Espacio.TIPO_FAMILIAR,
-        ).exclude(espacio=espacio).update(activo=False)
-    else:
-        PertenenciaEspacio.objects.filter(
-            usuario=usuario,
-            activo=True,
-            espacio__tipo=Espacio.TIPO_FAMILIAR,
-        ).update(activo=False)
+    return [p.usuario for p in pertenencias]
+
+
+def familia_id_de_espacio(espacio) -> int | None:
+    """Compatibilidad legacy: sin familia_origen retorna None."""
+    return None

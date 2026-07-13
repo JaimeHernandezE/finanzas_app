@@ -23,6 +23,7 @@ from rest_framework import status
 
 from applications.demo_guard import respuesta_demo_no_disponible
 from applications.espacios.contexto import usuario_y_espacio
+from applications.espacios.models import Espacio
 from .models import (
     Categoria,
     CuentaPersonal,
@@ -35,6 +36,7 @@ from .models import (
     SueldoEstimadoProrrateoMensual,
 )
 from . import services_recalculo
+from .tenant_helpers import resolver_espacio_id
 from .services.dashboard import obtener_resumen_dashboard
 from .services.presupuesto_mes import build_presupuesto_mes_payload, presupuesto_mes_vacio
 from .serializers import (
@@ -56,23 +58,12 @@ _SUELDOS_PRORRATEO_CACHE_SECONDS = 45
 
 def _contexto_espacio(request):
     """
-    Punto de entrada multitenant de este módulo: autentica, resuelve el espacio
-    activo (header X-Espacio-Id o espacio por defecto) y deriva la familia
-    legacy DESDE el espacio — no desde el usuario — de modo que todos los
-    filtros `familia=usuario.familia` del módulo queden scoped al tenant
-    seleccionado.
-
-    La asignación `usuario.familia` es SOLO en memoria (ninguna vista de este
-    módulo persiste al usuario; verificado). En espacio PERSONAL la familia
-    derivada es None y las queries usan espacio directamente.
-    Espacios archivados: solo lectura.
+    Punto de entrada multitenant: autentica y resuelve el espacio activo
+    (header X-Espacio-Id o espacio por defecto). Espacios archivados: solo lectura.
     """
     usuario, espacio, err = usuario_y_espacio(request)
     if err is not None:
         return None, None, err
-
-    familia = espacio.familia_origen if espacio.familia_origen_id else None
-    usuario.familia = familia  # override en memoria; scoped al espacio activo
 
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         if espacio.archivado:
@@ -84,14 +75,20 @@ def _contexto_espacio(request):
 
 
 def _filtro_tenant(usuario, espacio):
-    """
-    Devuelve el Q filter adecuado para aislar datos del espacio activo.
-    - Espacio FAMILIAR: familia=usuario.familia (compatibilidad legacy)
-    - Espacio PERSONAL: espacio=espacio (datos propios sin familia)
-    """
-    if espacio.es_personal:
-        return Q(espacio=espacio)
-    return Q(familia=usuario.familia)
+    """Devuelve el Q filter para aislar datos del espacio activo."""
+    return Q(espacio=espacio)
+
+
+def _espacio_id(usuario, espacio):
+    return resolver_espacio_id(usuario, espacio)
+
+
+def _requiere_espacio_familiar(espacio):
+    return not espacio.es_personal and espacio.tipo == Espacio.TIPO_FAMILIAR
+
+
+def _es_espacio_familiar(espacio):
+    return espacio.tipo == Espacio.TIPO_FAMILIAR and not espacio.archivado
 
 
 def _nuevo_import_debug_id():
@@ -191,22 +188,18 @@ def categorias(request):
         if err_resp:
             return err_resp
 
-        q_globales = Q(familia__isnull=True, usuario__isnull=True)
-        q_personales = Q(usuario=usuario)
-        q_familia = (
-            Q(familia=usuario.familia, usuario__isnull=True)
-            if usuario.familia
-            else Q(pk__in=[])
-        )
-        # Compatibilidad: sin ambito explícito mantenemos globales en el listado general.
-        qs_base = q_familia | q_personales
-        if not ambito:
-            qs_base = qs_base | q_globales
+        q_globales = Q(espacio__isnull=True, usuario__isnull=True)
+        if espacio.es_personal:
+            qs_base = q_globales
+        else:
+            q_familia = Q(espacio=espacio, usuario__isnull=True)
+            q_personales = Q(usuario=usuario, espacio=espacio)
+            qs_base = q_globales | q_familia | q_personales
         qs = Categoria.objects.filter(qs_base)
 
         if ambito == 'FAMILIAR':
             qs = qs.filter(
-                familia=usuario.familia,
+                espacio=espacio,
                 usuario__isnull=True,
                 cuenta_personal__isnull=True,
             )
@@ -250,13 +243,13 @@ def categorias(request):
         serializer = CategoriaSerializer(data=data)
         if serializer.is_valid():
             if ambito == 'FAMILIAR':
-                if not usuario.familia:
+                if not _requiere_espacio_familiar(espacio):
                     return Response(
-                        {'error': 'Las categorías familiares requieren pertenecer a una familia.'},
+                        {'error': 'Las categorías familiares requieren un espacio familiar activo.'},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 serializer.save(
-                    familia=usuario.familia,
+                    espacio=espacio,
                     usuario=None,
                     cuenta_personal=None,
                 )
@@ -266,14 +259,11 @@ def categorias(request):
                 )
                 if err_resp:
                     return err_resp
-                save_kwargs = {
-                    'usuario': usuario,
-                    'cuenta_personal_id': cuenta_id,
-                    'espacio': espacio,
-                }
-                if usuario.familia:
-                    save_kwargs['familia'] = usuario.familia
-                serializer.save(**save_kwargs)
+                serializer.save(
+                    usuario=usuario,
+                    cuenta_personal_id=cuenta_id,
+                    espacio=espacio,
+                )
             else:
                 return Response(
                     {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
@@ -304,8 +294,12 @@ def categoria_detalle(request, pk):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    es_global = categoria.familia is None and categoria.usuario is None
-    es_familiar = categoria.familia == usuario.familia and categoria.usuario is None
+    es_global = categoria.espacio is None and categoria.usuario is None
+    es_familiar = (
+        _requiere_espacio_familiar(espacio)
+        and categoria.espacio == espacio
+        and categoria.usuario is None
+    )
     es_personal = categoria.usuario == usuario
 
     if not (es_global or es_familiar or es_personal):
@@ -680,10 +674,7 @@ def movimientos(request):
     if request.method == 'POST':
         serializer = MovimientoSerializer(data=request.data)
         if serializer.is_valid():
-            save_kwargs = {'usuario': usuario, 'espacio': espacio}
-            if usuario.familia:
-                save_kwargs['familia'] = usuario.familia
-            instance = serializer.save(**save_kwargs)
+            instance = serializer.save(usuario=usuario, espacio=espacio)
             # Re-fetch con select_related para que MovimientoListSerializer
             # pueda resolver categoria_nombre, metodo_pago_tipo, etc.
             instance = _qs_movimientos_con_ingreso_comun(
@@ -785,12 +776,8 @@ def cuotas(request):
     if error:
         return error
 
-    if espacio.es_personal:
-        cuota_filter = Q(movimiento__espacio=espacio)
-    else:
-        cuota_filter = Q(movimiento__familia=usuario.familia)
     qs = Cuota.objects.filter(
-        cuota_filter
+        movimiento__espacio=espacio
     ).select_related(
         'movimiento', 'movimiento__tarjeta', 'movimiento__categoria'
     ).order_by('mes_facturacion', 'numero')
@@ -846,10 +833,7 @@ def cuotas_deuda_pendiente(request):
         mes_facturacion__year=hoy.year,
         mes_facturacion__month=hoy.month,
     )
-    if espacio.es_personal:
-        qs = qs.filter(movimiento__espacio=espacio)
-    elif usuario.familia_id:
-        qs = qs.filter(movimiento__familia_id=usuario.familia_id)
+    qs = qs.filter(movimiento__espacio=espacio)
 
     total = Decimal('0.00')
     for cuota in qs:
@@ -869,12 +853,10 @@ def cuota_detalle(request, pk):
     if error:
         return error
 
-    if espacio.es_personal:
-        cuota_scope = Q(movimiento__espacio=espacio)
-    else:
-        cuota_scope = Q(movimiento__familia=usuario.familia)
     try:
-        cuota = Cuota.objects.filter(cuota_scope).select_related('movimiento').get(
+        cuota = Cuota.objects.filter(
+            movimiento__espacio=espacio
+        ).select_related('movimiento').get(
             pk=pk
         )
     except Cuota.DoesNotExist:
@@ -941,10 +923,7 @@ def ingresos_comunes(request):
     if request.method == 'POST':
         serializer = IngresoComunSerializer(data=request.data)
         if serializer.is_valid():
-            save_kwargs = {'usuario': usuario, 'espacio': espacio}
-            if usuario.familia:
-                save_kwargs['familia'] = usuario.familia
-            serializer.save(**save_kwargs)
+            serializer.save(usuario=usuario, espacio=espacio)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -992,7 +971,7 @@ def ingreso_comun_detalle(request, pk):
 
 # ── PRESUPUESTO MENSUAL (familia / personal) ─────────────────────────────────
 
-def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
+def _categoria_accesible(usuario, categoria_id, ambito, espacio, cuenta_id=None):
     """Categoría familiar o personal del usuario (sin globales)."""
     try:
         cid = int(categoria_id)
@@ -1001,10 +980,10 @@ def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
 
     qs = Categoria.objects.filter(pk=cid)
     if ambito == 'FAMILIAR':
-        if not usuario.familia:
+        if not _requiere_espacio_familiar(espacio):
             return None
         return qs.filter(
-            familia=usuario.familia,
+            espacio=espacio,
             usuario__isnull=True,
             cuenta_personal__isnull=True,
         ).first()
@@ -1016,8 +995,8 @@ def _categoria_accesible(usuario, categoria_id, ambito, cuenta_id=None):
     return None
 
 
-def _puede_editar_presupuesto(usuario, presupuesto):
-    if presupuesto.familia_id and presupuesto.familia_id != usuario.familia_id:
+def _puede_editar_presupuesto(usuario, presupuesto, espacio):
+    if presupuesto.espacio_id != espacio.pk:
         return False
     if presupuesto.usuario_id is None:
         return True
@@ -1050,7 +1029,10 @@ def presupuesto_mes(request):
             {'error': 'mes y anio deben ser numéricos.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    ambito = (request.GET.get('ambito') or ('FAMILIAR' if usuario.familia_id else 'PERSONAL')).upper()
+    ambito = (
+        request.GET.get('ambito')
+        or ('FAMILIAR' if _es_espacio_familiar(espacio) else 'PERSONAL')
+    ).upper()
     cuenta_id, err_resp = _parse_cuenta_personal_usuario(
         usuario, request.GET.get('cuenta')
     )
@@ -1061,7 +1043,7 @@ def presupuesto_mes(request):
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    if ambito == 'FAMILIAR' and not usuario.familia_id:
+    if ambito == 'FAMILIAR' and (not _requiere_espacio_familiar(espacio)):
         return Response(presupuesto_mes_vacio())
     if not (1 <= mes <= 12) or anio < 2000 or anio > 2100:
         return Response(
@@ -1069,7 +1051,9 @@ def presupuesto_mes(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    payload = build_presupuesto_mes_payload(usuario, mes, anio, ambito, cuenta_id)
+    payload = build_presupuesto_mes_payload(
+        usuario, mes, anio, ambito, cuenta_id, espacio=espacio
+    )
     return Response(payload)
 
 
@@ -1085,15 +1069,18 @@ def presupuestos_create(request):
     if error:
         return error
 
-    ambito = (request.data.get('ambito') or ('FAMILIAR' if usuario.familia_id else 'PERSONAL')).upper()
+    ambito = (
+        request.data.get('ambito')
+        or ('FAMILIAR' if _es_espacio_familiar(espacio) else 'PERSONAL')
+    ).upper()
     if ambito not in ('FAMILIAR', 'PERSONAL'):
         return Response(
             {'error': 'ambito debe ser FAMILIAR o PERSONAL.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    if ambito == 'FAMILIAR' and not usuario.familia_id:
+    if ambito == 'FAMILIAR' and (not _requiere_espacio_familiar(espacio)):
         return Response(
-            {'error': 'Los presupuestos familiares requieren pertenecer a una familia.'},
+            {'error': 'Los presupuestos familiares requieren un espacio familiar activo.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     cuenta_id, err_resp = _parse_cuenta_personal_usuario(
@@ -1106,6 +1093,7 @@ def presupuestos_create(request):
         usuario,
         request.data.get('categoria'),
         ambito=ambito,
+        espacio=espacio,
         cuenta_id=cuenta_id,
     )
     if not cat:
@@ -1141,21 +1129,19 @@ def presupuestos_create(request):
 
     if ambito == 'FAMILIAR':
         p, _ = Presupuesto.objects.update_or_create(
-            familia=usuario.familia,
+            espacio=espacio,
             usuario=None,
             categoria=cat,
             mes=mes_first,
             defaults={'monto': monto},
         )
     else:
-        lookup = {'usuario': usuario, 'categoria': cat, 'mes': mes_first}
-        if usuario.familia:
-            lookup['familia'] = usuario.familia
-        else:
-            lookup['familia__isnull'] = True
         p, _ = Presupuesto.objects.update_or_create(
-            **lookup,
-            defaults={'monto': monto, 'espacio': espacio},
+            espacio=espacio,
+            usuario=usuario,
+            categoria=cat,
+            mes=mes_first,
+            defaults={'monto': monto},
         )
 
     return Response(PresupuestoSerializer(p).data, status=status.HTTP_201_CREATED)
@@ -1180,7 +1166,7 @@ def presupuesto_detalle_finanzas(request, pk):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    if not _puede_editar_presupuesto(usuario, p):
+    if not _puede_editar_presupuesto(usuario, p, espacio):
         return Response(
             {'error': 'Sin permisos para modificar este presupuesto.'},
             status=status.HTTP_403_FORBIDDEN,
@@ -1326,7 +1312,7 @@ def pagar_tarjeta(request):
             comentario = f"Pago tarjeta {tarjeta.nombre}: {ref}{sufijo}"
 
             nuevo = Movimiento.objects.create(
-                familia=mov.familia,
+                espacio=mov.espacio,
                 usuario=usuario,
                 cuenta=mov.cuenta,
                 tipo='EGRESO',
@@ -1379,7 +1365,7 @@ def liquidacion(request):
     mes = int(mes)
     anio = int(anio)
 
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response({
             'periodo': {'mes': mes, 'anio': anio},
             'ingresos': [],
@@ -1387,14 +1373,15 @@ def liquidacion(request):
             'recalculo': {'pendiente': False, 'dirty_from': None},
         })
 
+    espacio_id = _espacio_id(usuario, espacio)
     snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
-        usuario.familia_id, mes, anio
+        espacio_id, mes, anio
     )
     if snap is not None:
         ingresos, gastos_comunes = snap
     else:
         ingresos_qs = IngresoComun.objects.filter(
-            familia=usuario.familia,
+            espacio=espacio,
             mes__month=mes,
             mes__year=anio,
         ).values(
@@ -1420,7 +1407,7 @@ def liquidacion(request):
         ]
 
         gastos_qs = Movimiento.objects.filter(
-            familia=usuario.familia,
+            espacio=espacio,
             ambito='COMUN',
             tipo='EGRESO',
             fecha__month=mes,
@@ -1436,7 +1423,7 @@ def liquidacion(request):
         ).order_by('usuario__first_name', 'usuario__last_name', 'usuario__id')
 
         cuotas_comunes_pendientes_qs = Cuota.objects.filter(
-            movimiento__familia=usuario.familia,
+            movimiento__espacio=espacio,
             movimiento__ambito='COMUN',
             movimiento__tipo='EGRESO',
             movimiento__oculto=False,
@@ -1504,7 +1491,7 @@ def liquidacion(request):
         },
         'ingresos': ingresos,
         'gastos_comunes': gastos_comunes,
-        'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+        'recalculo': services_recalculo.get_recalculo_estado(espacio.pk),
     })
 
 
@@ -1518,18 +1505,19 @@ def resumen_historico(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
             {
                 'meses': [],
                 'recalculo': {'pendiente': False, 'dirty_from': None},
             }
         )
-    meses = services_recalculo.resumen_historico_familia(usuario.familia_id)
+    espacio_id = _espacio_id(usuario, espacio)
+    meses = services_recalculo.resumen_historico_familia(espacio_id)
     return Response(
         {
             'meses': meses,
-            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+            'recalculo': services_recalculo.get_recalculo_estado(espacio_id),
         }
     )
 
@@ -1562,7 +1550,7 @@ def saldo_mensual(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
             {
                 'mes': mes,
@@ -1572,12 +1560,13 @@ def saldo_mensual(request):
             }
         )
 
+    espacio_id = _espacio_id(usuario, espacio)
     cuentas = services_recalculo.saldo_efectivo_cuentas_desde_snapshot(
-        usuario, usuario.familia_id, mes, anio
+        usuario, espacio_id, mes, anio
     )
     if cuentas is None:
         cuentas = services_recalculo.efectivo_por_cuenta_live(
-            usuario, usuario.familia_id, mes, anio
+            usuario, espacio_id, mes, anio
         )
 
     return Response(
@@ -1585,7 +1574,7 @@ def saldo_mensual(request):
             'mes': mes,
             'anio': anio,
             'cuentas': cuentas,
-            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+            'recalculo': services_recalculo.get_recalculo_estado(espacio_id),
         }
     )
 
@@ -1632,7 +1621,7 @@ def cuenta_resumen_mensual(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
             {
                 'cuenta': {'id': cuenta.pk, 'nombre': cuenta.nombre},
@@ -1641,14 +1630,15 @@ def cuenta_resumen_mensual(request):
             }
         )
 
+    espacio_id = _espacio_id(usuario, espacio)
     meses = services_recalculo.resumen_cuenta_personal_mensual(
-        usuario.familia_id, cuenta_id
+        espacio_id, cuenta_id
     )
     return Response(
         {
             'cuenta': {'id': cuenta.pk, 'nombre': cuenta.nombre},
             'meses': meses,
-            'recalculo': services_recalculo.get_recalculo_estado(usuario.familia_id),
+            'recalculo': services_recalculo.get_recalculo_estado(espacio_id),
         }
     )
 
@@ -1665,10 +1655,11 @@ def efectivo_disponible(request):
     if error:
         return error
 
-    datos = services_recalculo.efectivo_disponible_dashboard(usuario)
+    datos = services_recalculo.efectivo_disponible_dashboard(usuario, espacio=espacio)
+    espacio_id = _espacio_id(usuario, espacio)
     recalculo = (
-        services_recalculo.get_recalculo_estado(usuario.familia_id)
-        if usuario.familia_id
+        services_recalculo.get_recalculo_estado(espacio_id)
+        if espacio_id
         else {'pendiente': False, 'dirty_from': None}
     )
     desglose = datos['desglose']
@@ -1715,7 +1706,7 @@ def dashboard_resumen(request):
         )
 
     try:
-        payload = obtener_resumen_dashboard(usuario, mes_i, anio_i)
+        payload = obtener_resumen_dashboard(usuario, mes_i, anio_i, espacio=espacio)
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     return Response(payload)
@@ -1732,9 +1723,9 @@ def compensacion_proyectada_datos(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
-            {'error': 'Usuario sin familia asociada.'},
+            {'error': 'Se requiere un espacio familiar activo.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     mes = request.GET.get('mes')
@@ -1744,7 +1735,9 @@ def compensacion_proyectada_datos(request):
             {'error': 'Los parámetros mes y anio son obligatorios.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    datos = services_recalculo.datos_compensacion_proyectada(usuario, int(mes), int(anio))
+    datos = services_recalculo.datos_compensacion_proyectada(
+        usuario, int(mes), int(anio), espacio=espacio
+    )
     if datos is None:
         return Response({'error': 'Sin datos.'}, status=status.HTTP_404_NOT_FOUND)
     return Response(datos)
@@ -1754,8 +1747,8 @@ def _primer_dia_mes_param(mes: int, anio: int) -> date:
     return date(anio, mes, 1)
 
 
-def _cache_key_sueldos_prorrateo(familia_id: int, mes: int, anio: int) -> str:
-    return f'sueldos-prorrateo:{familia_id}:{anio}:{mes}'
+def _cache_key_sueldos_prorrateo(espacio_id: int, mes: int, anio: int) -> str:
+    return f'sueldos-prorrateo:{espacio_id}:{anio}:{mes}'
 
 
 @api_view(['GET', 'PUT'])
@@ -1770,9 +1763,9 @@ def sueldos_estimados_prorrateo(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
-            {'error': 'Usuario sin familia asociada.'},
+            {'error': 'Se requiere un espacio familiar activo.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     mes_q = request.query_params.get('mes')
@@ -1791,15 +1784,16 @@ def sueldos_estimados_prorrateo(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     primer = _primer_dia_mes_param(mes_i, anio_i)
+    espacio_id = _espacio_id(usuario, espacio)
     miembros_list = services_recalculo.miembros_para_prorrateo_fondo_comun(
-        usuario.familia_id, primer
+        espacio_id, primer
     )
     miembros_ids = [u.pk for u in miembros_list]
     if not miembros_ids:
         return Response({'mes': mes_i, 'anio': anio_i, 'montos': {}}, status=status.HTTP_200_OK)
 
     if request.method == 'GET':
-        cache_key = _cache_key_sueldos_prorrateo(usuario.familia_id, mes_i, anio_i)
+        cache_key = _cache_key_sueldos_prorrateo(espacio_id, mes_i, anio_i)
         cached = cache.get(cache_key)
         if cached is not None:
             return Response(cached)
@@ -1831,7 +1825,7 @@ def sueldos_estimados_prorrateo(request):
                 )
             if uid not in miembros_set:
                 return Response(
-                    {'error': f'El usuario {uid} no pertenece a la familia.'},
+                    {'error': f'El usuario {uid} no pertenece al espacio.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             try:
@@ -1861,7 +1855,7 @@ def sueldos_estimados_prorrateo(request):
                     defaults={'monto': monto},
                 )
             SueldoEstimadoProrrateoMensual.objects.filter(
-                usuario__familia_id=usuario.familia_id,
+                usuario_id__in=miembros_ids,
                 mes__lt=primer,
             ).delete()
 
@@ -1872,7 +1866,7 @@ def sueldos_estimados_prorrateo(request):
         montos = {str(r['usuario_id']): str(r['monto']) for r in rows}
         payload = {'mes': mes_i, 'anio': anio_i, 'montos': montos}
         cache.set(
-            _cache_key_sueldos_prorrateo(usuario.familia_id, mes_i, anio_i),
+            _cache_key_sueldos_prorrateo(espacio_id, mes_i, anio_i),
             payload,
             _SUELDOS_PRORRATEO_CACHE_SECONDS,
         )
@@ -1887,9 +1881,10 @@ def recalculo_estado(request):
     usuario, espacio, error = _contexto_espacio(request)
     if error:
         return error
-    if not usuario.familia_id:
+    espacio_id = _espacio_id(usuario, espacio)
+    if not espacio_id:
         return Response({'pendiente': False, 'dirty_from': None})
-    return Response(services_recalculo.get_recalculo_estado(usuario.familia_id))
+    return Response(services_recalculo.get_recalculo_estado(espacio_id))
 
 
 @api_view(['POST'])
@@ -1910,17 +1905,17 @@ def recalculo_historico(request):
     if error:
         return error
 
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
-            {'error': 'El usuario no pertenece a una familia.'},
+            {'error': 'Se requiere un espacio familiar activo.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    familia_id = usuario.familia_id
-    min_mov = Movimiento.objects.filter(familia_id=familia_id).aggregate(
+    espacio_id = _espacio_id(usuario, espacio)
+    min_mov = Movimiento.objects.filter(espacio_id=espacio_id).aggregate(
         m=Min('fecha')
     )['m']
-    min_ing = IngresoComun.objects.filter(familia_id=familia_id).aggregate(
+    min_ing = IngresoComun.objects.filter(espacio_id=espacio_id).aggregate(
         m=Min('mes')
     )['m']
 
@@ -1935,14 +1930,14 @@ def recalculo_historico(request):
         )
 
     mes_inicio = services_recalculo.primer_dia_mes(min(candidatos))
-    services_recalculo.recalcular_familia_desde(familia_id, mes_inicio)
+    services_recalculo.recalcular_familia_desde(espacio_id, mes_inicio)
     meses_resumen_familia = services_recalculo.backfill_resumen_historico_snapshots(
-        familia_id
+        espacio_id
     )
     meses_saldos_usuario = services_recalculo.backfill_saldos_personales_usuario(
-        usuario.pk, familia_id
+        usuario.pk, espacio_id
     )
-    reparacion_cuotas = services_recalculo.reparar_cuotas_credito_familia(familia_id)
+    reparacion_cuotas = services_recalculo.reparar_cuotas_credito_familia(espacio_id)
     return Response(
         {
             'ok': True,
@@ -2011,10 +2006,10 @@ def importar_cuenta_personal_planilla(request):
             contenido = archivo.read().decode('utf-8-sig')
         except UnicodeDecodeError:
             logger.warning(
-                "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s decode utf-8 falló nombre=%r tam=%s",
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s espacio_id=%s decode utf-8 falló nombre=%r tam=%s",
                 debug_id,
                 getattr(usuario, 'id', None),
-                getattr(usuario, 'familia_id', None),
+                espacio.pk,
                 nombre_archivo,
                 tam_previo,
             )
@@ -2027,10 +2022,10 @@ def importar_cuenta_personal_planilla(request):
             )
 
         logger.info(
-            "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+            "importar_cuenta_personal_planilla id=%s usuario_id=%s espacio_id=%s dry_run=%s archivo=%r bytes=%s",
             debug_id,
             getattr(usuario, 'id', None),
-            getattr(usuario, 'familia_id', None),
+            espacio.pk,
             dry_run,
             nombre_archivo,
             len(contenido),
@@ -2084,7 +2079,7 @@ def importar_cuenta_personal_planilla(request):
         )
 
         categoria_otros, _ = Categoria.objects.get_or_create(
-            familia=usuario.familia,
+            espacio=espacio,
             usuario=usuario,
             nombre='Otros',
             tipo='INGRESO',
@@ -2098,14 +2093,14 @@ def importar_cuenta_personal_planilla(request):
         movimientos_para_crear = []
 
         vinculados_ingreso_comun = IngresoComun.objects.filter(
-            familia_id=usuario.familia_id,
+            espacio_id=espacio.pk,
             usuario_id=usuario.pk,
             movimiento_id__isnull=False,
         ).values_list('movimiento_id', flat=True)
 
         with transaction.atomic():
             qs_borrar = Movimiento.objects.filter(
-                familia_id=usuario.familia_id,
+                espacio_id=espacio.pk,
                 usuario_id=usuario.pk,
                 cuenta_id=cuenta_personal.pk,
                 ambito='PERSONAL',
@@ -2134,7 +2129,7 @@ def importar_cuenta_personal_planilla(request):
                     else:
                         tipo = 'EGRESO'
                         categoria, creada = Categoria.objects.get_or_create(
-                            familia=usuario.familia,
+                            espacio=espacio,
                             usuario=usuario,
                             nombre=categoria_txt,
                             tipo='EGRESO',
@@ -2145,7 +2140,7 @@ def importar_cuenta_personal_planilla(request):
                         monto_final = monto
 
                     Movimiento.objects.create(
-                        familia=usuario.familia,
+                        espacio=espacio,
                         usuario=usuario,
                         cuenta=cuenta_personal,
                         tipo=tipo,
@@ -2165,10 +2160,10 @@ def importar_cuenta_personal_planilla(request):
 
         if errores:
             logger.warning(
-                "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                "importar_cuenta_personal_planilla id=%s usuario_id=%s espacio_id=%s filas_invalidas=%s muestra=%s",
                 debug_id,
                 getattr(usuario, 'id', None),
-                getattr(usuario, 'familia_id', None),
+                espacio.pk,
                 len(errores),
                 errores[:15],
             )
@@ -2184,9 +2179,9 @@ def importar_cuenta_personal_planilla(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not dry_run and creados and meses_importados and usuario.familia_id:
+        if not dry_run and creados and meses_importados and _requiere_espacio_familiar(espacio):
             services_recalculo.recalcular_familia_meses(
-                usuario.familia_id, meses_importados
+                espacio.pk, meses_importados
             )
 
         logger.info(
@@ -2210,10 +2205,10 @@ def importar_cuenta_personal_planilla(request):
         )
     except Exception as exc:
         logger.exception(
-            "importar_cuenta_personal_planilla id=%s usuario_id=%s familia_id=%s",
+            "importar_cuenta_personal_planilla id=%s usuario_id=%s espacio_id=%s",
             debug_id,
             getattr(usuario, 'id', None),
-            getattr(usuario, 'familia_id', None),
+            espacio.pk,
         )
         payload = {
             'error': 'Error interno al importar cuenta personal.',
@@ -2291,10 +2286,10 @@ def importar_honorarios_planilla(request):
             )
 
         logger.info(
-            "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+            "importar_honorarios_planilla id=%s usuario_id=%s espacio_id=%s dry_run=%s archivo=%r bytes=%s",
             debug_id,
             getattr(usuario, 'id', None),
-            getattr(usuario, 'familia_id', None),
+            espacio.pk,
             dry_run,
             nombre_archivo,
             len(contenido),
@@ -2351,7 +2346,7 @@ def importar_honorarios_planilla(request):
         )
 
         categoria_ingreso_default, _ = Categoria.objects.get_or_create(
-            familia=usuario.familia,
+            espacio=espacio,
             usuario=usuario,
             nombre='Otros',
             tipo='INGRESO',
@@ -2389,7 +2384,7 @@ def importar_honorarios_planilla(request):
                         tipo = 'EGRESO'
                         categoria_txt = gasto_txt or 'Sin categoría'
                         categoria, creada = Categoria.objects.get_or_create(
-                            familia=usuario.familia,
+                            espacio=espacio,
                             usuario=usuario,
                             nombre=categoria_txt,
                             tipo='EGRESO',
@@ -2402,7 +2397,7 @@ def importar_honorarios_planilla(request):
                         categoria_txt = ingreso_txt.strip()
                         if categoria_txt:
                             categoria, creada = Categoria.objects.get_or_create(
-                                familia=usuario.familia,
+                                espacio=espacio,
                                 usuario=usuario,
                                 nombre=categoria_txt,
                                 tipo='INGRESO',
@@ -2414,7 +2409,7 @@ def importar_honorarios_planilla(request):
                             categoria = categoria_ingreso_default
 
                     Movimiento.objects.create(
-                        familia=usuario.familia,
+                        espacio=espacio,
                         usuario=usuario,
                         cuenta=cuenta_honorarios,
                         tipo=tipo,
@@ -2434,10 +2429,10 @@ def importar_honorarios_planilla(request):
 
         if errores:
             logger.warning(
-                "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                "importar_honorarios_planilla id=%s usuario_id=%s espacio_id=%s filas_invalidas=%s muestra=%s",
                 debug_id,
                 getattr(usuario, 'id', None),
-                getattr(usuario, 'familia_id', None),
+                espacio.pk,
                 len(errores),
                 errores[:15],
             )
@@ -2453,9 +2448,9 @@ def importar_honorarios_planilla(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not dry_run and creados and meses_importados and usuario.familia_id:
+        if not dry_run and creados and meses_importados and _requiere_espacio_familiar(espacio):
             services_recalculo.recalcular_familia_meses(
-                usuario.familia_id, meses_importados
+                espacio.pk, meses_importados
             )
 
         logger.info(
@@ -2478,10 +2473,10 @@ def importar_honorarios_planilla(request):
         )
     except Exception as exc:
         logger.exception(
-            "importar_honorarios_planilla id=%s usuario_id=%s familia_id=%s",
+            "importar_honorarios_planilla id=%s usuario_id=%s espacio_id=%s",
             debug_id,
             getattr(usuario, 'id', None),
-            getattr(usuario, 'familia_id', None),
+            espacio.pk,
         )
         payload = {
             'error': 'Error interno al importar honorarios.',
@@ -2517,9 +2512,9 @@ def importar_sueldos_planilla(request):
         return error
     if settings.DEMO:
         return respuesta_demo_no_disponible()
-    if not usuario_auth.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         return Response(
-            {'error': 'Usuario sin familia asociada.'},
+            {'error': 'Se requiere un espacio familiar activo.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -2573,11 +2568,11 @@ def importar_sueldos_planilla(request):
 
     with transaction.atomic():
         ingresos_anteriores_eliminados = IngresoComun.objects.filter(
-            familia_id=usuario_auth.familia_id,
+            espacio_id=espacio.pk,
             usuario_id=usuario_auth.pk,
         ).count()
         IngresoComun.objects.filter(
-            familia_id=usuario_auth.familia_id,
+            espacio_id=espacio.pk,
             usuario_id=usuario_auth.pk,
         ).delete()
 
@@ -2600,7 +2595,7 @@ def importar_sueldos_planilla(request):
                 origen = _obtener_columna(fila, 'descripcion') or ''
 
                 IngresoComun.objects.create(
-                    familia=usuario_auth.familia,
+                    espacio=espacio,
                     usuario=usuario_auth,
                     mes=mes,
                     fecha_pago=fecha_pago,
@@ -2627,7 +2622,7 @@ def importar_sueldos_planilla(request):
 
     if not dry_run and creados and meses_importados:
         services_recalculo.recalcular_familia_meses(
-            usuario_auth.familia_id, meses_importados
+            espacio.pk, meses_importados
         )
 
     return Response(
@@ -2658,14 +2653,14 @@ def importar_gastos_comunes_planilla(request):
 
     debug_id = _nuevo_import_debug_id()
 
-    if not usuario.familia_id:
+    if not _requiere_espacio_familiar(espacio):
         logger.warning(
-            "importar_gastos_comunes_planilla id=%s usuario_id=%s sin familia",
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s sin espacio familiar",
             debug_id,
             getattr(usuario, 'id', None),
         )
         return Response(
-            {'error': 'Usuario sin familia asociada.', 'import_debug_id': debug_id},
+            {'error': 'Se requiere un espacio familiar activo.', 'import_debug_id': debug_id},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -2701,10 +2696,10 @@ def importar_gastos_comunes_planilla(request):
 
     nombre_archivo = getattr(archivo, 'name', '') or ''
     logger.info(
-        "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s dry_run=%s archivo=%r bytes=%s",
+        "importar_gastos_comunes_planilla id=%s usuario_id=%s espacio_id=%s dry_run=%s archivo=%r bytes=%s",
         debug_id,
         getattr(usuario, 'id', None),
-        getattr(usuario, 'familia_id', None),
+        espacio.pk,
         dry_run,
         nombre_archivo,
         len(contenido),
@@ -2752,7 +2747,7 @@ def importar_gastos_comunes_planilla(request):
         metodo_efectivo = MetodoPago.objects.create(nombre='Efectivo', tipo='EFECTIVO')
 
     categoria_otros, _ = Categoria.objects.get_or_create(
-        familia=usuario.familia,
+        espacio=espacio,
         usuario=None,
         nombre='Otros',
         tipo='INGRESO',
@@ -2786,7 +2781,7 @@ def importar_gastos_comunes_planilla(request):
                     else:
                         tipo = 'EGRESO'
                         categoria, creada = Categoria.objects.get_or_create(
-                            familia=usuario.familia,
+                            espacio=espacio,
                             usuario=None,
                             nombre=categoria_txt,
                             tipo='EGRESO',
@@ -2798,7 +2793,7 @@ def importar_gastos_comunes_planilla(request):
 
                     movimientos_para_crear.append(
                         Movimiento(
-                            familia=usuario.familia,
+                            espacio=espacio,
                             usuario=usuario,
                             cuenta=None,
                             tipo=tipo,
@@ -2820,10 +2815,10 @@ def importar_gastos_comunes_planilla(request):
                     Movimiento.objects.bulk_create(movimientos_para_crear)
                 except Exception:
                     logger.exception(
-                        "Error en bulk_create importacion gastos comunes id=%s usuario_id=%s familia_id=%s filas=%s",
+                        "Error en bulk_create importacion gastos comunes id=%s usuario_id=%s espacio_id=%s filas=%s",
                         debug_id,
                         getattr(usuario, 'id', None),
-                        getattr(usuario, 'familia_id', None),
+                        espacio.pk,
                         len(movimientos_para_crear),
                     )
                     raise
@@ -2833,10 +2828,10 @@ def importar_gastos_comunes_planilla(request):
 
         if errores:
             logger.warning(
-                "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s filas_invalidas=%s muestra=%s",
+                "importar_gastos_comunes_planilla id=%s usuario_id=%s espacio_id=%s filas_invalidas=%s muestra=%s",
                 debug_id,
                 getattr(usuario, 'id', None),
-                getattr(usuario, 'familia_id', None),
+                espacio.pk,
                 len(errores),
                 errores[:15],
             )
@@ -2852,18 +2847,18 @@ def importar_gastos_comunes_planilla(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not dry_run and creados and meses_importados and usuario.familia_id:
+        if not dry_run and creados and meses_importados and _requiere_espacio_familiar(espacio):
             # Recalcula solo los meses importados para mantener snapshots consistentes.
             try:
                 services_recalculo.recalcular_familia_meses(
-                    usuario.familia_id, meses_importados
+                    espacio.pk, meses_importados
                 )
             except Exception:
                 logger.exception(
-                    "Error recalculando snapshots post importación id=%s usuario_id=%s familia_id=%s meses=%s",
+                    "Error recalculando snapshots post importación id=%s usuario_id=%s espacio_id=%s meses=%s",
                     debug_id,
                     getattr(usuario, 'id', None),
-                    getattr(usuario, 'familia_id', None),
+                    espacio.pk,
                     sorted(meses_importados),
                 )
                 raise
@@ -2889,10 +2884,10 @@ def importar_gastos_comunes_planilla(request):
         )
     except Exception as exc:
         logger.exception(
-            "importar_gastos_comunes_planilla id=%s usuario_id=%s familia_id=%s",
+            "importar_gastos_comunes_planilla id=%s usuario_id=%s espacio_id=%s",
             debug_id,
             getattr(usuario, 'id', None),
-            getattr(usuario, 'familia_id', None),
+            espacio.pk,
         )
         payload = {
             'error': 'Error interno al importar gastos comunes.',

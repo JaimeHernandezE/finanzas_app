@@ -7,6 +7,8 @@ from rest_framework.response import Response
 
 from applications.usuarios.models import Usuario, Familia
 from applications.finanzas.models import Categoria, IngresoComun, MetodoPago, Movimiento, Tarjeta
+from applications.espacios.models import PertenenciaEspacio
+from applications.espacios.services import espacio_para_familia
 
 
 # ── Fixtures de base de datos ─────────────────────────────────────────────────
@@ -18,31 +20,43 @@ def familia(db):
 
 
 @pytest.fixture
-def usuario(db, familia):
-    """Usuario admin de prueba asociado a la familia."""
-    return Usuario.objects.create_user(
+def espacio_familiar(familia):
+    """Espacio FAMILIAR espejo de la familia de prueba."""
+    return espacio_para_familia(familia)
+
+
+@pytest.fixture
+def usuario(db, familia, espacio_familiar):
+    """Usuario admin de prueba asociado al espacio familiar."""
+    u = Usuario.objects.create_user(
         username='jaime@test.com',
         email='jaime@test.com',
         password='test1234',
         firebase_uid='uid-jaime-test',
-        familia=familia,
         rol='ADMIN',
         first_name='Jaime',
     )
+    PertenenciaEspacio.objects.create(
+        usuario=u, espacio=espacio_familiar, rol=PertenenciaEspacio.ROL_ADMIN,
+    )
+    return u
 
 
 @pytest.fixture
-def usuario_2(db, familia):
-    """Segundo usuario de la misma familia (para tests de permisos)."""
-    return Usuario.objects.create_user(
+def usuario_2(db, familia, espacio_familiar):
+    """Segundo usuario del mismo espacio familiar (para tests de permisos)."""
+    u = Usuario.objects.create_user(
         username='glori@test.com',
         email='glori@test.com',
         password='test1234',
         firebase_uid='uid-glori-test',
-        familia=familia,
         rol='MIEMBRO',
         first_name='Glori',
     )
+    PertenenciaEspacio.objects.create(
+        usuario=u, espacio=espacio_familiar, rol=PertenenciaEspacio.ROL_MIEMBRO,
+    )
+    return u
 
 
 @pytest.fixture
@@ -54,14 +68,18 @@ def otra_familia(db):
 @pytest.fixture
 def usuario_otra_familia(db, otra_familia):
     """Usuario de otra familia — no debe ver datos de 'familia'."""
-    return Usuario.objects.create_user(
+    espacio = espacio_para_familia(otra_familia)
+    u = Usuario.objects.create_user(
         username='externo@test.com',
         email='externo@test.com',
         password='test1234',
         firebase_uid='uid-externo-test',
-        familia=otra_familia,
         rol='ADMIN',
     )
+    PertenenciaEspacio.objects.create(
+        usuario=u, espacio=espacio, rol=PertenenciaEspacio.ROL_ADMIN,
+    )
+    return u
 
 
 # ── Fixture de autenticación ──────────────────────────────────────────────────
@@ -88,7 +106,7 @@ def _mock_get_usuario_autenticado(request):
     return (usuario, None)
 
 
-def _make_auth_header_fixture(usuario_fixture_name, header_value):
+def _make_auth_header_fixture(usuario_fixture_name, header_value, espacio_fixture_name='espacio_familiar'):
     """Genera un fixture que mockea get_usuario_autenticado para devolver el usuario del fixture."""
 
     @pytest.fixture
@@ -96,21 +114,38 @@ def _make_auth_header_fixture(usuario_fixture_name, header_value):
         usuario = request.getfixturevalue(usuario_fixture_name)
         token = header_value.split('Bearer ', 1)[1].strip()
         _token_a_usuario[token] = usuario
+        headers = {'HTTP_AUTHORIZATION': header_value}
+        if espacio_fixture_name:
+            espacio = request.getfixturevalue(espacio_fixture_name)
+            headers['HTTP_X_ESPACIO_ID'] = str(espacio.id)
         try:
             with patch(
                 'applications.utils.get_usuario_autenticado',
                 side_effect=_mock_get_usuario_autenticado,
             ):
-                yield {'HTTP_AUTHORIZATION': header_value}
+                yield headers
         finally:
             _token_a_usuario.pop(token, None)
 
     return _fixture
 
 
-auth_header = _make_auth_header_fixture('usuario', 'Bearer token-de-prueba')
-auth_header_2 = _make_auth_header_fixture('usuario_2', 'Bearer token-de-prueba-2')
-auth_header_otra_familia = _make_auth_header_fixture('usuario_otra_familia', 'Bearer token-otra-familia')
+auth_header = _make_auth_header_fixture('usuario', 'Bearer token-de-prueba', 'espacio_familiar')
+auth_header_2 = _make_auth_header_fixture('usuario_2', 'Bearer token-de-prueba-2', 'espacio_familiar')
+
+
+@pytest.fixture
+def espacio_otra_familia(otra_familia):
+    return espacio_para_familia(otra_familia)
+
+
+auth_header_otra_familia = _make_auth_header_fixture(
+    'usuario_otra_familia', 'Bearer token-otra-familia', 'espacio_otra_familia'
+)
+
+auth_header_sin_espacio = _make_auth_header_fixture(
+    'usuario', 'Bearer token-de-prueba', None
+)
 
 
 # ── Fixtures de catálogos ─────────────────────────────────────────────────────
@@ -122,31 +157,30 @@ def categoria_global(db):
         nombre='Alimentación',
         tipo='EGRESO',
         es_inversion=False,
-        familia=None,
         usuario=None,
     )
 
 
 @pytest.fixture
-def categoria_familiar(db, familia):
+def categoria_familiar(db, espacio_familiar):
     """Categoría perteneciente a la familia de prueba."""
     return Categoria.objects.create(
         nombre='Gastos Casa',
         tipo='EGRESO',
         es_inversion=False,
-        familia=familia,
+        espacio=espacio_familiar,
         usuario=None,
     )
 
 
 @pytest.fixture
-def categoria_personal(db, familia, usuario):
+def categoria_personal(db, espacio_familiar, usuario):
     """Categoría personal del usuario de prueba."""
     return Categoria.objects.create(
         nombre='Honorarios',
         tipo='INGRESO',
         es_inversion=False,
-        familia=familia,
+        espacio=espacio_familiar,
         usuario=usuario,
     )
 
@@ -203,11 +237,11 @@ def categoria_ingreso(db):
 
 
 @pytest.fixture
-def movimiento_efectivo(db, usuario, familia, categoria_egreso, metodo_efectivo):
+def movimiento_efectivo(db, usuario, espacio_familiar, categoria_egreso, metodo_efectivo):
     """Movimiento simple de efectivo sin cuotas."""
     return Movimiento.objects.create(
         usuario=usuario,
-        familia=familia,
+        espacio=espacio_familiar,
         fecha='2026-03-15',
         tipo='EGRESO',
         ambito='PERSONAL',
@@ -219,11 +253,11 @@ def movimiento_efectivo(db, usuario, familia, categoria_egreso, metodo_efectivo)
 
 
 @pytest.fixture
-def movimiento_credito(db, usuario, familia, categoria_egreso, metodo_credito, tarjeta):
+def movimiento_credito(db, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta):
     """Movimiento con crédito — el signal genera cuotas automáticamente."""
     return Movimiento.objects.create(
         usuario=usuario,
-        familia=familia,
+        espacio=espacio_familiar,
         fecha='2026-03-01',
         tipo='EGRESO',
         ambito='PERSONAL',
@@ -237,11 +271,11 @@ def movimiento_credito(db, usuario, familia, categoria_egreso, metodo_credito, t
 
 
 @pytest.fixture
-def movimiento_comun(db, usuario, familia, categoria_egreso, metodo_efectivo):
+def movimiento_comun(db, usuario, espacio_familiar, categoria_egreso, metodo_efectivo):
     """Movimiento de ámbito común."""
     return Movimiento.objects.create(
         usuario=usuario,
-        familia=familia,
+        espacio=espacio_familiar,
         fecha='2026-03-10',
         tipo='EGRESO',
         ambito='COMUN',
@@ -255,10 +289,10 @@ def movimiento_comun(db, usuario, familia, categoria_egreso, metodo_efectivo):
 # ── Fixtures liquidación / ingresos comunes (compartidos con test_recalculo) ─
 
 @pytest.fixture
-def ingreso_jaime(db, usuario, familia):
+def ingreso_jaime(db, usuario, espacio_familiar):
     return IngresoComun.objects.create(
         usuario=usuario,
-        familia=familia,
+        espacio=espacio_familiar,
         mes='2026-03-01',
         monto='1800000.00',
         origen='Sueldo',
@@ -266,10 +300,10 @@ def ingreso_jaime(db, usuario, familia):
 
 
 @pytest.fixture
-def ingreso_glori(db, usuario_2, familia):
+def ingreso_glori(db, usuario_2, espacio_familiar):
     return IngresoComun.objects.create(
         usuario=usuario_2,
-        familia=familia,
+        espacio=espacio_familiar,
         mes='2026-03-01',
         monto='1000000.00',
         origen='Sueldo',
@@ -277,10 +311,10 @@ def ingreso_glori(db, usuario_2, familia):
 
 
 @pytest.fixture
-def gasto_comun_jaime(db, usuario, familia, categoria_egreso, metodo_efectivo):
+def gasto_comun_jaime(db, usuario, espacio_familiar, categoria_egreso, metodo_efectivo):
     return Movimiento.objects.create(
         usuario=usuario,
-        familia=familia,
+        espacio=espacio_familiar,
         fecha='2026-03-10',
         tipo='EGRESO',
         ambito='COMUN',
@@ -292,10 +326,10 @@ def gasto_comun_jaime(db, usuario, familia, categoria_egreso, metodo_efectivo):
 
 
 @pytest.fixture
-def gasto_comun_glori(db, usuario_2, familia, categoria_egreso, metodo_efectivo):
+def gasto_comun_glori(db, usuario_2, espacio_familiar, categoria_egreso, metodo_efectivo):
     return Movimiento.objects.create(
         usuario=usuario_2,
-        familia=familia,
+        espacio=espacio_familiar,
         fecha='2026-03-12',
         tipo='EGRESO',
         ambito='COMUN',

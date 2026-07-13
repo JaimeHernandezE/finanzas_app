@@ -33,7 +33,7 @@ class Command(BaseCommand):
             _, creado = Categoria.objects.get_or_create(
                 nombre=nombre,
                 tipo=tipo,
-                familia=None,
+                espacio=None,
                 usuario=None,
                 defaults={'es_inversion': es_inversion}
             )

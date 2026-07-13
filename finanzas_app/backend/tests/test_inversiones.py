@@ -6,18 +6,18 @@ from applications.inversiones.models import Fondo, Aporte, RegistroValor
 
 
 @pytest.fixture
-def fondo(db, usuario, familia):
+def fondo(db, usuario, espacio_familiar):
     return Fondo.objects.create(
         nombre='Fondo Mutuo BCI', descripcion='Renta variable',
-        familia=familia, usuario=usuario,
+        espacio=espacio_familiar, usuario=usuario,
     )
 
 
 @pytest.fixture
-def fondo_compartido(db, familia):
+def fondo_compartido(db, espacio_familiar):
     return Fondo.objects.create(
         nombre='Fondo Familiar', descripcion='Compartido',
-        familia=familia, usuario=None,
+        espacio=espacio_familiar, usuario=None,
     )
 
 

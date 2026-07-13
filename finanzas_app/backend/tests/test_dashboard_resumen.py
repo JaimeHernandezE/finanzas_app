@@ -33,18 +33,18 @@ class TestDashboardResumen:
         assert isinstance(body['desglose_saldo'], list)
 
     def test_ingresos_mes_excluye_espejo_ingreso_comun(
-        self, client, auth_header, usuario, familia, metodo_efectivo
+        self, client, auth_header, usuario, espacio_familiar, metodo_efectivo
     ):
         cat_otro = Categoria.objects.create(
             nombre='Bonus',
             tipo='INGRESO',
             es_inversion=False,
-            familia=familia,
+            espacio=espacio_familiar,
             usuario=usuario,
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-15',
             tipo='INGRESO',
             ambito='PERSONAL',
@@ -55,7 +55,7 @@ class TestDashboardResumen:
         )
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes='2026-03-01',
             monto='500000.00',
             origen='Sueldo',

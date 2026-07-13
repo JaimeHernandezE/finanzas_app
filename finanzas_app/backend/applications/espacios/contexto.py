@@ -1,10 +1,8 @@
 # Resolución del espacio activo por request (Fases 1–2 del plan).
 #
 # Reglas (ver docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md, Fase 2):
-# - Sin header X-Espacio-Id → espacio por defecto del usuario: su espacio
-#   FAMILIAR activo si tiene membresía, sino su espacio personal. Esto mantiene
-#   compatibles a los clientes ya desplegados (móvil/web) que no envían el
-#   header: para un usuario con familia el comportamiento es idéntico al actual.
+# - Sin header X-Espacio-Id → espacio personal del usuario (PERSONAL).
+#   Los clientes envían X-Espacio-Id al cambiar de contexto en el selector.
 # - Header inválido o sin membresía activa → 403 explícito. NUNCA degradar
 #   silenciosamente a otro espacio: una escritura que cae al tenant equivocado
 #   es corrupción de datos.
@@ -14,29 +12,14 @@ from rest_framework.response import Response
 
 from applications import utils as utils_auth
 
-from .models import Espacio, PertenenciaEspacio
+from .models import PertenenciaEspacio
 from .services import obtener_espacio_personal
 
 HEADER_ESPACIO = 'X-Espacio-Id'
 
 
 def _espacio_por_defecto(usuario):
-    """Espacio FAMILIAR activo si el usuario tiene membresía; sino el personal."""
-    pertenencia = (
-        PertenenciaEspacio.objects
-        .select_related('espacio')
-        .filter(
-            usuario=usuario,
-            activo=True,
-            espacio__activo=True,
-            espacio__archivado=False,
-            espacio__tipo=Espacio.TIPO_FAMILIAR,
-        )
-        .order_by('-created_at')
-        .first()
-    )
-    if pertenencia is not None:
-        return pertenencia.espacio
+    """Espacio PERSONAL del usuario (contexto por defecto en Etapa 6)."""
     return obtener_espacio_personal(usuario)
 
 

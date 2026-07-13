@@ -2,7 +2,7 @@ import logging
 import zoneinfo
 
 from django.conf import settings
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from firebase_admin import auth as firebase_auth
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes, throttle_classes
@@ -23,10 +23,13 @@ from applications import utils as utils_auth
 from applications.demo_guard import respuesta_demo_no_disponible
 from .demo_constants import DEMO_EMAIL_GLORI, DEMO_EMAIL_JAIME
 from .miembro_salida import puede_quitar_miembro_familia
+from applications.espacios.models import PertenenciaEspacio, Espacio
+from applications.espacios.services import espacio_para_familia, obtener_espacio_familiar_activo
 from .salida_familia import puede_salir_de_familia, salir_de_familia
 from .models import Usuario, Familia, InvitacionPendiente
 
 _ZONAS_VALIDAS = zoneinfo.available_timezones()
+MAX_ESPACIOS_FAMILIARES_POR_USUARIO = 5
 
 logger = logging.getLogger(__name__)
 FIREBASE_CLOCK_SKEW_SECONDS = 60
@@ -54,8 +57,18 @@ def obtener_usuario_desde_token(request):
         return None, str(e)
 
 
+def _pertenencia_miembro_espacio(espacio, usuario_id: int) -> PertenenciaEspacio | None:
+    """Pertenencia activa de un usuario en el espacio familiar dado."""
+    return (
+        PertenenciaEspacio.objects
+        .select_related('usuario')
+        .filter(espacio=espacio, usuario_id=usuario_id, activo=True)
+        .first()
+    )
+
+
 def _payload_me(usuario: Usuario, decoded: dict | None = None):
-    from applications.espacios.models import PertenenciaEspacio
+    espacio_familiar = obtener_espacio_familiar_activo(usuario)
     pertenencias = (
         PertenenciaEspacio.objects
         .select_related('espacio')
@@ -81,9 +94,9 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
         'activo': usuario.activo,
         'foto': (decoded or {}).get('picture'),
         'familia': {
-            'id': usuario.familia.id,
-            'nombre': usuario.familia.nombre,
-        } if usuario.familia else None,
+            'id': espacio_familiar.id,
+            'nombre': espacio_familiar.nombre,
+        } if espacio_familiar else None,
         'espacios': espacios,
         'idioma_ui': usuario.idioma_ui,
         'moneda_display': usuario.moneda_display,
@@ -191,9 +204,7 @@ def me(request):
         )
 
     try:
-        candidatos = list(
-            Usuario.objects.select_related('familia').filter(email__iexact=email)[:5]
-        )
+        candidatos = list(Usuario.objects.filter(email__iexact=email)[:5])
         if not candidatos:
             raise Usuario.DoesNotExist()
 
@@ -296,9 +307,7 @@ def demo_login(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        candidatos = list(
-            Usuario.objects.select_related('familia').filter(email__iexact=email)[:2]
-        )
+        candidatos = list(Usuario.objects.filter(email__iexact=email)[:2])
         if len(candidatos) > 1:
             logger.error(
                 'demo_login: varios usuarios con email %r (esperado 1). Revisa datos o vuelve a seed_demo.',
@@ -337,8 +346,8 @@ def demo_login(request):
 def registrar_usuario(request):
     """
     Crea un usuario nuevo con token Firebase válido.
-    Primer usuario del sistema: crea familia y queda como ADMIN.
-    Con invitación pendiente: crea el usuario sin familia hasta que acepte en la app.
+    Primer usuario del sistema: crea Familia, espacio FAMILIAR y pertenencia ADMIN.
+    Con invitación pendiente: crea el usuario y su pertenencia al espacio invitado.
     Con REQUIRE_VERIFIED_EMAIL=true exige email verificado en Firebase
     (candado Fase 0: activar antes de abrir registro a terceros).
     """
@@ -358,7 +367,7 @@ def registrar_usuario(request):
     uid = decoded.get('uid')
     nombre = decoded.get('name') or (email.split('@')[0].capitalize() if email else 'Usuario')
 
-    existente = Usuario.objects.filter(email__iexact=email).select_related('familia').first()
+    existente = Usuario.objects.filter(email__iexact=email).first()
     if existente:
         if existente.firebase_uid != uid:
             existente.firebase_uid = uid
@@ -367,30 +376,45 @@ def registrar_usuario(request):
         body['creado'] = False
         return Response(body, status=status.HTTP_200_OK)
 
-    invitaciones_correo = InvitacionPendiente.objects.filter(email__iexact=email)
+    invitaciones_correo = (
+        InvitacionPendiente.objects
+        .filter(email__iexact=email)
+        .select_related('espacio')
+    )
     if invitaciones_correo.exists():
+        inv = invitaciones_correo.first()
         usuario = Usuario.objects.create(
             username=email,
             email=email,
             firebase_uid=uid,
             first_name=(nombre or email)[:150],
-            familia=None,
             rol='MIEMBRO',
+        )
+        PertenenciaEspacio.objects.create(
+            usuario=usuario,
+            espacio=inv.espacio,
+            rol=PertenenciaEspacio.ROL_MIEMBRO,
         )
         body = _payload_me(usuario, decoded)
         body['creado'] = True
         return Response(body, status=status.HTTP_201_CREATED)
 
     if not Usuario.objects.exists():
-        familia = Familia.objects.create(nombre='Mi familia')
-        usuario = Usuario.objects.create(
-            username=email,
-            email=email,
-            firebase_uid=uid,
-            first_name=(nombre or email)[:150],
-            familia=familia,
-            rol='ADMIN',
-        )
+        with transaction.atomic():
+            familia = Familia.objects.create(nombre='Mi familia')
+            espacio = espacio_para_familia(familia)
+            usuario = Usuario.objects.create(
+                username=email,
+                email=email,
+                firebase_uid=uid,
+                first_name=(nombre or email)[:150],
+                rol='ADMIN',
+            )
+            PertenenciaEspacio.objects.create(
+                usuario=usuario,
+                espacio=espacio,
+                rol=PertenenciaEspacio.ROL_ADMIN,
+            )
         body = _payload_me(usuario, decoded)
         body['creado'] = True
         return Response(body, status=status.HTTP_201_CREATED)
@@ -461,23 +485,28 @@ def familia_miembros(request):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if not usuario.familia_id:
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
         return Response([])
-    fid = usuario.familia_id
-    qs = Usuario.objects.filter(familia_id=fid).order_by('first_name', 'email')
+    pertenencias = (
+        PertenenciaEspacio.objects
+        .filter(espacio=espacio, activo=True)
+        .select_related('usuario')
+        .order_by('usuario__first_name', 'usuario__email')
+    )
     return Response([
         {
-            'id': u.id,
-            'email': u.email,
-            'nombre': u.get_full_name() or u.username,
-            'rol': u.rol,
-            'activo': u.activo,
+            'id': p.usuario.id,
+            'email': p.usuario.email,
+            'nombre': p.usuario.get_full_name() or p.usuario.username,
+            'rol': p.usuario.rol,
+            'activo': p.usuario.activo,
             'puede_quitar': puede_quitar_miembro_familia(
-                usuario.id, usuario.rol, u.id, u.rol, fid
+                usuario.id, usuario.rol, p.usuario.id, p.usuario.rol, espacio.id
             )[0],
-            'puede_cambiar_activo': usuario.rol == 'ADMIN' and u.id != usuario.id,
+            'puede_cambiar_activo': usuario.rol == 'ADMIN' and p.usuario.id != usuario.id,
         }
-        for u in qs
+        for p in pertenencias
     ])
 
 
@@ -495,19 +524,22 @@ def miembro_actualizar_rol(request, pk):
             {'error': 'Solo un administrador puede cambiar roles.'},
             status=status.HTTP_403_FORBIDDEN,
         )
-    if not usuario.familia_id:
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
         return Response({'error': 'Sin familia asignada.'}, status=status.HTTP_400_BAD_REQUEST)
-    try:
-        otro = Usuario.objects.get(pk=pk, familia_id=usuario.familia_id)
-    except Usuario.DoesNotExist:
+    pertenencia_otro = _pertenencia_miembro_espacio(espacio, pk)
+    if pertenencia_otro is None:
         return Response({'error': 'Miembro no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    otro = pertenencia_otro.usuario
     nuevo = request.data.get('rol')
     if nuevo not in dict(Usuario.ROL_CHOICES):
         return Response({'error': 'Rol inválido.'}, status=status.HTTP_400_BAD_REQUEST)
     if otro.rol == 'ADMIN' and nuevo != 'ADMIN':
-        otros_admins = Usuario.objects.filter(
-            familia_id=usuario.familia_id, rol='ADMIN'
-        ).exclude(pk=otro.pk)
+        otros_admins = (
+            PertenenciaEspacio.objects
+            .filter(espacio=espacio, rol=PertenenciaEspacio.ROL_ADMIN, activo=True)
+            .exclude(usuario=otro)
+        )
         if not otros_admins.exists():
             return Response(
                 {'error': 'Debe existir al menos un administrador en la familia.'},
@@ -515,6 +547,12 @@ def miembro_actualizar_rol(request, pk):
             )
     otro.rol = nuevo
     otro.save(update_fields=['rol'])
+    rol_pertenencia = (
+        PertenenciaEspacio.ROL_ADMIN if nuevo == 'ADMIN' else PertenenciaEspacio.ROL_MIEMBRO
+    )
+    if pertenencia_otro.rol != rol_pertenencia:
+        pertenencia_otro.rol = rol_pertenencia
+        pertenencia_otro.save(update_fields=['rol'])
     return Response({
         'id': otro.id,
         'email': otro.email,
@@ -542,17 +580,18 @@ def miembro_actualizar_activo(request, pk):
             {'error': 'Solo un administrador puede habilitar o deshabilitar miembros.'},
             status=status.HTTP_403_FORBIDDEN,
         )
-    if not usuario.familia_id:
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
         return Response({'error': 'Sin familia asignada.'}, status=status.HTTP_400_BAD_REQUEST)
     if pk == usuario.id:
         return Response(
             {'error': 'No puedes deshabilitarte ni habilitarte a ti mismo desde aquí.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    try:
-        otro = Usuario.objects.get(pk=pk, familia_id=usuario.familia_id)
-    except Usuario.DoesNotExist:
+    pertenencia_otro = _pertenencia_miembro_espacio(espacio, pk)
+    if pertenencia_otro is None:
         return Response({'error': 'Miembro no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+    otro = pertenencia_otro.usuario
 
     activo_raw = request.data.get('activo')
     if not isinstance(activo_raw, bool):
@@ -571,18 +610,27 @@ def miembro_actualizar_activo(request, pk):
         })
 
     if not activo_raw:
-        otros_activos = Usuario.objects.filter(
-            familia_id=usuario.familia_id, activo=True
-        ).exclude(pk=otro.pk)
+        otros_activos = (
+            PertenenciaEspacio.objects
+            .filter(espacio=espacio, activo=True, usuario__activo=True)
+            .exclude(usuario=otro)
+        )
         if not otros_activos.exists():
             return Response(
                 {'error': 'Debe quedar al menos un miembro habilitado en la familia.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if otro.rol == 'ADMIN':
-            otros_admins = Usuario.objects.filter(
-                familia_id=usuario.familia_id, rol='ADMIN', activo=True
-            ).exclude(pk=otro.pk)
+            otros_admins = (
+                PertenenciaEspacio.objects
+                .filter(
+                    espacio=espacio,
+                    rol=PertenenciaEspacio.ROL_ADMIN,
+                    activo=True,
+                    usuario__activo=True,
+                )
+                .exclude(usuario=otro)
+            )
             if not otros_admins.exists():
                 return Response(
                     {'error': 'Debe quedar al menos un administrador habilitado.'},
@@ -605,7 +653,7 @@ def miembro_actualizar_activo(request, pk):
 @permission_classes([AllowAny])
 def miembro_eliminar(request, pk):
     """
-    Quita un usuario de la familia (familia=None). Solo sin datos asociados
+    Quita un usuario del espacio familiar. Solo sin datos asociados
     ni violar regla de administradores; solo ADMIN.
     """
     if getattr(settings, 'DEMO', False):
@@ -613,25 +661,25 @@ def miembro_eliminar(request, pk):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if not usuario.familia_id:
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
         return Response(
             {'error': 'Sin familia asignada.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    try:
-        otro = Usuario.objects.get(pk=pk, familia_id=usuario.familia_id)
-    except Usuario.DoesNotExist:
+    pertenencia_otro = _pertenencia_miembro_espacio(espacio, pk)
+    if pertenencia_otro is None:
         return Response(
             {'error': 'Miembro no encontrado.'},
             status=status.HTTP_404_NOT_FOUND,
         )
+    otro = pertenencia_otro.usuario
     ok, msg = puede_quitar_miembro_familia(
-        usuario.id, usuario.rol, otro.id, otro.rol, usuario.familia_id
+        usuario.id, usuario.rol, otro.id, otro.rol, espacio.id
     )
     if not ok:
         return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
-    otro.familia = None
-    otro.save(update_fields=['familia'])
+    pertenencia_otro.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -649,7 +697,7 @@ def familia_salir(request):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if not usuario.familia_id:
+    if obtener_espacio_familiar_activo(usuario) is None:
         return Response(
             {'error': 'El usuario no pertenece a una familia.'},
             status=status.HTTP_400_BAD_REQUEST,
@@ -674,11 +722,12 @@ def familia_invitaciones(request):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if not usuario.familia_id:
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
         return Response({'error': 'Sin familia.'}, status=status.HTTP_400_BAD_REQUEST)
 
     if request.method == 'GET':
-        qs = InvitacionPendiente.objects.filter(familia_id=usuario.familia_id).order_by('-created_at')
+        qs = InvitacionPendiente.objects.filter(espacio=espacio).order_by('-created_at')
         return Response([
             {
                 'id': i.id,
@@ -699,10 +748,12 @@ def familia_invitaciones(request):
     email = _normalizar_email(request.data.get('email', ''))
     if not email or '@' not in email:
         return Response({'error': 'Email inválido.'}, status=status.HTTP_400_BAD_REQUEST)
-    if Usuario.objects.filter(familia_id=usuario.familia_id, email__iexact=email).exists():
+    if PertenenciaEspacio.objects.filter(
+        espacio=espacio, activo=True, usuario__email__iexact=email,
+    ).exists():
         return Response({'error': 'Ese correo ya es miembro de la familia.'}, status=status.HTTP_400_BAD_REQUEST)
     inv, created = InvitacionPendiente.objects.get_or_create(
-        familia_id=usuario.familia_id,
+        espacio=espacio,
         email=email,
         defaults={'invitador': usuario},
     )
@@ -766,8 +817,11 @@ def familia_invitacion_eliminar(request, pk):
             {'error': 'Solo un administrador puede revocar invitaciones.'},
             status=status.HTTP_403_FORBIDDEN,
         )
+    espacio = obtener_espacio_familiar_activo(usuario)
+    if espacio is None:
+        return Response({'error': 'Invitación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
     try:
-        inv = InvitacionPendiente.objects.get(pk=pk, familia_id=usuario.familia_id)
+        inv = InvitacionPendiente.objects.get(pk=pk, espacio=espacio)
     except InvitacionPendiente.DoesNotExist:
         return Response({'error': 'Invitación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
     inv.delete()
@@ -780,22 +834,22 @@ def familia_invitacion_eliminar(request, pk):
 def invitaciones_recibidas_list(request):
     """
     Invitaciones pendientes dirigidas al correo del usuario autenticado.
-    Solo relevante mientras el usuario no tiene familia asignada.
+    Solo relevante mientras el usuario no tiene espacio familiar activo.
     """
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if usuario.familia_id:
+    if obtener_espacio_familiar_activo(usuario) is not None:
         return Response([])
     qs = (
         InvitacionPendiente.objects.filter(email__iexact=usuario.email)
-        .select_related('familia', 'invitador')
+        .select_related('espacio', 'invitador')
         .order_by('-created_at')
     )
     return Response([
         {
             'id': i.id,
-            'familia': {'id': i.familia.id, 'nombre': i.familia.nombre},
+            'familia': {'id': i.espacio.id, 'nombre': i.espacio.nombre},
             'fecha_envio': i.created_at.date().isoformat(),
             'invitador_nombre': i.invitador.get_full_name() or i.invitador.username,
         }
@@ -812,13 +866,13 @@ def invitacion_recibida_aceptar(request, pk):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if usuario.familia_id:
+    if obtener_espacio_familiar_activo(usuario) is not None:
         return Response(
             {'error': 'Ya perteneces a una familia.'},
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        inv = InvitacionPendiente.objects.select_related('familia').get(
+        inv = InvitacionPendiente.objects.select_related('espacio').get(
             pk=pk,
             email__iexact=usuario.email,
         )
@@ -827,8 +881,24 @@ def invitacion_recibida_aceptar(request, pk):
             {'error': 'Invitación no encontrada.'},
             status=status.HTTP_404_NOT_FOUND,
         )
-    usuario.familia = inv.familia
-    usuario.save(update_fields=['familia'])
+    n_familiares = PertenenciaEspacio.objects.filter(
+        usuario=usuario,
+        activo=True,
+        espacio__tipo=Espacio.TIPO_FAMILIAR,
+    ).count()
+    if n_familiares >= MAX_ESPACIOS_FAMILIARES_POR_USUARIO:
+        return Response(
+            {'error': f'Límite de {MAX_ESPACIOS_FAMILIARES_POR_USUARIO} espacios familiares alcanzado.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    PertenenciaEspacio.objects.get_or_create(
+        usuario=usuario,
+        espacio=inv.espacio,
+        defaults={'rol': PertenenciaEspacio.ROL_MIEMBRO},
+    )
+    if usuario.rol != 'MIEMBRO':
+        usuario.rol = 'MIEMBRO'
+        usuario.save(update_fields=['rol'])
     InvitacionPendiente.objects.filter(email__iexact=usuario.email).delete()
     return Response(_payload_me(usuario, None))
 
@@ -842,7 +912,7 @@ def invitacion_recibida_rechazar(request, pk):
     usuario, err = utils_auth.get_usuario_autenticado(request)
     if err:
         return err
-    if usuario.familia_id:
+    if obtener_espacio_familiar_activo(usuario) is not None:
         return Response(
             {'error': 'Ya perteneces a una familia.'},
             status=status.HTTP_400_BAD_REQUEST,

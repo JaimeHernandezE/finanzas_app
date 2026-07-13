@@ -3,7 +3,7 @@
 # Migrado al patrón multitenant (cutover Fase 3→4): lecturas y escrituras por
 # espacio activo (X-Espacio-Id o espacio por defecto), vía Viaje.tenant.
 # Durante la transición las escrituras mantienen también familia (dual-write)
-# y solo se permiten en espacios FAMILIAR con familia legacy vinculada.
+# y solo se permiten en espacios FAMILIAR.
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -29,7 +29,12 @@ def _invalidar_cache_viajes(espacio_id: int) -> None:
 
 
 def _bloqueo_escritura(espacio):
-    """Guard de escritura: espacios archivados son solo lectura."""
+    """Guard de escritura: personal y archivados no permiten altas/ediciones."""
+    if espacio.es_personal:
+        return Response(
+            {'error': 'Los viajes solo están disponibles en espacios familiares.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     if espacio.archivado:
         return Response(
             {'error': 'El espacio está archivado (registro histórico de solo lectura).'},
@@ -70,10 +75,7 @@ def viajes(request):
             return bloqueo
         serializer = ViajeSerializer(data=request.data)
         if serializer.is_valid():
-            save_kwargs = {'espacio': espacio}
-            if espacio.familia_origen_id:
-                save_kwargs['familia'] = espacio.familia_origen
-            serializer.save(**save_kwargs)
+            serializer.save(espacio=espacio)
             _invalidar_cache_viajes(espacio.id)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

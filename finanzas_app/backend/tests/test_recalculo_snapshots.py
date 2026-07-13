@@ -32,26 +32,26 @@ class TestRecalculoSnapshots:
     def test_recalculo_crea_snapshot_liquidacion(
         self,
         hoy_marzo_2026,
-        familia,
+        espacio_familiar,
         ingreso_jaime,
         ingreso_glori,
         gasto_comun_jaime,
         gasto_comun_glori,
     ):
-        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
+        services_recalculo.recalcular_familia_meses(espacio_familiar.id, {date(2026, 3, 1)})
         qs = LiquidacionComunMensualSnapshot.objects.filter(
-            familia=familia,
+            espacio=espacio_familiar,
             mes=date(2026, 3, 1),
         )
         assert qs.filter(tipo_linea='INGRESO_COMUN').count() == 2
         assert qs.filter(tipo_linea='GASTO_COMUN_NO_CREDITO').count() == 2
 
     def test_liquidacion_snapshot_igual_totales_declarados(
-        self, hoy_marzo_2026, familia, ingreso_jaime, ingreso_glori
+        self, hoy_marzo_2026, espacio_familiar, ingreso_jaime, ingreso_glori
     ):
-        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
+        services_recalculo.recalcular_familia_meses(espacio_familiar.id, {date(2026, 3, 1)})
         snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
-            familia.id, 3, 2026
+            espacio_familiar.id, 3, 2026
         )
         assert snap is not None
         ingresos, _ = snap
@@ -61,25 +61,25 @@ class TestRecalculoSnapshots:
     def test_liquidacion_snapshot_coincide_con_suma_bd(
         self,
         hoy_marzo_2026,
-        familia,
+        espacio_familiar,
         ingreso_jaime,
         ingreso_glori,
         gasto_comun_jaime,
     ):
-        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
+        services_recalculo.recalcular_familia_meses(espacio_familiar.id, {date(2026, 3, 1)})
         snap = services_recalculo.liquidacion_datos_desde_snapshot_o_query(
-            familia.id, 3, 2026
+            espacio_familiar.id, 3, 2026
         )
         assert snap is not None
         ingresos, gastos = snap
         tot_ing_snap = sum(Decimal(x['total']) for x in ingresos)
         tot_gas_snap = sum(Decimal(x['total']) for x in gastos)
         tot_ing_db = IngresoComun.objects.filter(
-            familia=familia, mes__year=2026, mes__month=3
+            espacio=espacio_familiar, mes__year=2026, mes__month=3
         ).aggregate(s=Sum('monto'))['s'] or Decimal('0')
         tot_gas_db = (
             Movimiento.objects.filter(
-                familia=familia,
+                espacio=espacio_familiar,
                 ambito='COMUN',
                 tipo='EGRESO',
                 fecha__year=2026,
@@ -105,11 +105,11 @@ class TestRecalculoSnapshots:
         assert 'pendiente' in data['recalculo']
 
     def test_saldo_mensual_snapshot_personal(
-        self, hoy_marzo_2026, familia, usuario, categoria_egreso, metodo_efectivo
+        self, hoy_marzo_2026, espacio_familiar, usuario, categoria_egreso, metodo_efectivo
     ):
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-15',
             tipo='EGRESO',
             ambito='PERSONAL',
@@ -118,9 +118,9 @@ class TestRecalculoSnapshots:
             comentario='Test',
             metodo_pago=metodo_efectivo,
         )
-        services_recalculo.recalcular_familia_meses(familia.id, {date(2026, 3, 1)})
+        services_recalculo.recalcular_familia_meses(espacio_familiar.id, {date(2026, 3, 1)})
         row = SaldoMensualSnapshot.objects.filter(
-            familia=familia,
+            espacio=espacio_familiar,
             usuario=usuario,
             mes=date(2026, 3, 1),
             cuenta_id=0,
@@ -134,7 +134,7 @@ class TestRecalculoSnapshots:
         self,
         client,
         auth_header,
-        familia,
+        espacio_familiar,
         usuario,
         categoria_egreso,
         metodo_efectivo,
@@ -144,7 +144,7 @@ class TestRecalculoSnapshots:
         assert cuenta is not None
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             cuenta=cuenta,
             fecha='2026-03-15',
             tipo='EGRESO',
@@ -178,7 +178,7 @@ class TestRecalculoSnapshots:
         client,
         auth_header,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_efectivo,
     ):
@@ -196,7 +196,7 @@ class TestRecalculoSnapshots:
         )
         assert res.status_code == 201
         snap = SaldoMensualSnapshot.objects.filter(
-            familia=familia,
+            espacio=espacio_familiar,
             usuario=usuario,
             mes=date(2024, 6, 1),
             cuenta_id=0,

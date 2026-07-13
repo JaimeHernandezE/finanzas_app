@@ -1,8 +1,6 @@
 # Respaldo / restauración PostgreSQL (solo administradores).
 
 import os
-import tempfile
-from urllib.parse import quote as urlquote
 
 from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
@@ -16,12 +14,16 @@ from applications.demo_guard import respuesta_demo_no_disponible
 from applications.usuarios.models import Usuario
 from applications.usuarios.views import obtener_usuario_desde_token
 
-from .drive_pg import (
-    backup_filename,
-    restore_from_sql_gz_file,
-    run_pg_dump_plain_gz,
-    run_backup_to_drive,
-    validate_sql_gz_backup_file,
+from .drive_pg import backup_filename, run_backup_to_drive
+from .ops import (
+    CONFIRMACION_IMPORT,
+    CONFIRMACION_IMPORT_EMERGENCIA,
+    database_url,
+    export_habilitado,
+    generar_dump_temporal,
+    import_habilitado,
+    restaurar_desde_upload,
+    validar_archivo_respaldo,
 )
 
 
@@ -35,7 +37,7 @@ def _usuario_y_error_firebase(request):
         return None, Response({'detail': error}, status=status.HTTP_401_UNAUTHORIZED)
     email = (decoded.get('email') or '').strip()
     try:
-        return Usuario.objects.select_related('familia').get(email__iexact=email), None
+        return Usuario.objects.get(email__iexact=email), None
     except Usuario.DoesNotExist:
         return None, Response(
             {'detail': 'Usuario no registrado.'},
@@ -51,7 +53,7 @@ def _es_admin(usuario: Usuario) -> bool:
 # de familia no debe poder extraerla; queda como herramienta de operación de la
 # instancia hasta que exista el export por alcance (Fase 5 del plan).
 def _export_bd_deshabilitado():
-    if settings.DEBUG or _env_true('ALLOW_DB_EXPORT'):
+    if export_habilitado():
         return None
     return Response(
         {
@@ -63,22 +65,6 @@ def _export_bd_deshabilitado():
         },
         status=status.HTTP_403_FORBIDDEN,
     )
-
-
-def _database_url() -> str:
-    u = os.environ.get('DATABASE_URL')
-    if u:
-        return u
-    db = settings.DATABASES['default']
-    eng = db.get('ENGINE', '')
-    if 'sqlite' in eng:
-        raise ValueError('El respaldo SQL solo está soportado con PostgreSQL.')
-    pwd = urlquote(db.get('PASSWORD', '') or '', safe='')
-    user = urlquote(db.get('USER', '') or '', safe='')
-    host = db.get('HOST', 'localhost')
-    port = str(db.get('PORT', '5432'))
-    name = db.get('NAME', '')
-    return f'postgresql://{user}:{pwd}@{host}:{port}/{name}'
 
 
 @api_view(['GET'])
@@ -103,16 +89,13 @@ def descargar_dump(request):
             status=status.HTTP_403_FORBIDDEN,
         )
     try:
-        url = _database_url()
+        url = database_url()
     except ValueError as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     tmp_path: str | None = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.sql.gz') as tmp:
-            tmp_path = tmp.name
-        run_pg_dump_plain_gz(url, tmp_path)
-        validate_sql_gz_backup_file(tmp_path)
+        tmp_path = generar_dump_temporal()
     except Exception as e:
         if tmp_path:
             try:
@@ -171,14 +154,6 @@ def subir_dump_a_drive(request):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-CONFIRMACION_IMPORT = 'RESTAURAR_BD'
-CONFIRMACION_IMPORT_EMERGENCIA = 'IMPORTAR_MODO_EMERGENCIA'
-MAX_IMPORT_BYTES = 200 * 1024 * 1024
-
-
-def _env_true(name: str) -> bool:
-    return (os.environ.get(name) or '').strip().lower() in {'1', 'true', 'yes', 'on'}
-
 
 @api_view(['POST'])
 @authentication_classes([])
@@ -193,7 +168,7 @@ def importar_dump(request):
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
-    if not settings.DEBUG and not _env_true('ALLOW_DB_IMPORT'):
+    if not import_habilitado():
         return Response(
             {
                 'error': (
@@ -210,7 +185,7 @@ def importar_dump(request):
 
     email = (decoded.get('email') or '').strip()
     try:
-        usuario = Usuario.objects.select_related('familia').get(email__iexact=email)
+        usuario = Usuario.objects.get(email__iexact=email)
         if not _es_admin(usuario):
             return Response(
                 {'detail': 'Solo administradores pueden importar la base de datos.'},
@@ -250,40 +225,15 @@ def importar_dump(request):
     if not f:
         return Response({'error': 'Falta el archivo.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if f.size > MAX_IMPORT_BYTES:
-        return Response(
-            {'error': f'El archivo supera el máximo permitido ({MAX_IMPORT_BYTES // (1024 * 1024)} MB).'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    name = (f.name or '').lower()
-    if not (name.endswith('.gz') or name.endswith('.sql.gz')):
-        return Response(
-            {'error': 'Se espera un archivo .sql.gz (respaldo exportado desde esta app).'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    err = validar_archivo_respaldo(f.name, f.size)
+    if err:
+        return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        url = _database_url()
-    except ValueError as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-    tmp_path: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.sql.gz') as tmp:
-            tmp_path = tmp.name
-            for chunk in f.chunks():
-                tmp.write(chunk)
-        restore_from_sql_gz_file(url, tmp_path)
+        restaurar_desde_upload(f.name, f.chunks())
         return Response({'ok': True, 'mensaje': 'Base de datos restaurada desde el respaldo.'})
     except Exception as e:
         return Response(
             {'error': str(e)},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
-    finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass

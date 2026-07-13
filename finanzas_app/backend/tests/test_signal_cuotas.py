@@ -33,12 +33,12 @@ class TestSignalGeneracionCuotas:
         assert total_cuotas == Decimal(str(movimiento_credito.monto))
 
     def test_diferencia_centavos_va_a_primera_cuota(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """Si el monto no es divisible exactamente, el resto va a la cuota 1."""
         # $100.00 / 3 cuotas = $33.33 + $33.33 + $33.34 — diferencia de $0.01 a cuota 1
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-01', tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='100.00',
             metodo_pago=metodo_credito, tarjeta=tarjeta, num_cuotas=3,
@@ -92,11 +92,11 @@ class TestSignalGeneracionCuotas:
         assert cuotas_antes == cuotas_despues
 
     def test_usa_monto_cuota_manual_si_se_proporciona(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """Si se ingresa monto_cuota manualmente, lo usa en lugar de calcular."""
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-01', tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='180000.00',
             metodo_pago=metodo_credito, tarjeta=tarjeta,
@@ -108,7 +108,7 @@ class TestSignalGeneracionCuotas:
         assert primera_cuota.monto == Decimal('30000.00')
 
     def test_gasto_antes_del_cierre_factura_en_mes_actual(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """
         Gasto el día 10, tarjeta cierra el 15 → primera cuota en el mismo mes.
@@ -117,7 +117,7 @@ class TestSignalGeneracionCuotas:
         tarjeta.save()
 
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-10',
             tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='90000.00',
@@ -127,7 +127,7 @@ class TestSignalGeneracionCuotas:
         assert primera.mes_facturacion == date(2026, 3, 1)
 
     def test_gasto_despues_del_cierre_factura_en_mes_siguiente(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """
         Gasto el día 20, tarjeta cierra el 15 → primera cuota en el mes siguiente.
@@ -136,7 +136,7 @@ class TestSignalGeneracionCuotas:
         tarjeta.save()
 
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-20',
             tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='90000.00',
@@ -146,7 +146,7 @@ class TestSignalGeneracionCuotas:
         assert primera.mes_facturacion == date(2026, 4, 1)
 
     def test_gasto_exactamente_en_dia_cierre_factura_en_mes_actual(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """
         Gasto exactamente el día de cierre → entra al ciclo actual.
@@ -155,7 +155,7 @@ class TestSignalGeneracionCuotas:
         tarjeta.save()
 
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-15',
             tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='90000.00',
@@ -165,7 +165,7 @@ class TestSignalGeneracionCuotas:
         assert primera.mes_facturacion == date(2026, 3, 1)
 
     def test_sin_dia_facturacion_usa_mes_calendario(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """
         Tarjeta sin día de facturación definido → usa mes calendario del gasto.
@@ -174,7 +174,7 @@ class TestSignalGeneracionCuotas:
         tarjeta.save()
 
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-25',
             tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='90000.00',
@@ -184,7 +184,7 @@ class TestSignalGeneracionCuotas:
         assert primera.mes_facturacion == date(2026, 3, 1)
 
     def test_cuotas_consecutivas_desde_mes_correcto(
-        self, usuario, familia, categoria_egreso, metodo_credito, tarjeta
+        self, usuario, espacio_familiar, categoria_egreso, metodo_credito, tarjeta
     ):
         """
         Gasto el 20 con cierre el 15 → primera cuota en abril,
@@ -194,7 +194,7 @@ class TestSignalGeneracionCuotas:
         tarjeta.save()
 
         mov = Movimiento.objects.create(
-            usuario=usuario, familia=familia,
+            usuario=usuario, espacio=espacio_familiar,
             fecha='2026-03-20',
             tipo='EGRESO', ambito='PERSONAL',
             categoria=categoria_egreso, monto='90000.00',

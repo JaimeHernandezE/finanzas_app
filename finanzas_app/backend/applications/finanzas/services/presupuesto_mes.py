@@ -12,6 +12,7 @@ from decimal import Decimal
 from django.db.models import QuerySet, Sum
 
 from applications.finanzas.models import Categoria, Cuota, Movimiento, Presupuesto
+from applications.finanzas.tenant_helpers import resolver_espacio_id
 
 
 def _querysets_presupuesto_mes(
@@ -20,70 +21,110 @@ def _querysets_presupuesto_mes(
     anio: int,
     ambito: str,
     cuenta_id: int | None,
+    espacio=None,
 ) -> tuple[QuerySet, QuerySet, QuerySet]:
     """
     Devuelve (pres_qs, mov_qs, cuotas_qs) para el ámbito y mes dados.
     `ambito`: 'FAMILIAR' | 'PERSONAL'. `cuenta_id` solo aplica a PERSONAL.
     """
-    familia_id = usuario.familia_id
+    espacio_id = resolver_espacio_id(usuario, espacio)
     mes_first = date(anio, mes, 1)
 
     if ambito == 'FAMILIAR':
-        pres_qs = Presupuesto.objects.filter(
-            familia_id=familia_id,
-            mes=mes_first,
-            usuario__isnull=True,
-            categoria__familia_id=familia_id,
-            categoria__usuario__isnull=True,
-            categoria__cuenta_personal__isnull=True,
-        ).select_related('categoria')
-        mov_qs = Movimiento.objects.filter(
-            familia_id=familia_id,
-            fecha__month=mes,
-            fecha__year=anio,
-            tipo='EGRESO',
-            ambito='COMUN',
-            oculto=False,
-        ).exclude(metodo_pago__tipo='CREDITO')
-        cuotas_qs = Cuota.objects.filter(
-            movimiento__familia_id=familia_id,
-            movimiento__ambito='COMUN',
-            movimiento__tipo='EGRESO',
-            movimiento__oculto=False,
-            movimiento__metodo_pago__tipo='CREDITO',
-            incluir=True,
-            mes_facturacion__month=mes,
-            mes_facturacion__year=anio,
-        ).exclude(estado='PAGADO')
+        if espacio_id is None:
+            pres_qs = Presupuesto.objects.none()
+            mov_qs = Movimiento.objects.none()
+            cuotas_qs = Cuota.objects.none()
+        else:
+            pres_qs = Presupuesto.objects.filter(
+                espacio_id=espacio_id,
+                mes=mes_first,
+                usuario__isnull=True,
+                categoria__espacio_id=espacio_id,
+                categoria__usuario__isnull=True,
+                categoria__cuenta_personal__isnull=True,
+            ).select_related('categoria')
+            mov_qs = Movimiento.objects.filter(
+                espacio_id=espacio_id,
+                fecha__month=mes,
+                fecha__year=anio,
+                tipo='EGRESO',
+                ambito='COMUN',
+                oculto=False,
+            ).exclude(metodo_pago__tipo='CREDITO')
+            cuotas_qs = Cuota.objects.filter(
+                movimiento__espacio_id=espacio_id,
+                movimiento__ambito='COMUN',
+                movimiento__tipo='EGRESO',
+                movimiento__oculto=False,
+                movimiento__metodo_pago__tipo='CREDITO',
+                incluir=True,
+                mes_facturacion__month=mes,
+                mes_facturacion__year=anio,
+            ).exclude(estado='PAGADO')
     else:
-        pres_qs = Presupuesto.objects.filter(
-            familia_id=familia_id,
-            mes=mes_first,
-            usuario=usuario,
-            categoria__usuario=usuario,
-        ).select_related('categoria')
-        mov_qs = Movimiento.objects.filter(
-            familia_id=familia_id,
-            usuario=usuario,
-            fecha__month=mes,
-            fecha__year=anio,
-            tipo='EGRESO',
-            ambito='PERSONAL',
-            oculto=False,
-            categoria__usuario=usuario,
-        ).exclude(metodo_pago__tipo='CREDITO')
-        cuotas_qs = Cuota.objects.filter(
-            movimiento__familia_id=familia_id,
-            movimiento__usuario=usuario,
-            movimiento__ambito='PERSONAL',
-            movimiento__tipo='EGRESO',
-            movimiento__oculto=False,
-            movimiento__categoria__usuario=usuario,
-            movimiento__metodo_pago__tipo='CREDITO',
-            incluir=True,
-            mes_facturacion__month=mes,
-            mes_facturacion__year=anio,
-        ).exclude(estado='PAGADO')
+        if espacio is not None and espacio.es_personal and espacio_id is not None:
+            pres_qs = Presupuesto.objects.filter(
+                espacio_id=espacio_id,
+                mes=mes_first,
+                usuario=usuario,
+                categoria__usuario=usuario,
+            ).select_related('categoria')
+            mov_qs = Movimiento.objects.filter(
+                espacio_id=espacio_id,
+                usuario=usuario,
+                fecha__month=mes,
+                fecha__year=anio,
+                tipo='EGRESO',
+                ambito='PERSONAL',
+                oculto=False,
+                categoria__usuario=usuario,
+            ).exclude(metodo_pago__tipo='CREDITO')
+            cuotas_qs = Cuota.objects.filter(
+                movimiento__espacio_id=espacio_id,
+                movimiento__usuario=usuario,
+                movimiento__ambito='PERSONAL',
+                movimiento__tipo='EGRESO',
+                movimiento__oculto=False,
+                movimiento__categoria__usuario=usuario,
+                movimiento__metodo_pago__tipo='CREDITO',
+                incluir=True,
+                mes_facturacion__month=mes,
+                mes_facturacion__year=anio,
+            ).exclude(estado='PAGADO')
+        elif espacio_id is not None:
+            pres_qs = Presupuesto.objects.filter(
+                espacio_id=espacio_id,
+                mes=mes_first,
+                usuario=usuario,
+                categoria__usuario=usuario,
+            ).select_related('categoria')
+            mov_qs = Movimiento.objects.filter(
+                espacio_id=espacio_id,
+                usuario=usuario,
+                fecha__month=mes,
+                fecha__year=anio,
+                tipo='EGRESO',
+                ambito='PERSONAL',
+                oculto=False,
+                categoria__usuario=usuario,
+            ).exclude(metodo_pago__tipo='CREDITO')
+            cuotas_qs = Cuota.objects.filter(
+                movimiento__espacio_id=espacio_id,
+                movimiento__usuario=usuario,
+                movimiento__ambito='PERSONAL',
+                movimiento__tipo='EGRESO',
+                movimiento__oculto=False,
+                movimiento__categoria__usuario=usuario,
+                movimiento__metodo_pago__tipo='CREDITO',
+                incluir=True,
+                mes_facturacion__month=mes,
+                mes_facturacion__year=anio,
+            ).exclude(estado='PAGADO')
+        else:
+            pres_qs = Presupuesto.objects.none()
+            mov_qs = Movimiento.objects.none()
+            cuotas_qs = Cuota.objects.none()
         if cuenta_id is not None:
             mov_qs = mov_qs.filter(cuenta_id=cuenta_id, categoria__cuenta_personal_id=cuenta_id)
             pres_qs = pres_qs.filter(categoria__cuenta_personal_id=cuenta_id)
@@ -278,6 +319,7 @@ def build_presupuesto_mes_payload(
     anio: int,
     ambito: str,
     cuenta_id: int | None,
+    espacio=None,
 ) -> dict:
     """
     Payload completo para GET presupuesto-mes: filas por categoría + resumen global.
@@ -286,7 +328,7 @@ def build_presupuesto_mes_payload(
     `cuenta_id` solo aplica a ámbito PERSONAL (filtra movimientos/presupuesto/cuotas por cuenta).
     """
     pres_qs, mov_qs, cuotas_qs = _querysets_presupuesto_mes(
-        usuario, mes, anio, ambito, cuenta_id
+        usuario, mes, anio, ambito, cuenta_id, espacio=espacio
     )
 
     raw_debito = mov_qs.aggregate(t=Sum('monto'))['t'] or 0
@@ -340,11 +382,14 @@ def build_presupuesto_mes_filas(
     anio: int,
     ambito: str,
     cuenta_id: int | None,
+    espacio=None,
 ) -> list[dict]:
     """
     Solo la lista de filas (compatibilidad con dashboard y llamadas internas).
     """
-    return build_presupuesto_mes_payload(usuario, mes, anio, ambito, cuenta_id)['filas']
+    return build_presupuesto_mes_payload(
+        usuario, mes, anio, ambito, cuenta_id, espacio=espacio
+    )['filas']
 
 
 def total_presupuesto_comprometido(filas: list[dict]) -> int:

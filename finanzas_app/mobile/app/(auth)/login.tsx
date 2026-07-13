@@ -95,7 +95,7 @@ export default function LoginScreen() {
     <View className="flex-1 bg-surface px-6 pt-16 pb-8">
       <View className="mb-8">
         <Text className="text-dark text-4xl font-bold">Finanzas</Text>
-        <Text className="text-muted text-base mt-1">Familiares</Text>
+        <Text className="text-muted text-base mt-1">Personal y familiar</Text>
       </View>
 
       <View className="bg-white border border-border rounded-2xl p-5">
@@ -174,7 +174,7 @@ export default function LoginScreen() {
       </TouchableOpacity>
 
       <Text className="text-muted text-xs text-center mt-auto">
-        Solo miembros de la familia pueden acceder.
+        Inicia sesión con tu cuenta. Puedes usar la app en modo personal o unirte a una familia.
       </Text>
     </View>
   )

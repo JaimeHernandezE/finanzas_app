@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useEspacio } from '@/context/EspacioContext'
 import { useViaje } from '@/context/ViajeContext'
@@ -107,9 +107,8 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 
 export default function MainLayout() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { user, loading, logout, cambiarUsuarioDemo } = useAuth()
-  const { espacios, espacioActivo, setEspacioActivoId, esPersonal, esFamiliar } = useEspacio()
+  const { mostrarModulosFamiliares } = useEspacio()
   const esDemoUi = esViteDemo() || Boolean(user?.esDemo)
   const { viajeActivo } = useViaje()
   const { formatMonto } = useConfig()
@@ -126,13 +125,6 @@ export default function MainLayout() {
     window.addEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
     return () => window.removeEventListener(EVENTO_CUENTAS_ACTUALIZADAS, onCuentasActualizadas)
   }, [refetchCuentas])
-
-  useEffect(() => {
-    if (loading || !user || user.familia) return
-    if (esDemoUi) return
-    if (location.pathname.startsWith('/configuracion')) return
-    navigate('/configuracion/invitaciones', { replace: true })
-  }, [loading, user, location.pathname, navigate, esDemoUi])
 
   const { propias, tuteladas } = useMemo(() => {
     const list = (cuentasApi ?? []).map(
@@ -194,23 +186,6 @@ export default function MainLayout() {
           </div>
         )}
 
-        {/* Selector de espacio */}
-        {user && espacios.length > 1 && (
-          <div className={styles.espacioSelector}>
-            <select
-              value={espacioActivo?.id ?? ''}
-              onChange={e => setEspacioActivoId(Number(e.target.value))}
-              className={styles.espacioSelect}
-            >
-              {espacios.filter(e => !e.archivado).map(e => (
-                <option key={e.id} value={e.id}>
-                  {e.tipo === 'PERSONAL' ? '● Personal' : `● ${e.nombre}`}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
         <ul className={styles.nav}>
 
           {/* Personal */}
@@ -225,7 +200,7 @@ export default function MainLayout() {
           {propias.map(c => <CuentaItem key={c.id} cuenta={c} />)}
 
           {/* Familia (hidden in personal mode) */}
-          {esFamiliar && (
+          {mostrarModulosFamiliares && (
             <>
               <GroupLabel label="Familia" />
               {tuteladas.map(c => <CuentaItem key={c.id} cuenta={c} />)}
@@ -289,7 +264,7 @@ export default function MainLayout() {
       {/* ── Barra inferior fija ── */}
       <nav className={styles.bottomBar}>
         {BOTTOM_NAV_ALL
-          .filter(item => !item.soloFamiliar || esFamiliar)
+          .filter(item => !item.soloFamiliar || mostrarModulosFamiliares)
           .map(item => (
           <NavLink
             key={item.to}

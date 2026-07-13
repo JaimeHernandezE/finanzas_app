@@ -104,7 +104,6 @@ def importar_espacio(data: dict, espacio, usuario) -> dict:
     """
     validar_formato(data)
     datos = data['datos']
-    familia = espacio.familia_origen if hasattr(espacio, 'familia_origen') else None
 
     usuario_cache = {}
     conteos = {}
@@ -123,23 +122,23 @@ def importar_espacio(data: dict, espacio, usuario) -> dict:
     conteos['cuentas_personales'] = len(map_cuenta)
 
     map_viaje = _importar_viajes(
-        datos.get('viajes', []), espacio, familia,
+        datos.get('viajes', []), espacio,
     )
     conteos['viajes'] = len(map_viaje)
 
     map_fondo = _importar_fondos(
-        datos.get('fondos', []), espacio, familia, usuario, usuario_cache,
+        datos.get('fondos', []), espacio, usuario, usuario_cache,
     )
     conteos['fondos'] = len(map_fondo)
 
     map_categoria = _importar_categorias(
-        datos.get('categorias', []), espacio, familia, usuario, usuario_cache,
+        datos.get('categorias', []), espacio, usuario, usuario_cache,
         map_cuenta,
     )
     conteos['categorias'] = len(map_categoria)
 
     map_movimiento = _importar_movimientos(
-        datos.get('movimientos', []), espacio, familia, usuario, usuario_cache,
+        datos.get('movimientos', []), espacio, usuario, usuario_cache,
         map_categoria, map_metodo, map_tarjeta, map_viaje, map_cuenta,
     )
     conteos['movimientos'] = len(map_movimiento)
@@ -149,12 +148,12 @@ def importar_espacio(data: dict, espacio, usuario) -> dict:
     )
 
     conteos['ingresos_comunes'] = _importar_ingresos(
-        datos.get('ingresos_comunes', []), espacio, familia, usuario,
+        datos.get('ingresos_comunes', []), espacio, usuario,
         usuario_cache, map_movimiento,
     )
 
     conteos['presupuestos'] = _importar_presupuestos(
-        datos.get('presupuestos', []), espacio, familia, usuario,
+        datos.get('presupuestos', []), espacio, usuario,
         usuario_cache, map_categoria,
     )
 
@@ -219,13 +218,12 @@ def _importar_cuentas(rows, espacio, usuario, usuario_cache):
     return mapa
 
 
-def _importar_viajes(rows, espacio, familia):
+def _importar_viajes(rows, espacio):
     mapa = {}
     for row in rows:
         old_id = row['_id']
         viaje = Viaje.objects.create(
             espacio=espacio,
-            familia=familia,
             nombre=row['nombre'],
             fecha_inicio=_parse_date(row['fecha_inicio']),
             fecha_fin=_parse_date(row['fecha_fin']),
@@ -237,14 +235,13 @@ def _importar_viajes(rows, espacio, familia):
     return mapa
 
 
-def _importar_fondos(rows, espacio, familia, usuario, usuario_cache):
+def _importar_fondos(rows, espacio, usuario, usuario_cache):
     mapa = {}
     for row in rows:
         old_id = row['_id']
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
         fondo = Fondo.objects.create(
             espacio=espacio,
-            familia=familia,
             usuario=u,
             nombre=row['nombre'],
             descripcion=row.get('descripcion', ''),
@@ -253,7 +250,7 @@ def _importar_fondos(rows, espacio, familia, usuario, usuario_cache):
     return mapa
 
 
-def _importar_categorias(rows, espacio, familia, usuario, usuario_cache, map_cuenta):
+def _importar_categorias(rows, espacio, usuario, usuario_cache, map_cuenta):
     parents_first = sorted(rows, key=lambda r: (r.get('categoria_padre_id') is not None,))
     mapa = {}
     for row in parents_first:
@@ -263,7 +260,6 @@ def _importar_categorias(rows, espacio, familia, usuario, usuario_cache, map_cue
         cuenta_id = row.get('cuenta_personal_id')
         cat = Categoria.objects.create(
             espacio=espacio,
-            familia=familia,
             usuario=u if row.get('usuario_email') else None,
             nombre=row['nombre'],
             tipo=row['tipo'],
@@ -276,7 +272,7 @@ def _importar_categorias(rows, espacio, familia, usuario, usuario_cache, map_cue
 
 
 def _importar_movimientos(
-    rows, espacio, familia, usuario, usuario_cache,
+    rows, espacio, usuario, usuario_cache,
     map_cat, map_metodo, map_tarjeta, map_viaje, map_cuenta,
 ):
     mapa = {}
@@ -298,7 +294,6 @@ def _importar_movimientos(
 
         mov = Movimiento(
             espacio=espacio,
-            familia=familia,
             usuario=u,
             tipo=row['tipo'],
             ambito=row.get('ambito', 'PERSONAL'),
@@ -338,14 +333,13 @@ def _importar_cuotas(rows, map_movimiento):
     return count
 
 
-def _importar_ingresos(rows, espacio, familia, usuario, usuario_cache, map_movimiento):
+def _importar_ingresos(rows, espacio, usuario, usuario_cache, map_movimiento):
     count = 0
     for row in rows:
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
         mov_id = map_movimiento.get(row.get('movimiento_id')) if row.get('movimiento_id') else None
         ing = IngresoComun(
             espacio=espacio,
-            familia=familia,
             usuario=u,
             mes=_parse_date(row['mes']),
             fecha_pago=_parse_date(row.get('fecha_pago')),
@@ -359,7 +353,7 @@ def _importar_ingresos(rows, espacio, familia, usuario, usuario_cache, map_movim
     return count
 
 
-def _importar_presupuestos(rows, espacio, familia, usuario, usuario_cache, map_cat):
+def _importar_presupuestos(rows, espacio, usuario, usuario_cache, map_cat):
     count = 0
     for row in rows:
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
@@ -368,7 +362,6 @@ def _importar_presupuestos(rows, espacio, familia, usuario, usuario_cache, map_c
             cat_id = row['categoria_id']
         Presupuesto.objects.create(
             espacio=espacio,
-            familia=familia,
             usuario=u,
             categoria_id=cat_id,
             mes=_parse_date(row['mes']),

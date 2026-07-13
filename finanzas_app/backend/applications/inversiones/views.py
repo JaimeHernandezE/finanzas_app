@@ -79,7 +79,6 @@ def fondos(request):
         fondo = Fondo.objects.create(
             nombre      = request.data.get('nombre', ''),
             descripcion = request.data.get('descripcion', ''),
-            familia     = espacio.familia_origen if espacio.familia_origen_id else None,
             espacio     = espacio,
             usuario     = None if es_compartido else usuario,
         )

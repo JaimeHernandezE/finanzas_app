@@ -83,6 +83,20 @@ const ES_DEMO_BUILD = esViteDemo()
 function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
   const fam = data.familia as { id: number; nombre: string } | null | undefined
   const idioma = data.idioma_ui === 'en' ? 'en' : 'es'
+  const espaciosRaw = data.espacios
+  const espacios = Array.isArray(espaciosRaw)
+    ? espaciosRaw.map((e) => {
+        const item = e as Record<string, unknown>
+        return {
+          id: item.id as number,
+          nombre: String(item.nombre ?? ''),
+          tipo: (item.tipo === 'FAMILIAR' ? 'FAMILIAR' : 'PERSONAL') as EspacioMe['tipo'],
+          modo_reparto: String(item.modo_reparto ?? 'PROPORCIONAL'),
+          archivado: Boolean(item.archivado),
+          rol: String(item.rol ?? 'MIEMBRO'),
+        }
+      })
+    : undefined
   return {
     id: data.id as number,
     email: String(data.email ?? ''),
@@ -91,6 +105,7 @@ function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
     rol: String(data.rol ?? ''),
     activo: data.activo as boolean | undefined,
     familia: fam ?? null,
+    espacios,
     idioma_ui: idioma,
     moneda_display: String(data.moneda_display ?? 'CLP'),
     zona_horaria: String(data.zona_horaria ?? 'America/Santiago'),

@@ -71,17 +71,15 @@ class TestEspacioPersonal:
 # ── Resolutor de espacio activo ───────────────────────────────────────────────
 
 class TestResolverEspacioActivo:
-    def test_sin_header_con_familia_usa_espacio_familiar(self, rf, usuario, familia):
-        # Compatibilidad transición: los clientes desplegados no envían header;
-        # un usuario con familia debe seguir operando sobre sus datos familiares.
+    def test_sin_header_con_familia_usa_espacio_personal(self, rf, usuario, familia):
+        # Etapa 6: sin header el contexto por defecto es el espacio personal.
+        personal = crear_espacio_personal(usuario)
         espacio, err = resolver_espacio_activo(_request(rf), usuario)
         assert err is None
-        assert espacio.tipo == Espacio.TIPO_FAMILIAR
-        assert espacio.familia_origen_id == familia.id
+        assert espacio.id == personal.id
+        assert espacio.tipo == Espacio.TIPO_PERSONAL
 
     def test_sin_header_sin_familia_usa_espacio_personal(self, rf, usuario):
-        usuario.familia = None
-        usuario.save(update_fields=['familia'])
         personal = crear_espacio_personal(usuario)
         espacio, err = resolver_espacio_activo(_request(rf), usuario)
         assert err is None
@@ -193,28 +191,29 @@ class TestEndpointsEspacios:
         assert resp.status_code == status.HTTP_200_OK
         assert ajeno.id not in {e['id'] for e in resp.data}
 
-    def test_activo_sin_header_es_familiar_si_tiene_familia(self, client, usuario, familia, auth_header):
-        resp = client.get('/api/espacios/activo/', **auth_header)
+    def test_activo_sin_header_es_personal(self, client, usuario, familia, auth_header_sin_espacio):
+        personal = obtener_espacio_personal(usuario)
+        resp = client.get('/api/espacios/activo/', **auth_header_sin_espacio)
         assert resp.status_code == status.HTTP_200_OK
-        assert resp.data['tipo'] == Espacio.TIPO_FAMILIAR
-        assert resp.data['rol'] == PertenenciaEspacio.ROL_ADMIN
+        assert resp.data['id'] == personal.id
+        assert resp.data['tipo'] == Espacio.TIPO_PERSONAL
 
-    def test_activo_con_header_personal(self, client, usuario, auth_header):
+    def test_activo_con_header_personal(self, client, usuario, auth_header_sin_espacio):
         personal = obtener_espacio_personal(usuario)
         resp = client.get(
             '/api/espacios/activo/',
-            **auth_header,
+            **auth_header_sin_espacio,
             HTTP_X_ESPACIO_ID=str(personal.id),
         )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data['id'] == personal.id
         assert resp.data['tipo'] == Espacio.TIPO_PERSONAL
 
-    def test_activo_con_header_ajeno_403(self, client, usuario, usuario_otra_familia, auth_header):
-        ajeno = crear_espacio_personal(usuario_otra_familia)
+    def test_activo_con_header_ajeno_403(self, client, usuario, usuario_otra_familia, auth_header_sin_espacio):
+        ajeno = obtener_espacio_personal(usuario_otra_familia)
         resp = client.get(
             '/api/espacios/activo/',
-            **auth_header,
+            **auth_header_sin_espacio,
             HTTP_X_ESPACIO_ID=str(ajeno.id),
         )
         assert resp.status_code == status.HTTP_403_FORBIDDEN

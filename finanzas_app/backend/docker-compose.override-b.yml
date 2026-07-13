@@ -1,0 +1,16 @@
+# Override para ejecutar el stack B en paralelo al A (puertos distintos).
+# Uso:
+#   docker compose --env-file .env.b -p gastos_b -f docker-compose.yml -f docker-compose.override-b.yml up -d --build
+
+services:
+  db:
+    ports:
+      - "5433:5432"
+  web:
+    ports:
+      - "8001:8000"
+  frontend:
+    ports:
+      - "5174:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8001

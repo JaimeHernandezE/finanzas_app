@@ -186,8 +186,8 @@ CORS_ALLOWED_ORIGINS = [
 # Permitir todos los orígenes solo si se activa explícitamente vía env var (solo desarrollo local).
 CORS_ALLOW_ALL_ORIGINS = _env_flag('CORS_ALLOW_ALL_ORIGINS', 'false')
 
-# Cabeceras permitidas en preflight (incl. Authorization para POST con JWT entre orígenes)
-CORS_ALLOW_HEADERS = list(default_headers)
+# Cabeceras permitidas en preflight (JWT + contexto multitenant)
+CORS_ALLOW_HEADERS = list(default_headers) + ['x-espacio-id']
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (

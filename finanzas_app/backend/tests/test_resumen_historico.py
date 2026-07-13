@@ -16,7 +16,7 @@ class TestCalcularResumenMes:
         self,
         usuario,
         usuario_2,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_efectivo,
     ):
@@ -26,21 +26,21 @@ class TestCalcularResumenMes:
         mes_pd = date(2026, 3, 1)
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='1800000.00',
             origen='Sueldo',
         )
         IngresoComun.objects.create(
             usuario=usuario_2,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='1000000.00',
             origen='Sueldo',
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-10',
             tipo='EGRESO',
             ambito='COMUN',
@@ -51,7 +51,7 @@ class TestCalcularResumenMes:
         )
         Movimiento.objects.create(
             usuario=usuario_2,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-03-12',
             tipo='EGRESO',
             ambito='COMUN',
@@ -61,7 +61,7 @@ class TestCalcularResumenMes:
             metodo_pago=metodo_efectivo,
         )
 
-        row = services_recalculo.calcular_resumen_mes(familia.pk, mes_pd)
+        row = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
         assert row is not None
         assert row['gasto_comun_total'] == '-500000.00'
         assert row['base_prorrateo']['mes'] == 3
@@ -88,7 +88,7 @@ class TestCalcularResumenMes:
     def test_gastos_comunes_por_usuario_neto_ingreso_menos_egreso(
         self,
         usuario,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         categoria_ingreso,
         metodo_efectivo,
@@ -99,14 +99,14 @@ class TestCalcularResumenMes:
         mes_pd = date(2026, 5, 1)
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='1000000.00',
             origen='S',
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-05-05',
             tipo='INGRESO',
             ambito='COMUN',
@@ -117,7 +117,7 @@ class TestCalcularResumenMes:
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-05-06',
             tipo='EGRESO',
             ambito='COMUN',
@@ -127,7 +127,7 @@ class TestCalcularResumenMes:
             metodo_pago=metodo_efectivo,
         )
 
-        row = services_recalculo.calcular_resumen_mes(familia.pk, mes_pd)
+        row = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
         assert row is not None
         gc = {p['usuario_id']: p for p in row['gastos_comunes_por_usuario']}
         # 50000 − 200000 = −150000
@@ -138,7 +138,7 @@ class TestCalcularResumenMes:
 class TestResumenSnapshot:
     def test_movimiento_comun_borra_snapshot_del_mes(
         self,
-        familia,
+        espacio_familiar,
         usuario,
         usuario_2,
         categoria_egreso,
@@ -149,31 +149,31 @@ class TestResumenSnapshot:
         mes_pd = date(2026, 4, 1)
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='100.00',
             origen='S',
         )
         IngresoComun.objects.create(
             usuario=usuario_2,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='100.00',
             origen='S',
         )
 
-        payload = services_recalculo.calcular_resumen_mes(familia.pk, mes_pd)
+        payload = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
         assert payload is not None
         ResumenHistoricoMesSnapshot.objects.create(
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             payload=payload,
         )
-        assert ResumenHistoricoMesSnapshot.objects.filter(familia=familia, mes=mes_pd).exists()
+        assert ResumenHistoricoMesSnapshot.objects.filter(espacio=espacio_familiar, mes=mes_pd).exists()
 
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-04-05',
             tipo='EGRESO',
             ambito='COMUN',
@@ -184,7 +184,7 @@ class TestResumenSnapshot:
         )
 
         assert not ResumenHistoricoMesSnapshot.objects.filter(
-            familia=familia, mes=mes_pd
+            espacio=espacio_familiar, mes=mes_pd
         ).exists()
 
     @patch(
@@ -200,11 +200,11 @@ class TestResumenSnapshot:
         ingreso_glori,
         gasto_comun_jaime,
         gasto_comun_glori,
-        familia,
+        espacio_familiar,
     ):
         """GET resumen-historico calcula y guarda snapshot por mes cerrado (marzo al estar en abril)."""
         mes_pd = date(2026, 3, 1)
-        assert not ResumenHistoricoMesSnapshot.objects.filter(familia=familia).exists()
+        assert not ResumenHistoricoMesSnapshot.objects.filter(espacio=espacio_familiar).exists()
 
         r = client.get('/api/finanzas/resumen-historico/', **auth_header)
         assert r.status_code == 200
@@ -213,7 +213,7 @@ class TestResumenSnapshot:
         assert m3 is not None
         assert m3['gasto_comun_total'] == '-500000.00'
 
-        snap = ResumenHistoricoMesSnapshot.objects.get(familia=familia, mes=mes_pd)
+        snap = ResumenHistoricoMesSnapshot.objects.get(espacio=espacio_familiar, mes=mes_pd)
         assert snap.payload['gasto_comun_total'] == '-500000.00'
 
     @patch(
@@ -229,7 +229,6 @@ class TestResumenSnapshot:
         ingreso_glori,
         gasto_comun_jaime,
         gasto_comun_glori,
-        familia,
     ):
         """Con datos solo en marzo y «hoy» en marzo, el resumen no lista marzo (mes abierto)."""
         r = client.get('/api/finanzas/resumen-historico/', **auth_header)
@@ -246,34 +245,36 @@ class TestResumenSnapshot:
         _mock_localdate,
         usuario,
         usuario_2,
-        familia,
+        espacio_familiar,
         categoria_egreso,
         metodo_efectivo,
     ):
         """Junio = mes en curso: solo miembros activos entran en el prorrateo (tot_ing solo de ellos)."""
+        from applications.espacios.models import PertenenciaEspacio
         from applications.finanzas.models import IngresoComun
 
         mes_pd = date(2026, 6, 1)
-        usuario_2.activo = False
-        usuario_2.save(update_fields=['activo'])
+        PertenenciaEspacio.objects.filter(
+            usuario=usuario_2, espacio=espacio_familiar,
+        ).update(activo=False)
 
         IngresoComun.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='1000000.00',
             origen='Sueldo',
         )
         IngresoComun.objects.create(
             usuario=usuario_2,
-            familia=familia,
+            espacio=espacio_familiar,
             mes=mes_pd,
             monto='500000.00',
             origen='Sueldo',
         )
         Movimiento.objects.create(
             usuario=usuario,
-            familia=familia,
+            espacio=espacio_familiar,
             fecha='2026-06-05',
             tipo='EGRESO',
             ambito='COMUN',
@@ -283,7 +284,7 @@ class TestResumenSnapshot:
             metodo_pago=metodo_efectivo,
         )
 
-        row = services_recalculo.calcular_resumen_mes(familia.pk, mes_pd)
+        row = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
         assert row is not None
         ids = {p['usuario_id'] for p in row['prorrateo_por_usuario']}
         assert usuario.pk in ids

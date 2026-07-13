@@ -1,0 +1,99 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <h1>{{ title }}</h1>
+
+  <div class="messagelist">
+    <p class="warning">
+      <strong>Herramienta de operación de instancia.</strong>
+      Restaurar reemplaza por completo el esquema <code>public</code> de PostgreSQL
+      (todos los usuarios y espacios). No sustituye al respaldo JSON por espacio en la app.
+    </p>
+  </div>
+
+  {% if export_habilitado %}
+  <fieldset class="module aligned">
+    <h2>Exportar respaldo</h2>
+    <p>Genera un <code>.sql.gz</code> compatible con la restauración de esta pantalla.</p>
+    <p>
+      <a href="{{ descargar_url }}" class="button">Descargar .sql.gz</a>
+    </p>
+  </fieldset>
+  {% else %}
+  <fieldset class="module aligned">
+    <h2>Exportar respaldo</h2>
+    <p class="errornote">
+      Exportación deshabilitada. Define <code>ALLOW_DB_EXPORT=true</code> en el entorno.
+    </p>
+  </fieldset>
+  {% endif %}
+
+  <fieldset class="module aligned">
+    <h2>Restaurar desde archivo SQL</h2>
+
+    {% if not import_habilitado %}
+    <p class="errornote">
+      Importación deshabilitada. Define <code>ALLOW_DB_IMPORT=true</code> en el entorno
+      (o usa <code>DEBUG=true</code> en desarrollo local).
+    </p>
+    {% else %}
+
+    {% if modo_emergencia %}
+    <p class="errornote">
+      La base de datos está incompleta (falta la tabla de usuarios). Activa el modo emergencia
+      para forzar la restauración.
+    </p>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+      <div class="form-row">
+        <label for="id_archivo">Archivo de respaldo:</label>
+        <input type="file" name="archivo" id="id_archivo" accept=".gz,.sql,.sql.gz,application/gzip" required>
+        <p class="help">Formatos aceptados: <code>.sql.gz</code> (recomendado) o <code>.sql</code> plano.</p>
+      </div>
+      <div class="form-row">
+        <label for="id_confirmacion">Confirmación:</label>
+        <input
+          type="text"
+          name="confirmacion"
+          id="id_confirmacion"
+          placeholder="{{ confirma_texto }}"
+          autocomplete="off"
+          required
+        >
+        <p class="help">Escribe exactamente <strong>{{ confirma_texto }}</strong> para continuar.</p>
+      </div>
+      {% if modo_emergencia %}
+      <div class="form-row">
+        <label for="id_confirmacion_emergencia">Modo emergencia:</label>
+        <input
+          type="text"
+          name="confirmacion_emergencia"
+          id="id_confirmacion_emergencia"
+          placeholder="{{ confirma_emergencia }}"
+          autocomplete="off"
+        >
+        <p class="help">
+          Escribe <strong>{{ confirma_emergencia }}</strong> si la BD quedó inconsistente.
+        </p>
+      </div>
+      {% endif %}
+      <div class="submit-row">
+        <input type="submit" value="Restaurar base de datos" class="default" onclick="return confirm('¿Seguro? Se reemplazarán TODOS los datos de la instancia.');">
+      </div>
+    </form>
+    {% endif %}
+  </fieldset>
+</div>
+{% endblock %}
