@@ -6,7 +6,7 @@
 
 [build]
 buildCommand = "cd frontend && npm ci && npm run build"
-watchPatterns = ["finanzas_app/frontend/**", "finanzas_app/shared/**"]
+watchPatterns = ["frontend/**", "shared/**"]
 
 [deploy]
 startCommand = "cd frontend && npm run start"

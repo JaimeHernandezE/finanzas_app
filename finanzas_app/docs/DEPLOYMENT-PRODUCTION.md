@@ -52,11 +52,7 @@ Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase
 
 ### Frontend web demo (Railway)
 
-**Monorepo:** el frontend importa código de `finanzas_app/shared/`. Si en Railway el **Root Directory** es solo `finanzas_app/frontend`, el build falla con:
-
-`Could not load /shared/utils/notificacionCompensacion`
-
-Configuración correcta del servicio frontend:
+Configuración del servicio frontend:
 
 | Setting | Valor |
 |---------|--------|
@@ -65,7 +61,11 @@ Configuración correcta del servicio frontend:
 | **Build** | `cd frontend && npm ci && npm run build` (ya en `railway.toml`) |
 | **Start** | `cd frontend && npm run start` |
 
-Los *watch paths* deben incluir `finanzas_app/shared/**` para redesplegar al cambiar utilidades compartidas.
+Railpack instala Node solo si detecta `package.json` en la raíz del Root Directory. Por eso existe `finanzas_app/package.json` (sin dependencias de app). Sin ese archivo, el build falla con `npm: not found`.
+
+Los *watch paths* en `railway.toml` usan `frontend/**` y `shared/**` (relativos al Root Directory).
+
+Si el Root Directory es solo `finanzas_app/frontend`, el build falla al no encontrar `shared/` (`Could not load /shared/utils/...`).
 
 Variables de entorno:
 

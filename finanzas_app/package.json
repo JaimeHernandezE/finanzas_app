@@ -1,0 +1,13 @@
+{
+  "name": "finanzas-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Raíz del monorepo. El servicio frontend en Railway usa railway.toml.",
+  "scripts": {
+    "build": "cd frontend && npm ci && npm run build",
+    "start": "cd frontend && npm run start"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
