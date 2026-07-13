@@ -88,7 +88,7 @@ ALLOW_DB_EXPORT=true       # descarga de dump .sql.gz y subida de respaldo a Dri
 # REQUIRE_VERIFIED_EMAIL=true  # activar ANTES de abrir el registro a terceros
 ```
 
-Sin `ALLOW_GLOBAL_EXPORT=true`, el workflow `export-sheets.yml` recibirá `403`. Al abrir la instancia a terceros: quitar `ALLOW_GLOBAL_EXPORT` y `ALLOW_DB_EXPORT`, y activar `REQUIRE_VERIFIED_EMAIL`.
+Sin `ALLOW_GLOBAL_EXPORT=true`, el workflow `export-sheets.yml` recibirá `403`. Al abrir la instancia a terceros: quitar `ALLOW_GLOBAL_EXPORT` y `ALLOW_DB_EXPORT`, activar `REQUIRE_VERIFIED_EMAIL`, y crear **`InvitacionAcceso`** en Django Admin (`https://<dominio-api>/admin/`) para cada correo que pueda registrarse.
 
 ### Credenciales neutrales (backend + GitHub Actions)
 

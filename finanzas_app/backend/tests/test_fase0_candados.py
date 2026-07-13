@@ -13,6 +13,8 @@ from django.core.cache import cache
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from applications.usuarios.models import InvitacionAcceso
+
 
 @pytest.fixture(autouse=True)
 def limpiar_cache_throttle():
@@ -102,12 +104,12 @@ class TestCandadoRegistro:
 
     def test_registro_sin_flag_no_exige_verificacion(self, client, db, monkeypatch):
         monkeypatch.delenv('REQUIRE_VERIFIED_EMAIL', raising=False)
+        InvitacionAcceso.objects.create(email='nuevo@test.com')
         with patch(
             'applications.usuarios.views.obtener_usuario_desde_token',
             return_value=_decoded_firebase(email_verified=False),
         ):
             resp = client.post('/api/usuarios/registro/', HTTP_AUTHORIZATION='Bearer x')
-        # BD vacía → primer usuario del sistema: se crea como ADMIN.
         assert resp.status_code == status.HTTP_201_CREATED
         assert resp.data['creado'] is True
 

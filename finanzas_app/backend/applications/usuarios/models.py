@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import Lower
 
 
 class Familia(models.Model):
@@ -98,9 +99,39 @@ class Usuario(AbstractUser):
         return self.get_full_name() or self.username
 
 
+class InvitacionAcceso(models.Model):
+    """
+    Correo autorizado para registrarse en la instancia.
+    No implica unión a familia; se gestiona desde Django Admin.
+    """
+
+    email = models.EmailField()
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='invitaciones_acceso_creadas',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                Lower('email'),
+                name='uniq_invitacion_acceso_email',
+            ),
+        ]
+        verbose_name = 'invitación de acceso'
+        verbose_name_plural = 'invitaciones de acceso'
+
+    def __str__(self):
+        return self.email
+
+
 class InvitacionPendiente(models.Model):
     """
-    Email invitado a unirse a una familia (registro pendiente).
+    Email invitado a unirse a un espacio familiar.
     No envía correo por sí sola; la app solo registra la invitación.
     El invitado debe aceptar explícitamente en la app (p. ej. Configuración).
     """
@@ -126,8 +157,8 @@ class InvitacionPendiente(models.Model):
                 name='uniq_invitacion_espacio_email',
             ),
         ]
-        verbose_name = 'invitación pendiente'
-        verbose_name_plural = 'invitaciones pendientes'
+        verbose_name = 'invitación familiar'
+        verbose_name_plural = 'invitaciones familiares'
 
     def __str__(self):
         return f'{self.email} → {self.espacio}'

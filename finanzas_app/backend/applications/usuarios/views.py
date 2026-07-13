@@ -26,7 +26,7 @@ from .miembro_salida import puede_quitar_miembro_familia
 from applications.espacios.models import PertenenciaEspacio, Espacio
 from applications.espacios.services import espacio_para_familia, obtener_espacio_familiar_activo
 from .salida_familia import puede_salir_de_familia, salir_de_familia
-from .models import Usuario, Familia, InvitacionPendiente
+from .models import Usuario, Familia, InvitacionAcceso, InvitacionPendiente
 
 _ZONAS_VALIDAS = zoneinfo.available_timezones()
 MAX_ESPACIOS_FAMILIARES_POR_USUARIO = 5
@@ -374,10 +374,10 @@ def demo_login(request):
 def registrar_usuario(request):
     """
     Crea un usuario nuevo con token Firebase válido.
-    Primer usuario del sistema: crea Familia, espacio FAMILIAR y pertenencia ADMIN.
-    Con invitación pendiente: crea el usuario y su pertenencia al espacio invitado.
-    Con REQUIRE_VERIFIED_EMAIL=true exige email verificado en Firebase
-    (candado Fase 0: activar antes de abrir registro a terceros).
+    Exige InvitacionAcceso (creada en Django Admin) salvo que el correo ya exista.
+    Si aún no hay Familia en la instancia, el primer usuario invitado queda como ADMIN
+    con espacio familiar bootstrap.
+    Con REQUIRE_VERIFIED_EMAIL=true exige email verificado en Firebase.
     """
     if getattr(settings, 'DEMO', False):
         return respuesta_demo_no_disponible()
@@ -404,13 +404,20 @@ def registrar_usuario(request):
         body['creado'] = False
         return Response(body, status=status.HTTP_200_OK)
 
-    invitaciones_correo = (
-        InvitacionPendiente.objects
-        .filter(email__iexact=email)
-        .select_related('espacio')
-    )
-    if invitaciones_correo.exists():
-        inv = invitaciones_correo.first()
+    try:
+        inv_acceso = InvitacionAcceso.objects.get(email__iexact=email)
+    except InvitacionAcceso.DoesNotExist:
+        return Response(
+            {
+                'error': (
+                    'No tienes invitación de acceso para este correo. '
+                    'Contacta al administrador de la instancia.'
+                )
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    with transaction.atomic():
         usuario = Usuario.objects.create(
             username=email,
             email=email,
@@ -418,44 +425,22 @@ def registrar_usuario(request):
             first_name=(nombre or email)[:150],
             rol='MIEMBRO',
         )
-        PertenenciaEspacio.objects.create(
-            usuario=usuario,
-            espacio=inv.espacio,
-            rol=PertenenciaEspacio.ROL_MIEMBRO,
-        )
-        body = _payload_me(usuario, decoded)
-        body['creado'] = True
-        return Response(body, status=status.HTTP_201_CREATED)
+        inv_acceso.delete()
 
-    if not Usuario.objects.exists():
-        with transaction.atomic():
+        if not Familia.objects.exists():
             familia = Familia.objects.create(nombre='Mi familia')
             espacio = espacio_para_familia(familia)
-            usuario = Usuario.objects.create(
-                username=email,
-                email=email,
-                firebase_uid=uid,
-                first_name=(nombre or email)[:150],
-                rol='ADMIN',
-            )
             PertenenciaEspacio.objects.create(
                 usuario=usuario,
                 espacio=espacio,
                 rol=PertenenciaEspacio.ROL_ADMIN,
             )
-        body = _payload_me(usuario, decoded)
-        body['creado'] = True
-        return Response(body, status=status.HTTP_201_CREATED)
+            usuario.rol = 'ADMIN'
+            usuario.save(update_fields=['rol'])
 
-    return Response(
-        {
-            'error': (
-                'No hay invitación pendiente para este correo. '
-                'Pide a un administrador que te invite desde Configuración → Miembros.'
-            )
-        },
-        status=status.HTTP_403_FORBIDDEN,
-    )
+    body = _payload_me(usuario, decoded)
+    body['creado'] = True
+    return Response(body, status=status.HTTP_201_CREATED)
 
 
 def _normalizar_email(s: str) -> str:

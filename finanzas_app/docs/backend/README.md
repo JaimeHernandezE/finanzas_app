@@ -74,9 +74,11 @@ Todas las rutas bajo `/api/usuarios/…` con header `Authorization: Bearer <toke
 | POST | `/api/usuarios/familia/invitaciones/` | Body `{ "email": "..." }`. Solo **ADMIN**. |
 | DELETE | `/api/usuarios/familia/invitaciones/<id>/` | Revocar invitación. Solo **ADMIN**. |
 
-**Registro (`POST /api/usuarios/registro/`):** si ya existen usuarios en el sistema, un correo nuevo solo puede registrarse si hay una **invitación pendiente** para ese email (creada desde Miembros). El primer usuario de la base sigue creando la familia como ADMIN.
+**Registro (`POST /api/usuarios/registro/`):** todo correo nuevo debe tener una **`InvitacionAcceso`** creada en **Django Admin** (`/admin/` → Usuarios → Invitaciones de acceso). Sin ella, el registro devuelve `403`. Al consumirse la invitación se crea el usuario y su espacio personal; **no** se une automáticamente a ninguna familia. Si la instancia aún no tiene ninguna `Familia`, el primer usuario invitado queda como **ADMIN** con espacio familiar bootstrap.
 
-**Modelo:** `InvitacionPendiente` (familia + email + invitador). Las categorías **globales** solo admiten cambio de `nombre` en `PUT /api/finanzas/categorias/<id>/`.
+**Invitaciones familiares** (`InvitacionPendiente`): gestionadas desde la app (Configuración → Miembros) por un **ADMIN** del espacio familiar. El invitado, ya registrado, las acepta en **Invitaciones recibidas**; son independientes del acceso a la instancia.
+
+**Modelos:** `InvitacionAcceso` (email autorizado para registrarse) · `InvitacionPendiente` (email invitado a un espacio familiar). Las categorías **globales** solo admiten cambio de `nombre` en `PUT /api/finanzas/categorias/<id>/`.
 
 ## Ingresos comunes y cuenta «Personal»
 
