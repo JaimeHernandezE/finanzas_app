@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Ejecutar en Render como «Release Command» (plan sin Shell): aplica migraciones y seeds
-# contra la DATABASE_URL del despliegue. Misma lógica DEMO que build.sh.
+# Ejecutar en Render como Â«Release CommandÂ» (plan sin Shell): aplica migraciones y seeds
+# contra la DATABASE_URL del despliegue. Misma lÃ³gica DEMO que build.sh.
 set -o errexit
 
 echo "==> release.sh: migrate"
