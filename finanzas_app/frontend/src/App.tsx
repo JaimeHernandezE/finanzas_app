@@ -33,6 +33,7 @@ import MiembrosPage from '@/pages/configuracion/MiembrosPage'
 import InvitacionesRecibidasPage from '@/pages/configuracion/InvitacionesRecibidasPage'
 import PerfilPage from '@/pages/configuracion/PerfilPage'
 import NotificacionesPage from '@/pages/configuracion/NotificacionesPage'
+import NotificacionesConfigPage from '@/pages/configuracion/NotificacionesConfigPage'
 import ImportadorCuentaPersonalPage from '@/pages/configuracion/ImportadorCuentaPersonalPage'
 import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorariosPage'
 import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
@@ -93,7 +94,6 @@ function AppRoutes() {
           path="notificaciones"
           element={ES_DEMO ? <Navigate to="/dashboard" replace /> : <NotificacionesPage />}
         />
-        <Route path="configuracion/notificaciones" element={<Navigate to="/notificaciones" replace />} />
 
         {ES_DEMO ? (
           <>
@@ -125,6 +125,10 @@ function AppRoutes() {
           <Route
             path="perfil"
             element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <PerfilPage />}
+          />
+          <Route
+            path="notificaciones"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <NotificacionesConfigPage />}
           />
           <Route path="categorias" element={<CategoriasPage />} />
           <Route

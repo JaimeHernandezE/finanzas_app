@@ -43,6 +43,8 @@ export interface Usuario {
   idioma_ui:       'es' | 'en'
   moneda_display:  string
   zona_horaria:    string
+  notif_presupuesto_activa?: boolean
+  notif_presupuesto_umbral_pct?: number
   /** Solo en build demo o respuestas que lo incluyan. */
   esDemo?:         boolean
 }
@@ -67,7 +69,13 @@ interface AuthContextType {
   changePassword: (newPassword: string) => Promise<void>
   logout:   () => Promise<void>
   updateNombre: (nombre: string) => Promise<void>
-  updatePreferencias: (prefs: { idioma_ui?: string; moneda_display?: string; zona_horaria?: string }) => Promise<void>
+  updatePreferencias: (prefs: {
+    idioma_ui?: string
+    moneda_display?: string
+    zona_horaria?: string
+    notif_presupuesto_activa?: boolean
+    notif_presupuesto_umbral_pct?: number
+  }) => Promise<void>
   /** Vuelve a cargar perfil desde GET /api/usuarios/me/ (p. ej. tras aceptar invitación). */
   refreshUsuario: () => Promise<void>
   loginDemo: (usuarioDemo: 'jaime' | 'glori') => Promise<void>
@@ -109,6 +117,8 @@ function mapUsuarioFromMeApi(data: Record<string, unknown>): Usuario {
     idioma_ui: idioma,
     moneda_display: String(data.moneda_display ?? 'CLP'),
     zona_horaria: String(data.zona_horaria ?? 'America/Santiago'),
+    notif_presupuesto_activa: data.notif_presupuesto_activa !== false,
+    notif_presupuesto_umbral_pct: Number(data.notif_presupuesto_umbral_pct ?? 80),
     esDemo: Boolean(data.es_demo),
   }
 }
@@ -625,7 +635,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function updatePreferencias(prefs: { idioma_ui?: string; moneda_display?: string; zona_horaria?: string }) {
+  async function updatePreferencias(prefs: {
+    idioma_ui?: string
+    moneda_display?: string
+    zona_horaria?: string
+    notif_presupuesto_activa?: boolean
+    notif_presupuesto_umbral_pct?: number
+  }) {
     const token = localStorage.getItem('auth_token')
     if (!token) throw new Error('Sesión no disponible')
 
@@ -644,11 +660,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const data = await res.json()
+    const mapped = mapUsuarioFromMeApi(data as Record<string, unknown>)
     setUsuario(prev => {
-      if (!prev) return data
-      return { ...data, foto: data?.foto ?? prev.foto ?? null }
+      if (!prev) return mapped
+      return { ...mapped, foto: mapped.foto ?? prev.foto ?? null, uid: prev.uid }
     })
-    if (data?.idioma_ui) i18n.changeLanguage(data.idioma_ui)
+    if (mapped.idioma_ui) i18n.changeLanguage(mapped.idioma_ui)
   }
 
   async function logout() {

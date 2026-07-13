@@ -713,8 +713,10 @@ class NotificacionUsuario(models.Model):
     """Notificación in-app para un usuario (compensación y otros tipos futuros)."""
 
     TIPO_CAMBIO_COMPENSACION = 'CAMBIO_COMPENSACION'
+    TIPO_PRESUPUESTO_UMBRAL = 'PRESUPUESTO_UMBRAL'
     TIPO_CHOICES = [
         (TIPO_CAMBIO_COMPENSACION, 'Cambio de compensación'),
+        (TIPO_PRESUPUESTO_UMBRAL, 'Alerta de presupuesto'),
     ]
 
     usuario = models.ForeignKey(

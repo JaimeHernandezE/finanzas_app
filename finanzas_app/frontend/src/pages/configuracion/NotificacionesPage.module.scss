@@ -117,6 +117,15 @@
   }
 }
 
+.linkConfig {
+  color: $color-text-muted;
+  text-decoration: underline;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
 .btnItem {
   padding: $space-1 $space-3;
   font-size: 12px;

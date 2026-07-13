@@ -42,6 +42,8 @@ export interface Usuario {
   zona_horaria?: string
   idioma_ui?: string
   moneda_display?: string
+  notif_presupuesto_activa?: boolean
+  notif_presupuesto_umbral_pct?: number
 }
 
 interface AuthContextType {
@@ -65,6 +67,10 @@ interface AuthContextType {
   ) => Promise<void>
   changePassword: (newPassword: string) => Promise<void>
   updateNombre: (nombre: string) => Promise<void>
+  updatePreferencias: (prefs: {
+    notif_presupuesto_activa?: boolean
+    notif_presupuesto_umbral_pct?: number
+  }) => Promise<void>
   refreshUsuario: () => Promise<void>
   logout:  () => Promise<void>
 }
@@ -496,6 +502,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
+  async function updatePreferencias(prefs: {
+    notif_presupuesto_activa?: boolean
+    notif_presupuesto_umbral_pct?: number
+  }) {
+    const token = await SecureStore.getItemAsync('auth_token')
+    if (!token) {
+      throw new Error('Sesión no disponible.')
+    }
+
+    const res = await axios.patch(
+      `${API_BASE_URL}/api/usuarios/me/`,
+      prefs,
+      { headers: { Authorization: `Bearer ${token}` } },
+    )
+
+    const data = res.data as Usuario
+    setUsuario((prev) => {
+      if (!prev) return data
+      return {
+        ...prev,
+        ...data,
+        foto: data?.foto ?? prev.foto ?? null,
+      }
+    })
+  }
+
   async function refreshUsuario() {
     const firebaseUser = getFirebaseAuth().currentUser
     if (!firebaseUser) return
@@ -526,6 +558,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         linkEmailToGoogleAccount,
         changePassword,
         updateNombre,
+        updatePreferencias,
         refreshUsuario,
         logout,
       }}

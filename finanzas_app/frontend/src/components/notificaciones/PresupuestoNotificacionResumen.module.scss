@@ -1,0 +1,29 @@
+.box {
+  background: #f9fafb;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  padding: $space-3;
+  margin-bottom: $space-3;
+}
+
+.fila {
+  display: flex;
+  justify-content: space-between;
+  gap: $space-3;
+  margin: 0 0 $space-1;
+  font-size: $font-size-sm;
+  line-height: 1.45;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.etiqueta {
+  color: $color-text-muted;
+}
+
+.valor {
+  font-weight: $font-weight-semibold;
+  text-align: right;
+}

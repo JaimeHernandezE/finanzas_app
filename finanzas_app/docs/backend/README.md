@@ -148,7 +148,8 @@ Relación de cada modelo con su responsabilidad y su integración con:
 | `TutorCuenta` | Tutorías entre usuarios y cuentas personales. | Sin signal propio en `finanzas/signals.py`. | Sin uso directo en `services_recalculo.py`. | `seed_demo` (limpieza en reset demo). |
 | `Movimiento` | Transacción central del sistema (ingreso/egreso, personal/común, método de pago, viaje). | Invalida resumen histórico, genera cuotas en crédito y dispara recálculos de snapshots al guardar/borrar. | Fuente principal para saldos, liquidación, resumen histórico y efectivo disponible. | `importar_movimientos_csv`, `seed_demo`, `seed_demo_if_empty`, `recalculo_mensual_admin_tz`. |
 | `Cuota` | Cuota individual de movimiento en crédito (`mes_facturacion`, `estado`, `incluir`). | Creación automática por `post_save` de `Movimiento`. | Reparación y reconciliación de cuotas (`reparar_cuotas_credito_familia`) preservando pagadas. | `recalculo_mensual_admin_tz` (vía service), `seed_demo` (limpieza). |
-| `Presupuesto` | Meta mensual por categoría (familiar/personal). | Sin signal propio. | No participa directo en snapshots de `services_recalculo.py` actuales. | `rollover_presupuestos_mensuales`, `seed_demo`. |
+| `Presupuesto` | Meta mensual por categoría (familiar/personal). | `post_save` evalúa umbrales y crea `NotificacionUsuario` (`services_presupuesto_alertas.py`). | Cálculo de avance en `services/presupuesto_mes.py`; alertas en `services_presupuesto_alertas.py`. | `rollover_presupuestos_mensuales`, `seed_demo`. |
+| `NotificacionUsuario` | Notificaciones in-app (`CAMBIO_COMPENSACION`, `PRESUPUESTO_UMBRAL`). | Creadas por compensación y alertas de presupuesto. | `services_compensacion_cambios.py`, `services_presupuesto_alertas.py`. | — |
 | `IngresoComun` | Ingreso declarado al fondo común (base del prorrateo). | Sincroniza y mantiene `Movimiento` espejo; invalida resumen y dispara recálculo; borra movimiento vinculado al eliminarse. | Base de liquidación común, resumen histórico y efectivo disponible. | `seed_demo`, `recalculo_mensual_admin_tz`. |
 | `SaldoMensualSnapshot` | Cache mensual por usuario/cuenta con ingresos, egresos y efectivo neto (sin crédito). | Se actualiza por dispatch de recálculo tras cambios en `Movimiento`/`IngresoComun`. | `recalcular_mes_saldos_personales_*`, `saldo_efectivo_cuentas_desde_snapshot`. | `recalculo_mensual_admin_tz`, `seed_demo`. |
 | `LiquidacionComunMensualSnapshot` | Cache agregado mensual para liquidación común por usuario/tipo de línea. | Se actualiza por dispatch de recálculo. | `recalcular_mes_liquidacion_comun`, `liquidacion_datos_desde_snapshot_o_query`. | `recalculo_mensual_admin_tz`, `seed_demo`. |
@@ -168,3 +169,43 @@ docker-compose exec web python manage.py <comando>
 - `backfill_resumen_historico [--familia-id <id>]`
 - `recalculo_mensual_admin_tz [--admin-id <id>]` — tareas de inicio de mes: rollover de presupuestos; recálculo acotado al **mes anterior y mes actual** (liquidación + saldos); actualiza solo el snapshot de resumen del **último mes cerrado**; repara cuotas crédito. Para reparar **toda** la historia usar el endpoint `POST` de recálculo histórico o `backfill_resumen_historico`.
 - `seed_demo`, `seed_demo_minimal`, `ensure_demo_seed`, `seed_demo_if_empty`
+
+## Alertas de presupuesto (notificaciones in-app)
+
+Cuando un egreso (o una cuota de crédito del mes) hace que el gasto de una categoría con presupuesto alcance el umbral del usuario, se crea una `NotificacionUsuario` de tipo `PRESUPUESTO_UMBRAL`.
+
+**Preferencias por usuario** (`Usuario`):
+
+| Campo | Default | Descripción |
+|-------|---------|-------------|
+| `notif_presupuesto_activa` | `True` | Activa/desactiva alertas de presupuesto. |
+| `notif_presupuesto_umbral_pct` | `80` | Porcentaje 50–100; también se notifica al **100%** si el umbral es menor. |
+
+Expuestas en `GET/PATCH /api/usuarios/me/` junto al resto de preferencias de UI.
+
+**Destinatarios:**
+
+- Presupuesto **familiar** (`usuario` null en `Presupuesto`): todos los miembros activos del espacio con alertas activadas.
+- Presupuesto **personal**: solo el dueño del presupuesto.
+
+**Disparadores:** `post_save` / `post_delete` en `Movimiento` (egresos), `Cuota` y `post_save` en `Presupuesto`. Respeta `RecalculoContext.suprimir_notificaciones` en importaciones masivas.
+
+**Tests:** `tests/test_presupuesto_alertas.py`
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | `/api/finanzas/notificaciones/` | Lista notificaciones del usuario (filtro por espacio activo). |
+| GET | `/api/finanzas/notificaciones/no-leidas/` | Contador de no leídas. |
+| POST | `/api/finanzas/notificaciones/<id>/leida/` | Marcar una como leída. |
+| POST | `/api/finanzas/notificaciones/marcar-todas-leidas/` | Marcar todas como leídas. |
+
+## Asistente financiero (fase 2 — planificado)
+
+Chat con consultas en lenguaje natural sobre los datos del usuario. **No implementado aún.** Diseño previsto:
+
+1. **Capa analytics** — funciones reutilizables (`comparar_gasto_anual`, `gasto_categoria_por_mes`, `sugerir_presupuestos`) sobre los mismos querysets que `presupuesto_mes` y `resumen_historico`.
+2. **Endpoint chat** — `POST /api/finanzas/asistente/consulta/` con function-calling; el LLM **nunca** ejecuta SQL directo (multitenancy y seguridad).
+3. **LLM gratuito** — Ollama local en desarrollo; Groq o Gemini free tier en producción.
+4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto.
+
+Las alertas de presupuesto de la fase 1 comparten `NotificacionUsuario` y podrían referenciarse en respuestas del asistente (“ya te avisamos el 12 jul…”).

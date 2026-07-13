@@ -23,6 +23,12 @@ const GRUPOS = [
     ],
   },
   {
+    grupo: 'NOTIFICACIONES',
+    items: [
+      { icon: '◎', label: 'Preferencias', to: '/configuracion/notificaciones' as const },
+    ],
+  },
+  {
     grupo: 'FINANZAS',
     items: [
       { icon: '▤', label: 'Categorías', to: '/configuracion/categorias' as const },
@@ -98,6 +104,10 @@ function descargarJson(data: unknown, nombre: string) {
 export default function ConfiguracionPage() {
   const { user, refreshUsuario } = useAuth()
   const perfilResumen = user?.nombre ?? ''
+  const notifResumen =
+    user?.notif_presupuesto_activa === false
+      ? 'Desactivadas'
+      : `Activas · ${user?.notif_presupuesto_umbral_pct ?? 80}%`
   const importInputRef = useRef<HTMLInputElement>(null)
 
   const {
@@ -387,8 +397,9 @@ export default function ConfiguracionPage() {
       '/configuracion/importar-honorarios': 'CSV',
       '/configuracion/importar-sueldos': 'CSV',
       '/configuracion/importar-gastos-comunes': 'CSV',
+      '/configuracion/notificaciones': notifResumen,
     }),
-    [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC, user?.familia]
+    [loadCats, errCats, nCats, loadM, errM, nM, loadC, errC, nC, user?.familia, notifResumen]
   )
 
   const gruposIndice = useMemo(() => {

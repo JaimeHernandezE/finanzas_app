@@ -429,6 +429,13 @@ export default function PerfilScreen() {
               <Text className="text-muted text-sm">›</Text>
             </View>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/configuracion/notificaciones' as never)}
+            className="flex-row items-center justify-between py-3"
+          >
+            <Text className="text-dark font-medium">Preferencias de notificaciones</Text>
+            <Text className="text-muted text-sm">›</Text>
+          </TouchableOpacity>
         </View>
 
         <View className="bg-white border border-border rounded-xl p-4 mb-4">

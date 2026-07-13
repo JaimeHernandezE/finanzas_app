@@ -59,6 +59,8 @@ def test_me_get_incluye_preferencias(usuario):
     assert 'idioma_ui' in data
     assert 'moneda_display' in data
     assert 'zona_horaria' in data
+    assert 'notif_presupuesto_activa' in data
+    assert 'notif_presupuesto_umbral_pct' in data
     assert data['idioma_ui'] == 'es'
     assert data['moneda_display'] == 'CLP'
     assert data['zona_horaria'] == 'America/Santiago'

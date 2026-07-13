@@ -75,6 +75,14 @@ class Usuario(AbstractUser):
                   '02:00 y 04:00 hora local Chile (default America/Santiago); si cambias esa franja, '
                   'recalcula los UTC en los YAML.',
     )
+    notif_presupuesto_activa = models.BooleanField(
+        default=True,
+        help_text='Si es True, el usuario recibe alertas in-app al acercarse al presupuesto.',
+    )
+    notif_presupuesto_umbral_pct = models.PositiveSmallIntegerField(
+        default=80,
+        help_text='Porcentaje de gasto vs presupuesto a partir del cual se envía una alerta (50–100).',
+    )
 
     def cuentas_visibles(self):
         """

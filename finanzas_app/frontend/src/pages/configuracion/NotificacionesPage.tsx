@@ -4,8 +4,13 @@ import { finanzasApi } from '@/api'
 import type { NotificacionUsuarioApi } from '@/api/finanzas'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { CompensacionNotificacionResumen } from '@/components/notificaciones/CompensacionNotificacionResumen'
+import { PresupuestoNotificacionResumen } from '@/components/notificaciones/PresupuestoNotificacionResumen'
 import { useConfig } from '@/context/ConfigContext'
 import { parseCompensacionNotificacion } from '@finanzas/shared/utils/notificacionCompensacion'
+import {
+  linkPresupuestoNotificacion,
+  parsePresupuestoNotificacion,
+} from '@finanzas/shared/utils/notificacionPresupuesto'
 import styles from './NotificacionesPage.module.scss'
 
 function formatFecha(iso: string): string {
@@ -75,7 +80,11 @@ export default function NotificacionesPage() {
       <div className={styles.header}>
         <h1 className={styles.titulo}>Notificaciones</h1>
         <p className={styles.subtitulo}>
-          Avisos cuando un cambio en gastos o sueldos comunes modifica la compensación entre miembros.
+          Avisos de compensación familiar y alertas cuando tus presupuestos alcanzan el umbral configurado.
+          {' '}
+          <Link to="/configuracion/notificaciones" className={styles.linkConfig}>
+            Configurar alertas de presupuesto
+          </Link>
         </p>
         {noLeidas > 0 ? (
           <button type="button" className={styles.btnMarcar} onClick={marcarTodas} disabled={marcando}>
@@ -92,12 +101,14 @@ export default function NotificacionesPage() {
         <ul className={styles.lista}>
           {items.map((n) => {
             const compensacion = parseCompensacionNotificacion(n.payload)
+            const presupuesto = parsePresupuestoNotificacion(n.payload)
             const mes = Number(n.payload?.mes)
             const anio = Number(n.payload?.anio)
             const linkLiquidacion =
               Number.isFinite(mes) && Number.isFinite(anio)
                 ? `/liquidacion?mes=${mes}&anio=${anio}`
                 : null
+            const linkPresupuesto = presupuesto ? linkPresupuestoNotificacion(presupuesto) : null
 
             return (
             <li key={n.id} className={n.leida ? styles.itemLeida : styles.item}>
@@ -111,6 +122,17 @@ export default function NotificacionesPage() {
                   compensacion={compensacion}
                   formatMonto={formatMonto}
                 />
+              ) : null}
+              {presupuesto ? (
+                <PresupuestoNotificacionResumen
+                  presupuesto={presupuesto}
+                  formatMonto={formatMonto}
+                />
+              ) : null}
+              {linkPresupuesto ? (
+                <Link to={linkPresupuesto} className={styles.linkLiquidacion}>
+                  Ver presupuesto del mes →
+                </Link>
               ) : null}
               {linkLiquidacion ? (
                 <Link to={linkLiquidacion} className={styles.linkLiquidacion}>

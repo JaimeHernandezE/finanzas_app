@@ -17,6 +17,10 @@ import {
   montoNotifNum,
   parseCompensacionNotificacion,
 } from '@finanzas/shared/utils/notificacionCompensacion'
+import {
+  linkPresupuestoNotificacion,
+  parsePresupuestoNotificacion,
+} from '@finanzas/shared/utils/notificacionPresupuesto'
 import { MobileShell } from '../components/layout/MobileShell'
 import { cerrarNotificaciones } from '../lib/navegacionNotificaciones'
 
@@ -78,6 +82,30 @@ function CompensacionNotificacionResumen({
           <Text className="text-muted text-sm">Sin transferencias sugeridas este mes</Text>
         )}
       </View>
+    </View>
+  )
+}
+
+function PresupuestoNotificacionResumen({
+  presupuesto,
+  formatMonto,
+}: {
+  presupuesto: NonNullable<ReturnType<typeof parsePresupuestoNotificacion>>
+  formatMonto: (n: number) => string
+}) {
+  const gastado = montoNotifNum(presupuesto.gastado)
+  const pres = montoNotifNum(presupuesto.monto_presupuestado)
+  return (
+    <View className="bg-surface border border-border rounded-xl p-3 mb-3">
+      <Text className="text-[11px] font-bold text-muted uppercase tracking-wide mb-2">
+        Presupuesto
+      </Text>
+      <Text className="text-dark text-sm leading-5 mb-1">
+        {presupuesto.categoria_nombre} ({presupuesto.ambito === 'FAMILIAR' ? 'familiar' : 'personal'})
+      </Text>
+      <Text className="text-muted text-xs leading-5">
+        {formatMonto(gastado)} de {formatMonto(pres)} ({presupuesto.porcentaje.toFixed(0)}%)
+      </Text>
     </View>
   )
 }
@@ -162,7 +190,7 @@ export default function NotificacionesScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <Text className="text-sm text-muted mb-4">
-          Avisos cuando un cambio en gastos o sueldos comunes modifica la compensación entre miembros.
+          Avisos de compensación familiar y alertas cuando tus presupuestos alcanzan el umbral configurado.
         </Text>
 
         {noLeidas > 0 ? (
@@ -186,6 +214,10 @@ export default function NotificacionesScreen() {
         ) : (
           items.map((n) => {
             const compensacion = parseCompensacionNotificacion(n.payload)
+            const presupuesto = parsePresupuestoNotificacion(n.payload)
+            const linkPresupuesto = presupuesto
+              ? linkPresupuestoNotificacion(presupuesto, '/(tabs)/presupuesto')
+              : null
             return (
             <View
               key={n.id}
@@ -201,6 +233,20 @@ export default function NotificacionesScreen() {
                   compensacion={compensacion}
                   formatMonto={formatMonto}
                 />
+              ) : null}
+              {presupuesto ? (
+                <PresupuestoNotificacionResumen
+                  presupuesto={presupuesto}
+                  formatMonto={formatMonto}
+                />
+              ) : null}
+              {linkPresupuesto ? (
+                <TouchableOpacity
+                  onPress={() => router.push(linkPresupuesto as never)}
+                  className="mb-3"
+                >
+                  <Text className="text-muted text-xs">Ver presupuesto del mes →</Text>
+                </TouchableOpacity>
               ) : null}
               {compensacion && n.payload?.mes && n.payload?.anio ? (
                 <TouchableOpacity

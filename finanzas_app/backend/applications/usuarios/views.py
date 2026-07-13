@@ -101,6 +101,8 @@ def _payload_me(usuario: Usuario, decoded: dict | None = None):
         'idioma_ui': usuario.idioma_ui,
         'moneda_display': usuario.moneda_display,
         'zona_horaria': usuario.zona_horaria,
+        'notif_presupuesto_activa': usuario.notif_presupuesto_activa,
+        'notif_presupuesto_umbral_pct': usuario.notif_presupuesto_umbral_pct,
     }
 
 
@@ -161,6 +163,32 @@ def _patch_me_perfil(usuario: Usuario, request, decoded: dict | None, *, es_demo
             )
         usuario.zona_horaria = zona
         update_fields.append('zona_horaria')
+
+    if 'notif_presupuesto_activa' in request.data:
+        valor = request.data['notif_presupuesto_activa']
+        if not isinstance(valor, bool):
+            return Response(
+                {'error': 'notif_presupuesto_activa debe ser booleano.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        usuario.notif_presupuesto_activa = valor
+        update_fields.append('notif_presupuesto_activa')
+
+    if 'notif_presupuesto_umbral_pct' in request.data:
+        try:
+            umbral = int(request.data['notif_presupuesto_umbral_pct'])
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'notif_presupuesto_umbral_pct debe ser un entero entre 50 y 100.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if umbral < 50 or umbral > 100:
+            return Response(
+                {'error': 'notif_presupuesto_umbral_pct debe estar entre 50 y 100.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        usuario.notif_presupuesto_umbral_pct = umbral
+        update_fields.append('notif_presupuesto_umbral_pct')
 
     if not update_fields:
         return Response(

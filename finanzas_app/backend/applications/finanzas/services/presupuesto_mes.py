@@ -143,6 +143,26 @@ def _gastado_int(g):
         return int(float(g))
 
 
+def gasto_categoria_mes(
+    usuario,
+    categoria_id: int,
+    mes: int,
+    anio: int,
+    ambito: str,
+    cuenta_id: int | None = None,
+    espacio=None,
+) -> int:
+    """Gasto efectivo + cuotas crédito del mes para una categoría (misma lógica que presupuesto-mes)."""
+    _, mov_qs, cuotas_qs = _querysets_presupuesto_mes(
+        usuario, mes, anio, ambito, cuenta_id, espacio=espacio,
+    )
+    debito = mov_qs.filter(categoria_id=categoria_id).aggregate(t=Sum('monto'))['t'] or 0
+    cuotas = (
+        cuotas_qs.filter(movimiento__categoria_id=categoria_id).aggregate(t=Sum('monto'))['t'] or 0
+    )
+    return _gastado_int(debito) + _gastado_int(cuotas)
+
+
 def _monto_pres_a_decimal(monto_str):
     if monto_str is None:
         return Decimal('0')

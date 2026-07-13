@@ -1,0 +1,142 @@
+.page {
+  padding: $space-6 $space-8;
+  max-width: 720px;
+}
+
+.volver {
+  display: inline-block;
+  margin-bottom: $space-3;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  text-decoration: none;
+
+  &:hover {
+    color: $color-text;
+  }
+}
+
+.titulo {
+  font-size: 22px;
+  font-weight: $font-weight-bold;
+  margin: 0 0 $space-2;
+}
+
+.subtitulo {
+  margin: 0 0 $space-6;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  line-height: 1.45;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: $space-5;
+  padding: $space-5;
+  border: 1px solid #e8e8e4;
+  border-radius: $radius-base;
+  background: $color-bg-white;
+}
+
+.campo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: $space-4;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.campoInfo {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.campoTitulo {
+  margin: 0 0 $space-1;
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+}
+
+.campoTexto {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  line-height: 1.45;
+}
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  cursor: pointer;
+}
+
+.umbralRow {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  flex: 1 1 200px;
+}
+
+.slider {
+  flex: 1;
+  min-width: 120px;
+}
+
+.umbralInput {
+  width: 64px;
+  padding: $space-1 $space-2;
+  border: 1px solid #d1d5db;
+  border-radius: $radius-sm;
+  font-size: $font-size-sm;
+}
+
+.umbralPct {
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+}
+
+.btnGuardar {
+  align-self: flex-start;
+  padding: $space-2 $space-4;
+  border-radius: $radius-base;
+  border: none;
+  background: $color-text;
+  color: $color-bg-white;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-semibold;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+}
+
+.msgOk {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: #15803d;
+}
+
+.msgErr {
+  margin: 0;
+  font-size: $font-size-sm;
+  color: #b91c1c;
+}
+
+.linkBuzon {
+  margin-top: $space-5;
+  font-size: $font-size-sm;
+
+  a {
+    color: $color-text-muted;
+    text-decoration: none;
+
+    &:hover {
+      color: $color-text;
+      text-decoration: underline;
+    }
+  }
+}

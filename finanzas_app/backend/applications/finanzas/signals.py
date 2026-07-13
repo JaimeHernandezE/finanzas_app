@@ -17,6 +17,7 @@ from .models import (
     MetodoPago,
     Movimiento,
     Cuota,
+    Presupuesto,
 )
 from . import services_recalculo
 from .recalculo_context import RecalculoContext, recalculo_context
@@ -394,3 +395,50 @@ def dispatch_recalculo_snapshots_borrar_movimiento(sender, instance, **kwargs):
             meses,
             refrescar_resumen_compensacion=refrescar_resumen,
         )
+
+
+def _encolar_evaluacion_alertas_movimiento(instance: Movimiento) -> None:
+    if instance.tipo != 'EGRESO' or instance.oculto or not instance.espacio_id:
+        return
+    from . import services_presupuesto_alertas
+    services_presupuesto_alertas.evaluar_alertas_por_movimiento(instance.pk)
+
+
+def _encolar_evaluacion_alertas_cuota(instance: Cuota) -> None:
+    mov = instance.movimiento
+    if mov.tipo != 'EGRESO' or mov.oculto or not mov.espacio_id:
+        return
+    from . import services_presupuesto_alertas
+    services_presupuesto_alertas.evaluar_alertas_por_cuota(instance.pk)
+
+
+def _encolar_evaluacion_alertas_presupuesto(instance: Presupuesto) -> None:
+    if not instance.espacio_id:
+        return
+    from . import services_presupuesto_alertas
+    services_presupuesto_alertas.evaluar_alertas_por_presupuesto(instance.pk)
+
+
+@receiver(post_save, sender=Movimiento)
+def evaluar_alertas_presupuesto_tras_movimiento(sender, instance, **kwargs):
+    _encolar_evaluacion_alertas_movimiento(instance)
+
+
+@receiver(post_delete, sender=Movimiento)
+def evaluar_alertas_presupuesto_tras_borrar_movimiento(sender, instance, **kwargs):
+    _encolar_evaluacion_alertas_movimiento(instance)
+
+
+@receiver(post_save, sender=Cuota)
+def evaluar_alertas_presupuesto_tras_cuota(sender, instance, **kwargs):
+    _encolar_evaluacion_alertas_cuota(instance)
+
+
+@receiver(post_delete, sender=Cuota)
+def evaluar_alertas_presupuesto_tras_borrar_cuota(sender, instance, **kwargs):
+    _encolar_evaluacion_alertas_cuota(instance)
+
+
+@receiver(post_save, sender=Presupuesto)
+def evaluar_alertas_presupuesto_tras_presupuesto(sender, instance, **kwargs):
+    _encolar_evaluacion_alertas_presupuesto(instance)
