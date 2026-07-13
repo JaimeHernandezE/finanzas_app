@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ConfiguracionRespaldoUsuario, Espacio, PertenenciaEspacio
+from .models import Espacio, PertenenciaEspacio
 
 
 class PertenenciaEspacioInline(admin.TabularInline):
@@ -21,9 +21,3 @@ class PertenenciaEspacioAdmin(admin.ModelAdmin):
     list_display = ('id', 'usuario', 'espacio', 'rol', 'activo', 'created_at')
     list_filter = ('rol', 'activo', 'espacio__tipo')
     search_fields = ('usuario__email', 'espacio__nombre')
-
-
-@admin.register(ConfiguracionRespaldoUsuario)
-class ConfiguracionRespaldoUsuarioAdmin(admin.ModelAdmin):
-    list_display = ('id', 'usuario', 'drive_folder_id', 'sheet_id', 'updated_at')
-    search_fields = ('usuario__email',)
