@@ -1,0 +1,12 @@
+# Frontend web — servicio Railway (monorepo con shared/)
+# En Railway → Settings:
+#   - Root Directory: finanzas_app
+#   - Config file: /finanzas_app/railway.toml
+# Si Root Directory = finanzas_app/frontend, el build falla: ../shared no entra al contexto.
+
+[build]
+buildCommand = "cd frontend && npm ci && npm run build"
+watchPatterns = ["finanzas_app/frontend/**", "finanzas_app/shared/**"]
+
+[deploy]
+startCommand = "cd frontend && npm run start"

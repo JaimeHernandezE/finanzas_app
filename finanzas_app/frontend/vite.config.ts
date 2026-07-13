@@ -3,11 +3,28 @@ import react from '@vitejs/plugin-react'
 import fs from 'fs'
 import path from 'path'
 
-/** ../shared en host; /app/shared cuando Docker monta el paquete compartido. */
+/** ../shared en host; shared/ cuando Docker monta el paquete; node_modules tras npm ci. */
 function resolveSharedDir(): string {
-  const mountedInApp = path.resolve(__dirname, 'shared')
-  if (fs.existsSync(mountedInApp)) return mountedInApp
-  return path.resolve(__dirname, '../shared')
+  const candidates = [
+    path.resolve(__dirname, 'shared'),
+    path.resolve(__dirname, '../shared'),
+    path.resolve(__dirname, 'node_modules/@finanzas/shared'),
+  ]
+  for (const dir of candidates) {
+    const marker = path.join(dir, 'package.json')
+    try {
+      if (fs.existsSync(marker) && fs.statSync(marker).isFile()) {
+        return dir
+      }
+    } catch {
+      /* symlink roto (p. ej. Railway con root solo en frontend) */
+    }
+  }
+  throw new Error(
+    'No se encontró @finanzas/shared. En Railway usa Root Directory = finanzas_app ' +
+      '(no finanzas_app/frontend) y build: cd frontend && npm ci && npm run build. ' +
+      'Ver docs/DEPLOYMENT-PRODUCTION.md',
+  )
 }
 
 const sharedDir = resolveSharedDir()

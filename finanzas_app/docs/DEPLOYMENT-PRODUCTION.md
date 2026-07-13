@@ -52,6 +52,23 @@ Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase
 
 ### Frontend web demo (Railway)
 
+**Monorepo:** el frontend importa código de `finanzas_app/shared/`. Si en Railway el **Root Directory** es solo `finanzas_app/frontend`, el build falla con:
+
+`Could not load /shared/utils/notificacionCompensacion`
+
+Configuración correcta del servicio frontend:
+
+| Setting | Valor |
+|---------|--------|
+| **Root Directory** | `finanzas_app` (carpeta que contiene `frontend/` y `shared/`) |
+| **Config file** | `/finanzas_app/railway.toml` |
+| **Build** | `cd frontend && npm ci && npm run build` (ya en `railway.toml`) |
+| **Start** | `cd frontend && npm run start` |
+
+Los *watch paths* deben incluir `finanzas_app/shared/**` para redesplegar al cambiar utilidades compartidas.
+
+Variables de entorno:
+
 ```env
 VITE_ES_DEMO=true
 VITE_API_URL=https://<tu-backend>.up.railway.app
