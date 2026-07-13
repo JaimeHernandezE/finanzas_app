@@ -82,7 +82,8 @@ Si no usas `VITE_ES_DEMO=true`, deberás definir también las `VITE_FIREBASE_*`.
 Las operaciones que tocan datos de **todas** las familias quedan bloqueadas en producción salvo habilitación explícita. Mientras la instancia sea de un solo operador (uso personal/familiar), agrega en las variables del backend en Railway:
 
 ```env
-ALLOW_GLOBAL_EXPORT=true   # export a Google Sheets: cron export-sheets.yml y botón Sincronizar
+ALLOW_GLOBAL_EXPORT=true   # export a Google Sheets vía cron (X-Export-Token); sin botón en la app
+
 ALLOW_DB_EXPORT=true       # descarga de dump .sql.gz y subida de respaldo a Drive
 # ALLOW_DB_IMPORT=true     # solo durante una ventana controlada de restauración
 # REQUIRE_VERIFIED_EMAIL=true  # activar ANTES de abrir el registro a terceros

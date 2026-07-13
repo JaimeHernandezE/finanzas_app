@@ -270,6 +270,44 @@ def drive_status(request):
         'connected': config.drive_connected,
         'email': config.drive_email,
         'folder_id': config.drive_folder_id,
+        'sheet_id': config.sheet_id,
+    })
+
+
+@api_view(['PATCH'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def drive_config(request):
+    """Actualiza folder_id / sheet_id del respaldo por usuario (tras conectar Drive)."""
+    if getattr(settings, 'DEMO', False):
+        return respuesta_demo_no_disponible()
+    usuario, err = utils_auth.get_usuario_autenticado(request)
+    if err:
+        return err
+
+    config = _get_or_create_config(usuario)
+    if not config.drive_connected:
+        return Response(
+            {'error': 'Conecta tu cuenta de Google Drive primero.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    update_fields = ['updated_at']
+    if 'folder_id' in request.data:
+        folder = str(request.data.get('folder_id') or '').strip()
+        config.drive_folder_id = folder
+        update_fields.append('drive_folder_id')
+    if 'sheet_id' in request.data:
+        sheet = str(request.data.get('sheet_id') or '').strip()
+        config.sheet_id = sheet
+        update_fields.append('sheet_id')
+
+    config.save(update_fields=update_fields)
+    return Response({
+        'connected': config.drive_connected,
+        'email': config.drive_email,
+        'folder_id': config.drive_folder_id,
+        'sheet_id': config.sheet_id,
     })
 
 
@@ -428,4 +466,5 @@ def drive_backup_espacio(request, pk):
         'ok': True,
         'archivo': archivo,
         'eliminados': len(eliminados),
+        'folder_id': folder_id,
     })

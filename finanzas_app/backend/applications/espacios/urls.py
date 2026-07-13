@@ -13,5 +13,6 @@ urlpatterns = [
     path('drive/connect/', views.drive_connect, name='drive-connect'),
     path('drive/callback/', views.drive_callback, name='drive-callback'),
     path('drive/disconnect/', views.drive_disconnect, name='drive-disconnect'),
+    path('drive/config/', views.drive_config, name='drive-config'),
     path('<int:pk>/backup-drive/', views.drive_backup_espacio, name='espacio-backup-drive'),
 ]

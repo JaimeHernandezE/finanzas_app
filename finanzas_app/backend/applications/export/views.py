@@ -1,18 +1,17 @@
 # Endpoints de exportación a Google Sheets:
 # - POST /api/export/sheets/ — token X-Export-Token (cron / integraciones)
-# - POST /api/export/sincronizar/ — token Firebase (Bearer), solo rol ADMIN (app web y móvil)
+# La sync desde la app (JWT ADMIN) se retiró: el respaldo global de instancia es el dump PostgreSQL.
 
 import hmac
 import os
 
 from django.conf import settings
 from rest_framework import status
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from applications import utils as utils_auth
-from applications.demo_guard import respuesta_demo_no_disponible
 from applications.usuarios.models import Familia
 
 from .exporters import (
@@ -144,46 +143,6 @@ def exportar_a_sheets(request):
         return Response(
             {'error': 'No autorizado.'},
             status=status.HTTP_401_UNAUTHORIZED,
-        )
-
-    try:
-        data = _ejecutar_exportacion_google_sheets()
-        return Response(data)
-    except ValueError as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-
-@api_view(['POST'])
-@authentication_classes([])  # Misma auth Firebase que /api/finanzas/ (no JWT SimpleJWT)
-@permission_classes([AllowAny])
-def exportar_sheets_autenticado(request):
-    """
-    Misma exportación que /sheets/, pero con token Firebase en Authorization.
-    Solo usuarios con rol ADMIN (misma capacidad que automatizar el respaldo).
-    """
-    if getattr(settings, 'DEMO', False):
-        return respuesta_demo_no_disponible()
-    bloqueo = _export_global_deshabilitado()
-    if bloqueo is not None:
-        return bloqueo
-    usuario, err = utils_auth.get_usuario_autenticado(request)
-    if err is not None:
-        return err
-
-    if getattr(usuario, 'rol', None) != 'ADMIN':
-        return Response(
-            {
-                'error': 'Solo los administradores de la familia pueden sincronizar con Google Sheets.',
-            },
-            status=status.HTTP_403_FORBIDDEN,
         )
 
     try:

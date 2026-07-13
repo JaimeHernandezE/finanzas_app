@@ -64,16 +64,44 @@ class TestDriveStatus:
     def test_status_con_drive_conectado(self, client, usuario, auth_header):
         ConfiguracionRespaldoUsuario.objects.create(
             usuario=usuario, drive_connected=True, drive_email='g@gmail.com',
-            drive_folder_id='folder123',
+            drive_folder_id='folder123', sheet_id='sheet456',
         )
         resp = client.get('/api/espacios/drive/status/', **auth_header)
         assert resp.status_code == 200
         assert resp.data['connected'] is True
         assert resp.data['email'] == 'g@gmail.com'
+        assert resp.data['folder_id'] == 'folder123'
+        assert resp.data['sheet_id'] == 'sheet456'
 
 
 @pytest.mark.django_db
-class TestDriveConnect:
+class TestDriveConfig:
+    def test_config_sin_conexion(self, client, usuario, auth_header):
+        resp = client.patch(
+            '/api/espacios/drive/config/',
+            data={'folder_id': 'abc', 'sheet_id': 'xyz'},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert resp.status_code == 400
+
+    def test_config_actualiza_ids(self, client, usuario, auth_header):
+        ConfiguracionRespaldoUsuario.objects.create(
+            usuario=usuario, drive_connected=True, drive_email='g@gmail.com',
+        )
+        resp = client.patch(
+            '/api/espacios/drive/config/',
+            data={'folder_id': 'folder-manual', 'sheet_id': 'sheet-manual'},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert resp.status_code == 200
+        assert resp.data['folder_id'] == 'folder-manual'
+        assert resp.data['sheet_id'] == 'sheet-manual'
+        cfg = ConfiguracionRespaldoUsuario.objects.get(usuario=usuario)
+        assert cfg.drive_folder_id == 'folder-manual'
+        assert cfg.sheet_id == 'sheet-manual'
+
     def test_connect_devuelve_auth_url(self, client, usuario, auth_header):
         with patch.dict('os.environ', {
             'GOOGLE_DRIVE_OAUTH_CLIENT_ID': 'test-client-id',
@@ -195,6 +223,7 @@ class TestDriveBackup:
         assert resp.status_code == 200
         assert resp.data['ok'] is True
         assert resp.data['archivo']['nombre'] == 'backup.json'
+        assert resp.data['folder_id'] == 'folder123'
 
     def test_backup_espacio_ajeno(self, client, usuario, usuario_otra_familia, auth_header_otra_familia):
         ep = _espacio_personal(usuario)

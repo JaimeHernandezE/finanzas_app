@@ -132,11 +132,12 @@ Endpoints (`/api/espacios/`, Bearer Firebase o JWT demo):
 | `GET /api/espacios/mios/` | Espacios del usuario (para el selector): id, nombre, tipo, `modo_reparto`, rol. |
 | `GET /api/espacios/activo/` | Espacio activo resuelto para el request (header `X-Espacio-Id` o personal). |
 | `PATCH /api/espacios/<id>/` | Actualiza `nombre` y/o `modo_reparto` (solo ADMIN del espacio; `modo_reparto` solo FAMILIAR no archivado; bloqueado en demo). |
-| `GET /api/espacios/drive/status/` | Estado de conexión Drive del usuario. |
+| `GET /api/espacios/drive/status/` | Estado de conexión Drive (`connected`, `email`, `folder_id`, `sheet_id`). |
 | `POST /api/espacios/drive/connect/` | Inicia OAuth (`auth_url` → `https://accounts.google.com/o/oauth2/v2/auth`). Requiere `GOOGLE_DRIVE_OAUTH_CLIENT_ID` y `…_CLIENT_SECRET` en el backend. |
 | `GET /api/espacios/drive/callback/` | Callback OAuth (registrar esta URI en Google Cloud). |
 | `POST /api/espacios/drive/disconnect/` | Revoca token y desconecta Drive. |
-| `POST /api/espacios/<id>/backup-drive/` | Exporta el espacio al Drive del usuario. |
+| `PATCH /api/espacios/drive/config/` | Actualiza `folder_id` / `sheet_id` del usuario (solo con Drive conectado). |
+| `POST /api/espacios/<id>/backup-drive/` | Exporta solo el espacio del usuario a su Drive (no toda la BD). |
 
 ## Mapa técnico de modelos `finanzas`
 

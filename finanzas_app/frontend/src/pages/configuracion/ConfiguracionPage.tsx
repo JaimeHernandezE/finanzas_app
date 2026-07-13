@@ -4,7 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useEspacio } from '@/context/EspacioContext'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useApi } from '@/hooks/useApi'
-import { exportApi, espaciosApi, familiaApi, finanzasApi } from '@/api'
+import { espaciosApi, familiaApi, finanzasApi } from '@/api'
 import type { ModoReparto } from '@/api/espacios'
 import { driveApi } from '@/api/drive'
 import { apiErrorMessage } from '@/utils/apiErrorMessage'
@@ -136,9 +136,6 @@ export default function ConfiguracionPage() {
   const [recalculando, setRecalculando] = useState(false)
   const [msgRecalculo, setMsgRecalculo] = useState<string | null>(null)
   const [errRecalculo, setErrRecalculo] = useState<string | null>(null)
-  const [sincronizando, setSincronizando] = useState(false)
-  const [msgSheets, setMsgSheets] = useState<string | null>(null)
-  const [errSheets, setErrSheets] = useState<string | null>(null)
   const esAdmin = user?.rol === 'ADMIN'
   const {
     espacioActivo,
@@ -166,17 +163,44 @@ export default function ConfiguracionPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [driveConnected, setDriveConnected] = useState(false)
   const [driveEmail, setDriveEmail] = useState('')
+  const [driveFolderId, setDriveFolderId] = useState('')
+  const [driveSheetId, setDriveSheetId] = useState('')
+  const [folderDraft, setFolderDraft] = useState('')
+  const [sheetDraft, setSheetDraft] = useState('')
   const [driveLoading, setDriveLoading] = useState(true)
   const [driveConnecting, setDriveConnecting] = useState(false)
   const [driveBacking, setDriveBacking] = useState(false)
+  const [guardandoDriveCfg, setGuardandoDriveCfg] = useState(false)
+  /** Tras OAuth o respaldo exitoso: muestra folder_id / sheet_id editables. */
+  const [driveSyncOk, setDriveSyncOk] = useState(false)
   const [msgDrive, setMsgDrive] = useState<string | null>(null)
   const [errDrive, setErrDrive] = useState<string | null>(null)
+  const oauthJustConnected = useRef(false)
+
+  const applyDriveStatus = (data: {
+    connected: boolean
+    email: string
+    folder_id?: string
+    sheet_id?: string
+  }) => {
+    setDriveConnected(data.connected)
+    setDriveEmail(data.email || '')
+    const folder = data.folder_id || ''
+    const sheet = data.sheet_id || ''
+    setDriveFolderId(folder)
+    setDriveSheetId(sheet)
+    setFolderDraft(folder)
+    setSheetDraft(sheet)
+    if (data.connected) {
+      setDriveSyncOk(true)
+    }
+  }
 
   useEffect(() => {
     driveApi.status()
       .then(({ data }) => {
-        setDriveConnected(data.connected)
-        setDriveEmail(data.email)
+        if (oauthJustConnected.current && !data.connected) return
+        applyDriveStatus(data)
       })
       .catch(() => {})
       .finally(() => setDriveLoading(false))
@@ -184,11 +208,12 @@ export default function ConfiguracionPage() {
 
   useEffect(() => {
     if (searchParams.get('drive_connected') === '1') {
-      setMsgDrive('Google Drive conectado correctamente.')
+      oauthJustConnected.current = true
       setDriveConnected(true)
+      setDriveSyncOk(true)
+      setMsgDrive('Google Drive conectado correctamente.')
       driveApi.status().then(({ data }) => {
-        setDriveEmail(data.email)
-        setDriveConnected(data.connected)
+        applyDriveStatus({ ...data, connected: data.connected || true })
       }).catch(() => {})
       searchParams.delete('drive_connected')
       setSearchParams(searchParams, { replace: true })
@@ -309,8 +334,14 @@ export default function ConfiguracionPage() {
     setErrDrive(null)
     try {
       await driveApi.disconnect()
+      oauthJustConnected.current = false
       setDriveConnected(false)
       setDriveEmail('')
+      setDriveFolderId('')
+      setDriveSheetId('')
+      setFolderDraft('')
+      setSheetDraft('')
+      setDriveSyncOk(false)
       setMsgDrive('Google Drive desconectado.')
     } catch (e) {
       setErrDrive(apiErrorMessage(e) || 'No se pudo desconectar Drive.')
@@ -324,13 +355,39 @@ export default function ConfiguracionPage() {
     setErrDrive(null)
     try {
       const { data } = await driveApi.backupEspacio(espacioActivo.id)
-      const msg = `Respaldo subido: ${data.archivo.nombre}`
+      const folder = data.folder_id || driveFolderId
+      if (folder) {
+        setDriveFolderId(folder)
+        setFolderDraft(folder)
+      }
+      setDriveSyncOk(true)
+      const msg = `Respaldo del espacio subido: ${data.archivo.nombre}`
         + (data.eliminados > 0 ? ` (${data.eliminados} antiguo(s) eliminado(s))` : '')
       setMsgDrive(msg)
     } catch (e) {
       setErrDrive(apiErrorMessage(e) || 'No se pudo subir el respaldo a Drive.')
     } finally {
       setDriveBacking(false)
+    }
+  }
+
+  const handleGuardarDriveConfig = async () => {
+    if (guardandoDriveCfg || !driveConnected) return
+    setGuardandoDriveCfg(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.updateConfig({
+        folder_id: folderDraft.trim(),
+        sheet_id: sheetDraft.trim(),
+      })
+      applyDriveStatus(data)
+      setDriveSyncOk(true)
+      setMsgDrive('Ids de respaldo guardados.')
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo guardar la configuración.')
+    } finally {
+      setGuardandoDriveCfg(false)
     }
   }
 
@@ -362,28 +419,6 @@ export default function ConfiguracionPage() {
       setErrRecalculo(apiErrorMessage(e) || 'No se pudo ejecutar el recálculo histórico.')
     } finally {
       setRecalculando(false)
-    }
-  }
-
-  const ejecutarSincronizarSheets = async () => {
-    if (sincronizando) return
-    setSincronizando(true)
-    setMsgSheets(null)
-    setErrSheets(null)
-    try {
-      const { data } = await exportApi.sincronizarGoogleSheets()
-      if (data.ok && data.resumen?.length) {
-        const total = data.resumen.reduce((a, r) => a + r.filas, 0)
-        setMsgSheets(
-          `Google Sheets actualizado: ${data.resumen.length} hoja(s), ${total} filas de datos en total.`
-        )
-      } else {
-        setMsgSheets('Sincronización completada.')
-      }
-    } catch (e: unknown) {
-      setErrSheets(apiErrorMessage(e) || 'No se pudo sincronizar con Google Sheets.')
-    } finally {
-      setSincronizando(false)
     }
   }
 
@@ -497,15 +532,17 @@ export default function ConfiguracionPage() {
 
       {!ES_DEMO && espacioActivo && (
         <section className={styles.section}>
-          <h2 className={styles.groupHeader}>RESPALDO ESPACIO</h2>
+          <h2 className={styles.groupHeader}>RESPALDO DE TUS DATOS</h2>
+          <p className={styles.accionTexto} style={{ marginBottom: 12 }}>
+            Solo incluye el espacio activo ({espacioActivo.nombre}). No exporta ni restaura la base completa
+            de la instancia ni datos de otros usuarios.
+          </p>
           <div className={styles.accionBox}>
             <div className={styles.accionInfo}>
-              <h3 className={styles.accionTitulo}>
-                Respaldo de {espacioActivo.tipo === 'PERSONAL' ? 'espacio personal' : espacioActivo.nombre}
-              </h3>
+              <h3 className={styles.accionTitulo}>Archivo JSON (local)</h3>
               <p className={styles.accionTexto}>
-                Descarga o restaura un JSON con los datos del espacio activo ({espacioActivo.nombre}).
-                La importación reemplaza los datos actuales del espacio.
+                Descarga o restaura un JSON con los datos de este espacio. La importación reemplaza
+                los datos actuales del espacio.
               </p>
             </div>
             <div className={styles.accionBtnsRow}>
@@ -536,6 +573,95 @@ export default function ConfiguracionPage() {
           </div>
           {msgEspacio ? <p className={styles.msgOk}>{msgEspacio}</p> : null}
           {errEspacio ? <p className={styles.msgErr}>{errEspacio}</p> : null}
+
+          {!driveLoading && (
+            <div className={`${styles.accionBox} ${styles.accionBoxSpaced}`}>
+              <div className={styles.accionInfo}>
+                <h3 className={styles.accionTitulo}>Google Drive (tu cuenta)</h3>
+                {driveConnected ? (
+                  <p className={styles.accionTexto}>
+                    Conectado como <strong>{driveEmail || '—'}</strong>. Sube un respaldo JSON del
+                    espacio activo a tu Drive personal.
+                  </p>
+                ) : (
+                  <p className={styles.accionTexto}>
+                    Conecta tu Google para guardar respaldos del espacio activo en tu Drive.
+                  </p>
+                )}
+              </div>
+              {driveConnected ? (
+                <div className={styles.accionBtnsRow}>
+                  <button
+                    type="button"
+                    className={styles.accionBtn}
+                    onClick={() => void handleDriveBackup()}
+                    disabled={driveBacking || !espacioActivo}
+                  >
+                    {driveBacking ? 'Subiendo…' : `Respaldar ${espacioActivo.nombre}`}
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.accionBtn} ${styles.accionBtnSecondary}`}
+                    onClick={() => void handleDriveDisconnect()}
+                  >
+                    Desconectar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.accionBtn}
+                  onClick={() => void handleDriveConnect()}
+                  disabled={driveConnecting}
+                >
+                  {driveConnecting ? 'Redirigiendo…' : 'Conectar Google Drive'}
+                </button>
+              )}
+            </div>
+          )}
+          {msgDrive ? <p className={styles.msgOk}>{msgDrive}</p> : null}
+          {errDrive ? <p className={styles.msgErr}>{errDrive}</p> : null}
+
+          {driveConnected && driveSyncOk ? (
+            <div className={`${styles.accionBox} ${styles.accionBoxSpaced} ${styles.accionBoxColumn}`}>
+              <div className={styles.accionInfo}>
+                <h3 className={styles.accionTitulo}>Carpeta y Sheet (opcional)</h3>
+                <p className={styles.accionTexto}>
+                  Tras conectar o respaldar, puedes fijar manualmente el <code>folder_id</code> de Drive
+                  y un <code>sheet_id</code> asociados a tus respaldos. Déjalos vacíos para usar la
+                  carpeta automática «Finanzas App Backups».
+                </p>
+              </div>
+              <div className={styles.configCampos}>
+                <label className={styles.configCampo}>
+                  <span>folder_id</span>
+                  <input
+                    type="text"
+                    value={folderDraft}
+                    onChange={e => setFolderDraft(e.target.value)}
+                    placeholder={driveFolderId || 'Automático al respaldar'}
+                  />
+                </label>
+                <label className={styles.configCampo}>
+                  <span>sheet_id</span>
+                  <input
+                    type="text"
+                    value={sheetDraft}
+                    onChange={e => setSheetDraft(e.target.value)}
+                    placeholder={driveSheetId || 'Opcional'}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={styles.accionBtn}
+                  onClick={() => void handleGuardarDriveConfig()}
+                  disabled={guardandoDriveCfg}
+                >
+                  {guardandoDriveCfg ? 'Guardando…' : 'Guardar ids'}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       )}
 
@@ -608,8 +734,8 @@ export default function ConfiguracionPage() {
                 <span className={styles.itemIcon} aria-hidden>
                   ⧉
                 </span>
-                <span className={styles.itemLabel}>Respaldo PostgreSQL</span>
-                <span className={styles.itemResumen}>Dump / Drive</span>
+                <span className={styles.itemLabel}>Respaldo PostgreSQL (global)</span>
+                <span className={styles.itemResumen}>Dump instancia</span>
                 <span className={styles.itemChevron} aria-hidden>
                   ›
                 </span>
@@ -637,79 +763,6 @@ export default function ConfiguracionPage() {
         </div>
         {msgRecalculo ? <p className={styles.msgOk}>{msgRecalculo}</p> : null}
         {errRecalculo ? <p className={styles.msgErr}>{errRecalculo}</p> : null}
-
-        {!driveLoading && (
-          <div className={`${styles.accionBox} ${styles.accionBoxSpaced}`}>
-            <div className={styles.accionInfo}>
-              <h3 className={styles.accionTitulo}>Google Drive</h3>
-              {driveConnected ? (
-                <p className={styles.accionTexto}>
-                  Conectado como <strong>{driveEmail || '—'}</strong>. Los respaldos se guardan en
-                  la carpeta "Finanzas App Backups" de tu Drive.
-                </p>
-              ) : (
-                <p className={styles.accionTexto}>
-                  Conecta tu cuenta de Google para guardar respaldos de tus espacios directamente
-                  en tu Google Drive personal.
-                </p>
-              )}
-            </div>
-            {driveConnected ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className={styles.accionBtn}
-                  onClick={handleDriveBackup}
-                  disabled={driveBacking || !espacioActivo}
-                >
-                  {driveBacking ? 'Subiendo...' : `Respaldar ${espacioActivo?.nombre ?? 'espacio'}`}
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.accionBtn} ${styles.accionBtnSecondary}`}
-                  onClick={handleDriveDisconnect}
-                >
-                  Desconectar
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className={styles.accionBtn}
-                onClick={handleDriveConnect}
-                disabled={driveConnecting}
-              >
-                {driveConnecting ? 'Redirigiendo...' : 'Conectar Google Drive'}
-              </button>
-            )}
-          </div>
-        )}
-        {msgDrive ? <p className={styles.msgOk}>{msgDrive}</p> : null}
-        {errDrive ? <p className={styles.msgErr}>{errDrive}</p> : null}
-
-        {esAdmin ? (
-          <>
-            <div className={`${styles.accionBox} ${styles.accionBoxSpaced}`}>
-              <div className={styles.accionInfo}>
-                <h3 className={styles.accionTitulo}>Respaldo en Google Sheets</h3>
-                <p className={styles.accionTexto}>
-                  Vuelca los datos de la base al spreadsheet configurado en el servidor (mismas hojas que el
-                  respaldo diario automático).
-                </p>
-              </div>
-              <button
-                type="button"
-                className={styles.accionBtn}
-                onClick={ejecutarSincronizarSheets}
-                disabled={sincronizando}
-              >
-                {sincronizando ? 'Sincronizando...' : 'Sincronizar ahora'}
-              </button>
-            </div>
-            {msgSheets ? <p className={styles.msgOk}>{msgSheets}</p> : null}
-            {errSheets ? <p className={styles.msgErr}>{errSheets}</p> : null}
-          </>
-        ) : null}
       </section>
       )}
     </div>

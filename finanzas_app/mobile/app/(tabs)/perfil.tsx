@@ -14,7 +14,7 @@ import { usePathname, useRouter } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { apiErrorMessage, espaciosApi, exportApi, familiaApi, finanzasApi } from '@finanzas/shared/api'
+import { apiErrorMessage, espaciosApi, familiaApi, finanzasApi } from '@finanzas/shared/api'
 import type { ModoReparto } from '@finanzas/shared/api/espacios'
 import { driveApi } from '@finanzas/shared/api/drive'
 import { useAuth } from '../../context/AuthContext'
@@ -48,9 +48,6 @@ export default function PerfilScreen() {
   const [cambiandoPassword, setCambiandoPassword] = useState(false)
   const [passwordError, setPasswordError] = useState<string | null>(null)
   const [passwordOk, setPasswordOk] = useState<string | null>(null)
-  const [sincronizandoSheets, setSincronizandoSheets] = useState(false)
-  const [msgSheets, setMsgSheets] = useState<string | null>(null)
-  const [errSheets, setErrSheets] = useState<string | null>(null)
   const {
     espacioActivo,
     esFamiliar,
@@ -77,6 +74,10 @@ export default function PerfilScreen() {
   const [driveLoading, setDriveLoading] = useState(true)
   const [driveConnecting, setDriveConnecting] = useState(false)
   const [driveBacking, setDriveBacking] = useState(false)
+  const [driveSyncOk, setDriveSyncOk] = useState(false)
+  const [folderDraft, setFolderDraft] = useState('')
+  const [sheetDraft, setSheetDraft] = useState('')
+  const [guardandoDriveCfg, setGuardandoDriveCfg] = useState(false)
   const [msgDrive, setMsgDrive] = useState<string | null>(null)
   const [errDrive, setErrDrive] = useState<string | null>(null)
 
@@ -90,11 +91,16 @@ export default function PerfilScreen() {
 
   useEffect(() => {
     driveApi.status()
-      .then(({ data }) => { setDriveConnected(data.connected); setDriveEmail(data.email) })
+      .then(({ data }) => {
+        setDriveConnected(data.connected)
+        setDriveEmail(data.email)
+        setFolderDraft(data.folder_id || '')
+        setSheetDraft(data.sheet_id || '')
+        if (data.connected) setDriveSyncOk(true)
+      })
       .catch(() => {})
       .finally(() => setDriveLoading(false))
   }, [])
-
   useEffect(() => {
     if (espacioActivo?.modo_reparto) {
       setModoReparto(espacioActivo.modo_reparto as ModoReparto)
@@ -229,6 +235,9 @@ export default function PerfilScreen() {
       await driveApi.disconnect()
       setDriveConnected(false)
       setDriveEmail('')
+      setDriveSyncOk(false)
+      setFolderDraft('')
+      setSheetDraft('')
       setMsgDrive('Google Drive desconectado.')
     } catch (e) {
       setErrDrive(apiErrorMessage(e) || 'No se pudo desconectar Drive.')
@@ -242,6 +251,8 @@ export default function PerfilScreen() {
     setErrDrive(null)
     try {
       const { data } = await driveApi.backupEspacio(espacioActivo.id)
+      if (data.folder_id) setFolderDraft(data.folder_id)
+      setDriveSyncOk(true)
       const msg = `Respaldo subido: ${data.archivo.nombre}`
         + (data.eliminados > 0 ? ` (${data.eliminados} antiguo(s) eliminado(s))` : '')
       setMsgDrive(msg)
@@ -249,6 +260,27 @@ export default function PerfilScreen() {
       setErrDrive(apiErrorMessage(e) || 'No se pudo subir el respaldo a Drive.')
     } finally {
       setDriveBacking(false)
+    }
+  }
+
+  const handleGuardarDriveConfig = async () => {
+    if (guardandoDriveCfg || !driveConnected) return
+    setGuardandoDriveCfg(true)
+    setMsgDrive(null)
+    setErrDrive(null)
+    try {
+      const { data } = await driveApi.updateConfig({
+        folder_id: folderDraft.trim(),
+        sheet_id: sheetDraft.trim(),
+      })
+      setFolderDraft(data.folder_id || '')
+      setSheetDraft(data.sheet_id || '')
+      setDriveSyncOk(true)
+      setMsgDrive('Ids de respaldo guardados.')
+    } catch (e) {
+      setErrDrive(apiErrorMessage(e) || 'No se pudo guardar la configuración.')
+    } finally {
+      setGuardandoDriveCfg(false)
     }
   }
 
@@ -311,28 +343,6 @@ export default function PerfilScreen() {
       setPasswordError(msg)
     } finally {
       setCambiandoPassword(false)
-    }
-  }
-
-  const handleSincronizarSheets = async () => {
-    if (sincronizandoSheets) return
-    setSincronizandoSheets(true)
-    setMsgSheets(null)
-    setErrSheets(null)
-    try {
-      const { data } = await exportApi.sincronizarGoogleSheets()
-      if (data.ok && data.resumen?.length) {
-        const total = data.resumen.reduce((a, r) => a + r.filas, 0)
-        setMsgSheets(
-          `Google Sheets: ${data.resumen.length} hoja(s), ${total} filas de datos.`
-        )
-      } else {
-        setMsgSheets('Sincronización completada.')
-      }
-    } catch (err: unknown) {
-      setErrSheets(apiErrorMessage(err) || 'No se pudo sincronizar con Google Sheets.')
-    } finally {
-      setSincronizandoSheets(false)
     }
   }
 
@@ -490,9 +500,11 @@ export default function PerfilScreen() {
 
         {espacioActivo && (
           <View className="bg-white border border-border rounded-xl p-4 mb-4">
-            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Respaldo espacio</Text>
+            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">
+              Respaldo de tus datos
+            </Text>
             <Text className="text-dark text-sm mb-3">
-              Exporta o importa un JSON del espacio activo ({espacioActivo.nombre}).
+              Solo el espacio activo ({espacioActivo.nombre}). Exporta o restaura un JSON local.
             </Text>
             <TouchableOpacity
               disabled={exportandoEspacio}
@@ -582,7 +594,7 @@ export default function PerfilScreen() {
             {driveConnected ? (
               <>
                 <Text className="text-dark text-sm mb-3">
-                  Conectado como {driveEmail || '—'}. Los respaldos se guardan en "Finanzas App Backups".
+                  Conectado como {driveEmail || '—'}. Sube el JSON del espacio activo a tu Drive.
                 </Text>
                 <TouchableOpacity
                   disabled={driveBacking || !espacioActivo}
@@ -603,6 +615,38 @@ export default function PerfilScreen() {
                 >
                   <Text className="text-muted font-semibold">Desconectar</Text>
                 </TouchableOpacity>
+                {driveSyncOk ? (
+                  <View className="mt-3 pt-3 border-t border-border">
+                    <Text className="text-xs text-muted mb-2">
+                      folder_id / sheet_id (opcional, tras conectar o respaldar)
+                    </Text>
+                    <TextInput
+                      value={folderDraft}
+                      onChangeText={setFolderDraft}
+                      placeholder="folder_id"
+                      autoCapitalize="none"
+                      className="border border-border rounded-lg px-3 py-2 text-dark text-sm mb-2 bg-white"
+                    />
+                    <TextInput
+                      value={sheetDraft}
+                      onChangeText={setSheetDraft}
+                      placeholder="sheet_id"
+                      autoCapitalize="none"
+                      className="border border-border rounded-lg px-3 py-2 text-dark text-sm mb-2 bg-white"
+                    />
+                    <TouchableOpacity
+                      disabled={guardandoDriveCfg}
+                      onPress={() => void handleGuardarDriveConfig()}
+                      className={`rounded-xl py-3 items-center ${guardandoDriveCfg ? 'bg-border' : 'bg-dark'}`}
+                    >
+                      {guardandoDriveCfg ? (
+                        <ActivityIndicator color="#ffffff" />
+                      ) : (
+                        <Text className="text-white font-semibold">Guardar ids</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </>
             ) : (
               <>
@@ -626,29 +670,6 @@ export default function PerfilScreen() {
             {errDrive ? <Text className="text-danger text-xs mt-2">{errDrive}</Text> : null}
           </View>
         )}
-
-        {user.rol === 'ADMIN' ? (
-          <View className="bg-white border border-border rounded-xl p-4 mb-4">
-            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Respaldo</Text>
-            <Text className="text-dark text-sm mb-3">
-              Sincroniza los datos con el Google Sheet configurado en el servidor (igual que el respaldo
-              automático).
-            </Text>
-            <TouchableOpacity
-              disabled={sincronizandoSheets}
-              onPress={() => void handleSincronizarSheets()}
-              className={`rounded-xl py-3 items-center ${sincronizandoSheets ? 'bg-border' : 'bg-dark'}`}
-            >
-              {sincronizandoSheets ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text className="text-white font-semibold">Sincronizar con Google Sheets</Text>
-              )}
-            </TouchableOpacity>
-            {msgSheets ? <Text className="text-success text-xs mt-2">{msgSheets}</Text> : null}
-            {errSheets ? <Text className="text-danger text-xs mt-2">{errSheets}</Text> : null}
-          </View>
-        ) : null}
 
         <View className="bg-white border border-border rounded-xl p-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Sesión</Text>

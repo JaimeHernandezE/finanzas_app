@@ -51,10 +51,10 @@ class TestCandadoExportGlobal:
         # Con el candado abierto, la validación del token vuelve a operar.
         assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_sincronizar_bloqueado_sin_flag(self, client, db, usuario, auth_header):
+    def test_sincronizar_app_retirado(self, client, db, usuario, auth_header):
+        """La sync Sheets desde la app ya no existe; el global de instancia es el dump PG."""
         resp = client.post('/api/export/sincronizar/', **auth_header)
-        assert resp.status_code == status.HTTP_403_FORBIDDEN
-        assert 'ALLOW_GLOBAL_EXPORT' in resp.data['error']
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
 
 
 # ── Dump de BD completa ──────────────────────────────────────────────────────
