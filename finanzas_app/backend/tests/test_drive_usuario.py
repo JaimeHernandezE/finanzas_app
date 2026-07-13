@@ -82,7 +82,8 @@ class TestDriveConnect:
             resp = client.post('/api/espacios/drive/connect/', **auth_header)
             assert resp.status_code == 200
             assert 'auth_url' in resp.data
-            assert 'accounts.google' in resp.data['auth_url']
+            assert 'https://accounts.google.com/o/oauth2/v2/auth' in resp.data['auth_url']
+            assert 'accounts.googleapis.com' not in resp.data['auth_url']
             assert 'drive.file' in resp.data['auth_url']
 
     def test_connect_sin_credenciales_falla(self, client, usuario, auth_header):

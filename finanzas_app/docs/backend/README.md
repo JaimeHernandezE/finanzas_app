@@ -119,7 +119,7 @@ Base del plan multitenant (`docs/PLAN-MULTITENANT-Y-ENTORNO-A-B.md`). Estado: es
 |---|---|
 | `Espacio` | Tenant: `tipo PERSONAL\|FAMILIAR`, `modo_reparto` (`PROPORCIONAL`/`PARTES_IGUALES`/`SIN_REPARTO`, solo FAMILIAR), `activo`, `archivado` (familias disueltas quedan como registro histórico de solo lectura). |
 | `PertenenciaEspacio` | Membresía usuario↔espacio con `rol` (`ADMIN`/`MIEMBRO`) y `activo`. Única por `(usuario, espacio)`. |
-| `ConfiguracionRespaldoUsuario` | Destinos de respaldo por usuario (`drive_folder_id`, `sheet_id`). Tokens OAuth llegan cifrados en Fase 5. |
+| `ConfiguracionRespaldoUsuario` | Destinos de respaldo por usuario (`drive_folder_id`, `sheet_id`). OAuth Drive por usuario: refresh token cifrado, email y `drive_connected`. |
 | `TenantModel` (abstracto) | Base para modelos con datos de tenant: FK `espacio` (PROTECT) y manager que **lanza `TenantScopeError`** ante cualquier acceso sin `.en_espacio(espacio)`; `.sin_aislamiento()` solo para commands de operación. |
 | `services.crear_espacio_personal(usuario)` | Idempotente; garantiza el espacio personal (usuario como ADMIN). La señal `post_save` de `Usuario` lo invoca para todo usuario nuevo. |
 | `contexto.resolver_espacio_activo(request, usuario)` | Resuelve `X-Espacio-Id`: sin header → espacio personal; header inválido → 400; sin membresía activa → 403 (nunca fallback silencioso). |
@@ -132,6 +132,11 @@ Endpoints (`/api/espacios/`, Bearer Firebase o JWT demo):
 | `GET /api/espacios/mios/` | Espacios del usuario (para el selector): id, nombre, tipo, `modo_reparto`, rol. |
 | `GET /api/espacios/activo/` | Espacio activo resuelto para el request (header `X-Espacio-Id` o personal). |
 | `PATCH /api/espacios/<id>/` | Actualiza `nombre` y/o `modo_reparto` (solo ADMIN del espacio; `modo_reparto` solo FAMILIAR no archivado; bloqueado en demo). |
+| `GET /api/espacios/drive/status/` | Estado de conexión Drive del usuario. |
+| `POST /api/espacios/drive/connect/` | Inicia OAuth (`auth_url` → `https://accounts.google.com/o/oauth2/v2/auth`). Requiere `GOOGLE_DRIVE_OAUTH_CLIENT_ID` y `…_CLIENT_SECRET` en el backend. |
+| `GET /api/espacios/drive/callback/` | Callback OAuth (registrar esta URI en Google Cloud). |
+| `POST /api/espacios/drive/disconnect/` | Revoca token y desconecta Drive. |
+| `POST /api/espacios/<id>/backup-drive/` | Exporta el espacio al Drive del usuario. |
 
 ## Mapa técnico de modelos `finanzas`
 

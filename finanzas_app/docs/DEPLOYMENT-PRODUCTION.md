@@ -102,7 +102,10 @@ Para evitar acoplarte a un proveedor (Render/Railway/etc.), usa nombres de secre
 | `SECRET_KEY_DEMO` | **Backend demo (entorno)** y **GitHub Actions Secrets** | Runtime de la instancia demo y workflow `reset-demo-nightly.yml`. |
 | `BACKEND_BASE_URL` | **GitHub Actions Secrets** | URL base del backend para jobs HTTP (`export-sheets.yml`). Ejemplo: `https://tu-backend.up.railway.app`. |
 | `EXPORT_SECRET_TOKEN` | **Backend (entorno)** y **GitHub Actions Secrets** | Header `X-Export-Token` para proteger `/api/export/sheets/`. Debe ser el mismo valor en ambos lados. |
-| `GOOGLE_DRIVE_OAUTH_*`, `GOOGLE_DRIVE_BACKUP_FOLDER_ID` | **GitHub Actions Secrets** | Credenciales del workflow de backup `pg_dump` a Google Drive. |
+| `GOOGLE_DRIVE_OAUTH_CLIENT_ID`, `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` | **Backend (entorno)** y **GitHub Actions Secrets** | Cliente OAuth web («Drive para respaldos»). En Railway hacen falta para «Conectar Google Drive» por usuario; en Actions, para el backup `pg_dump`. |
+| `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN`, `GOOGLE_DRIVE_BACKUP_FOLDER_ID` | **GitHub Actions Secrets** (y opcional backend) | Solo backup **global** de BD a una carpeta fija. No las usa el OAuth por usuario. |
+
+**OAuth por usuario (Drive):** en Google Cloud → Credenciales → cliente web, añade la URI de redirección exacta del API, p. ej. `https://<tu-backend>.up.railway.app/api/espacios/drive/callback/` (y `http://localhost:8000/api/espacios/drive/callback/` en local). El endpoint de autorización es `https://accounts.google.com/o/oauth2/v2/auth` (dominio `accounts.google.com`).
 
 #### GitHub Actions: dónde cargarlos
 

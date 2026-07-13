@@ -28,7 +28,8 @@ if TYPE_CHECKING:
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 TOKEN_URI = 'https://oauth2.googleapis.com/token'
-AUTH_URI = 'https://accounts.googleapis.com/o/oauth2/v2/auth'
+# Host correcto: accounts.google.com (no accounts.googleapis.com — ese host responde 404).
+AUTH_URI = 'https://accounts.google.com/o/oauth2/v2/auth'
 USERINFO_URI = 'https://www.googleapis.com/oauth2/v3/userinfo'
 
 BACKUP_PREFIX = 'finanzas_espacio_'
