@@ -52,20 +52,21 @@ Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase
 
 ### Frontend web demo (Railway)
 
-Configuración del servicio frontend:
+### Frontend web (Railway) — servicio `finanzas_app`
 
-| Setting | Valor |
-|---------|--------|
-| **Root Directory** | `finanzas_app` (carpeta que contiene `frontend/` y `shared/`) |
-| **Config file** | `/finanzas_app/railway.toml` |
-| **Build** | `cd frontend && npm ci && npm run build` (ya en `railway.toml`) |
-| **Start** | `cd frontend && npm run start` |
+El build importa `@finanzas/shared`. Railway suele usar **Root Directory = `finanzas_app/frontend`** (el `railway.toml` de la raíz del monorepo a veces no se aplica a ese servicio).
 
-Railpack instala Node solo si detecta `package.json` en la raíz del Root Directory. Por eso existe `finanzas_app/package.json` (sin dependencias de app). Sin ese archivo, el build falla con `npm: not found`.
+**Solución en el repo:** copia de `shared/` en `frontend/shared/` (sincronizada con `npm run sync-shared` antes de commitear cambios en `shared/`). El `prebuild` la refresca si `../shared` existe.
 
-Los *watch paths* en `railway.toml` usan `frontend/**` y `shared/**` (relativos al Root Directory).
+| Setting | Valor típico |
+|---------|----------------|
+| **Root Directory** | `finanzas_app/frontend` |
+| **Build** | (auto) `npm install && npm run build` — incluye `prebuild` → `sync-shared` |
+| **Start** | `npm run start` |
 
-Si el Root Directory es solo `finanzas_app/frontend`, el build falla al no encontrar `shared/` (`Could not load /shared/utils/...`).
+Si cambias archivos en `finanzas_app/shared/`, ejecuta `cd frontend && npm run sync-shared` y commitea `frontend/shared/` antes del deploy.
+
+**Alternativa:** Root Directory = `finanzas_app` + Config file `/finanzas_app/railway.toml` (build `cd frontend && npm ci && npm run build`). Requiere `finanzas_app/package.json` en el repo para que Railpack instale Node.
 
 Variables de entorno:
 

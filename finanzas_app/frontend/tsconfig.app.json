@@ -14,8 +14,8 @@
     "strict": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@finanzas/shared": ["../shared"],
-      "@finanzas/shared/*": ["../shared/*"]
+      "@finanzas/shared": ["./shared"],
+      "@finanzas/shared/*": ["./shared/*"]
     }
   },
   "include": ["src"]

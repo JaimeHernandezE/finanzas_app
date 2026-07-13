@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/sync-shared.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "serve dist --single --listen tcp://0.0.0.0:$PORT"
+    "start": "serve dist --single --listen tcp://0.0.0.0:$PORT",
+    "sync-shared": "node scripts/sync-shared.mjs"
   },
   "dependencies": {
-    "@finanzas/shared": "file:../shared",
+    "@finanzas/shared": "file:./shared",
     "axios": "^1.13.6",
     "firebase": "^11.0.0",
     "i18next": "^26.0.3",

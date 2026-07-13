@@ -21,9 +21,7 @@ function resolveSharedDir(): string {
     }
   }
   throw new Error(
-    'No se encontró @finanzas/shared. En Railway usa Root Directory = finanzas_app ' +
-      '(no finanzas_app/frontend) y build: cd frontend && npm ci && npm run build. ' +
-      'Ver docs/DEPLOYMENT-PRODUCTION.md',
+    'No se encontró @finanzas/shared. Ejecuta npm run sync-shared y commitea frontend/shared/.',
   )
 }
 
