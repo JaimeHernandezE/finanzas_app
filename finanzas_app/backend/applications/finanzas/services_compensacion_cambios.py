@@ -201,6 +201,12 @@ def _etiqueta_mes(mes_pd: date) -> str:
     return f'{_MESES_ES[mes_pd.month - 1]} {mes_pd.year}'
 
 
+def _es_mes_actual(mes_pd: date) -> bool:
+    """El mes en curso se recalcula en vivo; no se envían notificaciones de compensación."""
+    hoy = timezone.localdate()
+    return mes_pd.year == hoy.year and mes_pd.month == hoy.month
+
+
 def _compensacion_desde_payload(payload: dict | None) -> dict:
     if not payload:
         return {'por_usuario': [], 'transferencias_sugeridas': []}
@@ -320,6 +326,9 @@ def registrar_cambio_y_notificar(
 ) -> CambioCompensacionMensual | None:
     delta = detectar_cambios_compensacion(payload_antes, payload_despues)
     if delta is None:
+        return None
+
+    if _es_mes_actual(mes_pd):
         return None
 
     cambio = CambioCompensacionMensual.objects.create(

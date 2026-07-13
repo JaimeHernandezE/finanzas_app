@@ -9,6 +9,15 @@ from applications.usuarios.models import Usuario, Familia
 from applications.finanzas.models import Categoria, IngresoComun, MetodoPago, Movimiento, Tarjeta
 from applications.espacios.models import PertenenciaEspacio
 from applications.espacios.services import espacio_para_familia
+from tests.support.db_guard import exigir_base_de_prueba
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _verificar_base_datos_de_prueba(django_db_setup):
+    """Aborta si pytest no está usando una base test_* (evita contaminar finanzas_db)."""
+    from django.db import connection
+
+    exigir_base_de_prueba(connection.settings_dict['NAME'])
 
 
 # ── Fixtures de base de datos ─────────────────────────────────────────────────

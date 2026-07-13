@@ -1,0 +1,25 @@
+---
+description: Reglas para ejecutar tests sin contaminar la BD de desarrollo
+alwaysApply: true
+---
+
+# Regla estricta de pruebas (pytest)
+
+La base de datos de desarrollo (`finanzas_db` en Docker local) **no debe usarse para crear datos de prueba**.
+
+## Prohibido
+
+- Ejecutar `docker-compose exec web python -c "..."` (o scripts inline) que importen modelos Django y **escriban** en la BD.
+- Crear movimientos, usuarios u otros registros “para probar” con `manage.py shell` salvo que el usuario lo pida explícitamente para su entorno de desarrollo.
+- Ejecutar pytest con variables de entorno que apunten a `finanzas_db` en lugar de la base `test_*` que crea pytest-django.
+
+## Obligatorio
+
+- Ejecutar tests **solo** con pytest dentro del contenedor:
+  `docker-compose exec web pytest tests/ -v`
+- Si hace falta depurar lógica, añadir o usar un test en `backend/tests/` (con `-s` o `--pdb` si conviene), no un script ad hoc contra `finanzas_db`.
+- Tras modificar modelos, recordar al usuario que ejecute `makemigrations` y `migrate` manualmente (ver regla de migraciones).
+
+## Contexto
+
+pytest-django crea y destruye `test_finanzas_db` automáticamente. Los datos creados ahí no afectan `finanzas_db`. Un script `python -c` contra el contenedor `web` usa `finanzas_db` y puede dejar “gastos fantasma” en desarrollo.

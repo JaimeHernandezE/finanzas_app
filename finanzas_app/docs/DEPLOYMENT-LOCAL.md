@@ -136,6 +136,7 @@ docker-compose ps
 2. **Día a día**: `docker-compose up -d` (o `docker-compose up` si quieres ver logs).
 3. **Tras cambiar modelos**: ejecutar tú mismo `makemigrations` y `migrate` (ver regla en `.cursor/rules/django-migrations.mdc`).
 4. **Tras cambiar `requirements.txt` o Dockerfile**: `docker-compose up -d --build web`.
+5. **Tests del backend**: usar solo pytest (`docker-compose exec web pytest tests/ -v` o `backend/scripts/run_tests.ps1`). No ejecutar scripts `python -c` ni crear datos de prueba en `manage.py shell` — eso escribe en `finanzas_db` y puede dejar registros fantasma. Ver [backend/TESTING.md](backend/TESTING.md).
 
 ## Hot reload (frontend)
 

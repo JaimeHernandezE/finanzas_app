@@ -174,6 +174,56 @@ class TestCompensacionCambios:
         assert CambioCompensacionMensual.objects.filter(espacio=espacio_familiar).exists()
         assert NotificacionUsuario.objects.filter(usuario=usuario_2).exists()
 
+    @patch('applications.finanzas.services_compensacion_cambios.timezone.localdate')
+    @patch('applications.finanzas.services_recalculo.timezone.localdate')
+    def test_mes_actual_no_notifica_cambio_compensacion(
+        self,
+        mock_hoy_recalculo,
+        mock_hoy_compensacion,
+        espacio_familiar,
+        usuario,
+        usuario_2,
+        categoria_egreso,
+        metodo_efectivo,
+    ):
+        mock_hoy_recalculo.return_value = date(2026, 7, 10)
+        mock_hoy_compensacion.return_value = date(2026, 7, 10)
+        mes_pd = date(2026, 7, 1)
+
+        IngresoComun.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario,
+            mes=mes_pd,
+            monto=Decimal('1000000'),
+            origen='Sueldo',
+        )
+        IngresoComun.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario_2,
+            mes=mes_pd,
+            monto=Decimal('1000000'),
+            origen='Sueldo',
+        )
+
+        NotificacionUsuario.objects.all().delete()
+        CambioCompensacionMensual.objects.all().delete()
+
+        Movimiento.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario,
+            fecha=date(2026, 7, 10),
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto=Decimal('200000'),
+            metodo_pago=metodo_efectivo,
+        )
+
+        assert not CambioCompensacionMensual.objects.filter(espacio=espacio_familiar).exists()
+        assert not NotificacionUsuario.objects.filter(
+            tipo=NotificacionUsuario.TIPO_CAMBIO_COMPENSACION,
+        ).exists()
+
     @patch('applications.finanzas.services_recalculo.timezone.localdate')
     def test_notificacion_respeta_moneda_display_destinatario(
         self,

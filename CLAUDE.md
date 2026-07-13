@@ -207,10 +207,12 @@ In development these are set inside `docker-compose.yml`. Never hardcode secrets
 
 ## Testing
 
-No tests are implemented yet. When adding tests:
-- Place them in `tests/` inside each Django app.
-- Use Django's `TestCase` or DRF's `APITestCase`.
-- Run with: `docker-compose exec web python manage.py test`
+Tests live in `backend/tests/` and use **pytest** + **pytest-django**.
+
+- Run with: `docker-compose exec web pytest tests/ -v` (or `backend/scripts/run_tests.ps1`)
+- pytest-django uses an isolated database `test_finanzas_db`, **not** the dev database `finanzas_db`
+- **Never** run ad-hoc `python -c` scripts or create test data via `manage.py shell` against the dev DB — this can leave phantom records in development
+- See `docs/backend/TESTING.md` and `.cursor/rules/django-testing.mdc`
 
 ---
 

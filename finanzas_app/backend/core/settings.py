@@ -142,6 +142,10 @@ else:
         }
     }
 
+# pytest-django usa esta base aislada; nunca escribe en finanzas_db durante los tests.
+_dev_db_name = DATABASES['default']['NAME']
+DATABASES['default'].setdefault('TEST', {'NAME': f'test_{_dev_db_name}'})
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

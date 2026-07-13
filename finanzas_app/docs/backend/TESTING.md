@@ -2,6 +2,21 @@
 
 Las pruebas automatizadas del backend usan **pytest** y **pytest-django**. Los tests viven en `backend/tests/` y no realizan llamadas reales a Firebase: la autenticación se mockea en los fixtures para poder ejecutar los tests sin credenciales ni red.
 
+## Base de datos aislada (importante)
+
+En Docker local, el servicio `web` usa la base de **desarrollo** `finanzas_db`. Los tests **no** deben escribir ahí.
+
+| Forma de ejecutar | Base usada | ¿Seguro? |
+|-------------------|------------|----------|
+| `docker-compose exec web pytest tests/ -v` | `test_finanzas_db` (creada y destruida por pytest) | Sí |
+| `backend/scripts/run_tests.ps1` / `run_tests.sh` | Igual que arriba | Sí |
+| `docker-compose exec web python -c "..."` con modelos Django | `finanzas_db` | **No** — puede dejar datos fantasma |
+| `manage.py shell` creando registros “para probar” | `finanzas_db` | **No** — solo si quieres datos reales de desarrollo |
+
+pytest-django crea automáticamente `test_finanzas_db` (configurada en `core/settings.py` → `DATABASES['default']['TEST']`). Un fixture de sesión en `tests/conftest.py` aborta la ejecución si el nombre de la base no empieza por `test_`.
+
+**Nunca uses scripts ad hoc (`python -c`, one-liners en el contenedor) para crear movimientos u otros datos de prueba.** Si necesitas depurar, añade un test temporal en `backend/tests/` o usa `pytest -s --pdb`.
+
 ## Requisitos
 
 Dependencias en `backend/requirements.txt`:
@@ -60,6 +75,12 @@ Fixtures compartidos:
 Desde el directorio `backend/` (o desde la raíz del repo ajustando la ruta del comando):
 
 ```bash
+# Atajo recomendado (PowerShell, desde backend/)
+.\scripts\run_tests.ps1 tests/ -v
+
+# Atajo en Linux/macOS
+./scripts/run_tests.sh tests/ -v
+
 # Todos los tests
 docker-compose exec web pytest tests/ -v
 
