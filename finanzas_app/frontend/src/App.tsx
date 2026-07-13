@@ -32,6 +32,7 @@ import CuentasPage from '@/pages/configuracion/CuentasPage'
 import MiembrosPage from '@/pages/configuracion/MiembrosPage'
 import InvitacionesRecibidasPage from '@/pages/configuracion/InvitacionesRecibidasPage'
 import PerfilPage from '@/pages/configuracion/PerfilPage'
+import NotificacionesPage from '@/pages/configuracion/NotificacionesPage'
 import ImportadorCuentaPersonalPage from '@/pages/configuracion/ImportadorCuentaPersonalPage'
 import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorariosPage'
 import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
@@ -88,6 +89,11 @@ function AppRoutes() {
 
         <Route path="liquidacion" element={<LiquidacionPage />} />
         <Route path="presupuesto" element={<PresupuestoPage />} />
+        <Route
+          path="notificaciones"
+          element={ES_DEMO ? <Navigate to="/dashboard" replace /> : <NotificacionesPage />}
+        />
+        <Route path="configuracion/notificaciones" element={<Navigate to="/notificaciones" replace />} />
 
         {ES_DEMO ? (
           <>

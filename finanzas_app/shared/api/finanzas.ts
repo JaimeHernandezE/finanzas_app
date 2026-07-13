@@ -107,6 +107,23 @@ export interface DashboardResumenApi {
   desglose_saldo: DashboardResumenDesgloseSaldoItem[]
 }
 
+export interface NotificacionUsuarioApi {
+  id: number
+  tipo: string
+  titulo: string
+  mensaje: string
+  payload: Record<string, unknown>
+  espacio_id: number
+  leida: boolean
+  leida_at: string | null
+  creado_at: string
+}
+
+export interface NotificacionesListaResp {
+  notificaciones: NotificacionUsuarioApi[]
+  no_leidas: number
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),
@@ -189,4 +206,18 @@ export const finanzasApi = {
       { montos },
       { params: { mes, anio } },
     ),
+
+  getNotificaciones: (soloNoLeidas = false) =>
+    client.get<NotificacionesListaResp>('/api/finanzas/notificaciones/', {
+      params: soloNoLeidas ? { solo_no_leidas: '1' } : undefined,
+    }),
+
+  getNotificacionesNoLeidasCount: () =>
+    client.get<{ no_leidas: number }>('/api/finanzas/notificaciones/no-leidas/'),
+
+  marcarNotificacionLeida: (id: number) =>
+    client.post<NotificacionUsuarioApi>(`/api/finanzas/notificaciones/${id}/leida/`),
+
+  marcarTodasNotificacionesLeidas: () =>
+    client.post<{ marcadas: number }>('/api/finanzas/notificaciones/marcar-todas-leidas/'),
 }

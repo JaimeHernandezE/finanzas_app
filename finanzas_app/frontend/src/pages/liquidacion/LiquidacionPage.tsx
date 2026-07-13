@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useApi } from '@/hooks/useApi'
 import { finanzasApi } from '@/api'
 import { Cargando, ErrorCarga } from '@/components/ui'
@@ -146,9 +147,16 @@ function FilaTotal({ label, monto }: { label: string; monto: number }) {
 
 export default function LiquidacionPage() {
   const { formatMonto } = useConfig()
+  const [searchParams] = useSearchParams()
   const hoy = new Date()
-  const [mes, setMes] = useState(hoy.getMonth())
-  const [anio, setAnio] = useState(hoy.getFullYear())
+  const mesParam = Number(searchParams.get('mes'))
+  const anioParam = Number(searchParams.get('anio'))
+  const [mes, setMes] = useState(
+    mesParam >= 1 && mesParam <= 12 ? mesParam - 1 : hoy.getMonth()
+  )
+  const [anio, setAnio] = useState(
+    anioParam >= 2000 ? anioParam : hoy.getFullYear()
+  )
 
   const { data: liquidacionData, loading, error } = useApi(
     () => finanzasApi.getLiquidacion(mes + 1, anio),

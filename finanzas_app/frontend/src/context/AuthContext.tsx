@@ -689,12 +689,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
   }
 
-  // Cierre de sesión automático tras 5 minutos de inactividad
+  // Cierre de sesión automático tras 5 minutos de inactividad (solo fuera de desarrollo local)
   const logoutRef = useRef(logout)
   logoutRef.current = logout
   const INACTIVITY_MS = 5 * 60 * 1000
   useEffect(() => {
-    if (!usuario) return
+    if (!usuario || import.meta.env.DEV) return
 
     let timeoutId: ReturnType<typeof setTimeout>
 

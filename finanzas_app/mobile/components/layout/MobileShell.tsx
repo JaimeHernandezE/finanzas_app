@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useCallback, useMemo, useState } from 'react'
 import {
   Modal,
   Pressable,
@@ -8,7 +8,9 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native'
-import { usePathname, useRouter } from 'expo-router'
+import { usePathname, useRouter, useFocusEffect, useNavigation } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
+import { abrirNotificaciones } from '../../lib/navegacionNotificaciones'
 import { useAuth } from '../../context/AuthContext'
 import { useEspacio } from '../../context/EspacioContext'
 import { useApi } from '@finanzas/shared/hooks/useApi'
@@ -87,6 +89,22 @@ export function MobileShell({ title, children }: MobileShellProps) {
     () => cuentas.filter((c) => !c.es_propia).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')),
     [cuentas]
   )
+
+  const { data: notifCount, refetch: refetchNotifCount } = useApi<{ no_leidas: number }>(
+    async () => {
+      if (!user) return { data: { no_leidas: 0 } }
+      return finanzasApi.getNotificacionesNoLeidasCount()
+    },
+    [user?.email ?? '']
+  )
+
+  useFocusEffect(
+    useCallback(() => {
+      if (user) void refetchNotifCount()
+    }, [user?.email, refetchNotifCount])
+  )
+
+  const noLeidas = notifCount?.no_leidas ?? 0
 
   const inicial = useMemo(() => {
     if (!user?.nombre) return '?'
@@ -170,12 +188,28 @@ export function MobileShell({ title, children }: MobileShellProps) {
           <Text className="flex-1 text-center text-dark font-bold text-base" numberOfLines={1}>
             {title}
           </Text>
-          <TouchableOpacity
-            onPress={() => router.push('/perfil' as never)}
-            className="w-10 h-10 rounded-full bg-dark items-center justify-center"
-          >
-            <Text className="text-accent font-bold text-sm">{inicial}</Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => abrirNotificaciones(router, pathname)}
+              className="w-10 h-10 rounded-lg bg-dark items-center justify-center"
+              accessibilityLabel="Notificaciones"
+            >
+              <Ionicons name="notifications-outline" size={20} color="#c8f060" />
+              {noLeidas > 0 ? (
+                <View className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-danger border-2 border-white items-center justify-center px-1">
+                  <Text className="text-white text-[10px] font-bold leading-none">
+                    {noLeidas > 99 ? '99+' : noLeidas}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => router.push('/perfil' as never)}
+              className="w-10 h-10 rounded-full bg-dark items-center justify-center"
+            >
+              <Text className="text-accent font-bold text-sm">{inicial}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 

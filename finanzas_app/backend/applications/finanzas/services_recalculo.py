@@ -435,11 +435,29 @@ def meses_afectados_por_ingreso_comun(
     return meses
 
 
-def dispatch_recalculo_multiples_meses(espacio_id: int, meses: set[date]) -> None:
-    """Varios meses afectados (p. ej. cambio de fecha): recálculo inmediato puntual."""
+def dispatch_recalculo_multiples_meses(
+    espacio_id: int,
+    meses: set[date],
+    *,
+    refrescar_resumen_compensacion: bool = False,
+) -> None:
+    """Recalcula snapshots de los meses indicados; opcionalmente refresca resumen de compensación."""
     if not meses:
         return
-    recalcular_familia_meses(espacio_id, meses)
+    meses_norm = sorted({primer_dia_mes(m) for m in meses})
+    recalcular_familia_meses(espacio_id, meses_norm)
+    if not refrescar_resumen_compensacion:
+        return
+    from .recalculo_context import get_recalculo_context
+
+    ctx = get_recalculo_context()
+    suprimir = bool(ctx and ctx.suprimir_notificaciones)
+    for mes in meses_norm:
+        refrescar_resumen_historico_mes(
+            espacio_id,
+            mes,
+            registrar_cambios=not suprimir,
+        )
 
 
 def procesar_recalculos_pendientes(limit_familias: int | None = None) -> int:
@@ -593,6 +611,93 @@ def _total_comun_neto_familia_mes(espacio_id: int, mes_pd: date) -> Decimal:
     return ing - egr
 
 
+def _gasto_comun_registrado_usuario_mes(
+    usuario_id: int, espacio_id: int, mes_pd: date
+) -> Decimal:
+    """
+    Total positivo de gastos comunes registrados en el mes (misma base que GET liquidación).
+    Egresos efectivo/débito + cuotas de crédito pendientes facturadas en el mes.
+    """
+    egr = (
+        Movimiento.objects.filter(
+            espacio_id=espacio_id,
+            usuario_id=usuario_id,
+            ambito='COMUN',
+            tipo='EGRESO',
+            oculto=False,
+            fecha__year=mes_pd.year,
+            fecha__month=mes_pd.month,
+        )
+        .exclude(metodo_pago__tipo='CREDITO')
+        .aggregate(t=Sum('monto'))['t']
+    )
+    cuotas = (
+        Cuota.objects.filter(
+            movimiento__espacio_id=espacio_id,
+            movimiento__usuario_id=usuario_id,
+            movimiento__ambito='COMUN',
+            movimiento__tipo='EGRESO',
+            movimiento__oculto=False,
+            movimiento__metodo_pago__tipo='CREDITO',
+            incluir=True,
+            mes_facturacion__month=mes_pd.month,
+            mes_facturacion__year=mes_pd.year,
+            estado='PENDIENTE',
+        )
+        .aggregate(t=Sum('monto'))['t']
+    )
+    total = (egr or Decimal('0')) + (cuotas or Decimal('0'))
+    return total.quantize(Decimal('0.01'))
+
+
+def _compensacion_estilo_liquidacion(
+    espacio_id: int,
+    mes_pd: date,
+    miembros: list,
+    uid_to_nombre: dict[int, str],
+) -> tuple[list[dict], list[dict]]:
+    """
+    Compensación alineada con LiquidacionPage: pagado (gastos registrados positivos),
+    debería = prorrateo sobre total de gastos según ingresos declarados,
+    diferencia = pagado − debería (positivo → recibe, negativo → debe).
+    """
+    miembros_ids = [u.pk for u in miembros]
+    tot_ing = sum(
+        (_ingreso_comun_usuario_mes(espacio_id, uid, mes_pd) for uid in miembros_ids),
+        start=Decimal('0'),
+    )
+    pagados = {
+        uid: _gasto_comun_registrado_usuario_mes(uid, espacio_id, mes_pd)
+        for uid in miembros_ids
+    }
+    total_gastos = sum(pagados.values(), start=Decimal('0'))
+
+    por_usuario_comp: list[dict] = []
+    deltas: dict[int, Decimal] = {}
+
+    for uid in miembros_ids:
+        pagado = pagados[uid]
+        ing_mes = _ingreso_comun_usuario_mes(espacio_id, uid, mes_pd)
+        if tot_ing > Decimal('0'):
+            deberia = (total_gastos * ing_mes / tot_ing).quantize(Decimal('0.01'))
+        else:
+            deberia = Decimal('0')
+        diff = (pagado - deberia).quantize(Decimal('0.01'))
+        deltas[uid] = diff
+        por_usuario_comp.append(
+            {
+                'usuario_id': uid,
+                'nombre': uid_to_nombre[uid],
+                'pagado_efectivo': str(pagado),
+                'gasto_prorrateado': str(deberia),
+                'diferencia': str(diff),
+            }
+        )
+
+    transferencias = _transferencias_compensacion(deltas, uid_to_nombre)
+    return por_usuario_comp, transferencias
+
+
 def _efectivo_comun_neto_usuario_mes(usuario_id: int, espacio_id: int, mes_pd: date) -> Decimal:
     """
     Neto efectivo/débito ámbito COMÚN en el mes: suma ingresos como positivo y egresos como negativo
@@ -708,14 +813,20 @@ def efectivo_disponible_dashboard(usuario, espacio=None) -> dict:
     # En payloads puede venir con signo negativo; siempre restamos la magnitud para no convertir
     # "− D" en suma cuando D acumulado es negativo.
     gastos_prorrateados_resumen = z
-    for snap in ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id).exclude(
-        mes=mes_actual_pd
-    ):
-        for row in snap.payload.get('compensacion', {}).get('por_usuario', []):
-            if row.get('usuario_id') == uid:
-                gastos_prorrateados_resumen += abs(
-                    Decimal(str(row.get('gasto_prorrateado', '0')))
-                )
+    primero_datos = _primer_mes_datos_familia(espacio_id)
+    if primero_datos:
+        mes_fin_hist = ultimo_mes_cerrado(hoy)
+        for mes_pd in meses_desde_hasta(primero_datos, mes_fin_hist):
+            if mes_pd == mes_actual_pd:
+                continue
+            payload_mes = _obtener_payload_resumen_mes(espacio_id, mes_pd)
+            if not payload_mes:
+                continue
+            for row in payload_mes.get('compensacion', {}).get('por_usuario', []):
+                if row.get('usuario_id') == uid:
+                    gastos_prorrateados_resumen += abs(
+                        Decimal(str(row.get('gasto_prorrateado', '0')))
+                    )
     d_monto_restar = gastos_prorrateados_resumen
 
     # E — Mes actual: neto personal sin duplicar sueldos (excluye ingreso vinculado a IngresoComun) + neto común
@@ -843,12 +954,115 @@ def _transferencias_compensacion(
 
 
 def invalidar_snapshots_resumen_historico(espacio_id: int, meses: Iterable[date]) -> None:
-    """Elimina snapshots del resumen histórico para los meses indicados (primer día de mes)."""
+    """
+    Reconstruye snapshots de resumen para los meses indicados (sin recalcular liquidación/saldos).
+    Preferir `dispatch_recalculo_multiples_meses(..., refrescar_resumen_compensacion=True)`.
+    """
     if not espacio_id:
         return
+    from .recalculo_context import get_recalculo_context
+
+    ctx = get_recalculo_context()
+    suprimir = bool(ctx and ctx.suprimir_notificaciones)
     for m in meses:
-        mp = primer_dia_mes(m)
-        ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id, mes=mp).delete()
+        refrescar_resumen_historico_mes(
+            espacio_id,
+            primer_dia_mes(m),
+            registrar_cambios=not suprimir,
+        )
+
+
+def _obtener_payload_resumen_mes(
+    espacio_id: int,
+    mes_pd: date,
+    *,
+    persistir_si_falta: bool = True,
+) -> dict | None:
+    """Payload del resumen mensual; calcula y persiste si falta el snapshot."""
+    mes_pd = primer_dia_mes(mes_pd)
+    snap = ResumenHistoricoMesSnapshot.objects.filter(
+        espacio_id=espacio_id, mes=mes_pd
+    ).first()
+    if snap is not None:
+        return snap.payload
+    if not persistir_si_falta:
+        return None
+    row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
+    if row is None:
+        return None
+    ResumenHistoricoMesSnapshot.objects.update_or_create(
+        espacio_id=espacio_id,
+        mes=mes_pd,
+        defaults={'payload': row},
+    )
+    return row
+
+
+def refrescar_resumen_historico_mes(
+    espacio_id: int,
+    mes_pd: date,
+    *,
+    registrar_cambios: bool = True,
+    origen_tipo: str | None = None,
+    origen_id: int | None = None,
+    modificado_por_id: int | None = None,
+) -> int:
+    """
+    Recalcula y persiste el snapshot de resumen de un mes.
+    Si había snapshot previo y registrar_cambios, registra delta y notifica afectados.
+    Retorna 1 si se guardó fila, 0 si el mes no tiene datos.
+    """
+    from .models import CambioCompensacionMensual
+    from .recalculo_context import get_recalculo_context
+    from .services_compensacion_cambios import registrar_cambio_y_notificar
+
+    mes_pd = primer_dia_mes(mes_pd)
+    ctx = get_recalculo_context()
+    payload_antes = None
+    if ctx and ctx.payloads_resumen_antes:
+        payload_antes = ctx.payloads_resumen_antes.get(mes_pd.isoformat())
+    snap_ant = ResumenHistoricoMesSnapshot.objects.filter(
+        espacio_id=espacio_id, mes=mes_pd
+    ).first()
+    if payload_antes is None and snap_ant is not None:
+        payload_antes = snap_ant.payload
+
+    row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
+    if row is None:
+        if snap_ant:
+            ResumenHistoricoMesSnapshot.objects.filter(
+                espacio_id=espacio_id, mes=mes_pd
+            ).delete()
+        return 0
+
+    ResumenHistoricoMesSnapshot.objects.update_or_create(
+        espacio_id=espacio_id,
+        mes=mes_pd,
+        defaults={'payload': row},
+    )
+
+    if registrar_cambios and payload_antes is not None:
+        ctx = get_recalculo_context()
+        o_tipo = origen_tipo or (ctx.origen_tipo if ctx else CambioCompensacionMensual.ORIGEN_MOVIMIENTO)
+        o_id = origen_id if origen_id is not None else (ctx.origen_id if ctx else None)
+        mod_id = (
+            modificado_por_id
+            if modificado_por_id is not None
+            else (ctx.modificado_por_id if ctx else None)
+        )
+        if o_tipo is None:
+            o_tipo = CambioCompensacionMensual.ORIGEN_MOVIMIENTO
+        registrar_cambio_y_notificar(
+            espacio_id=espacio_id,
+            mes_pd=mes_pd,
+            payload_antes=payload_antes,
+            payload_despues=row,
+            origen_tipo=o_tipo,
+            origen_id=o_id,
+            modificado_por_id=mod_id,
+        )
+
+    return 1
 
 
 def calcular_resumen_mes(
@@ -892,8 +1106,9 @@ def calcular_resumen_mes(
     sueldos = []
     prorrateo_list = []
     esperado_list = []
-    por_usuario_comp = []
-    deltas: dict[int, Decimal] = {}
+    por_usuario_comp, transferencias = _compensacion_estilo_liquidacion(
+        espacio_id, mes_pd, miembros, uid_to_nombre
+    )
 
     for uid in miembros_ids:
         neto_mes = _efectivo_comun_neto_usuario_mes(uid, espacio_id, mes_pd)
@@ -902,9 +1117,6 @@ def calcular_resumen_mes(
         pct, esperado = calcular_esperado_prorrateo(
             espacio, uid, miembros_ids, tot_ing, neto_familiar, ing_mes
         )
-
-        diff = neto_mes - esperado
-        deltas[uid] = diff
 
         gastos_por_usuario.append(
             {
@@ -935,17 +1147,6 @@ def calcular_resumen_mes(
                 'total': str(esperado.quantize(Decimal('0.01'))),
             }
         )
-        por_usuario_comp.append(
-            {
-                'usuario_id': uid,
-                'nombre': uid_to_nombre[uid],
-                'pagado_efectivo': str(neto_mes.quantize(Decimal('0.01'))),
-                'gasto_prorrateado': str(esperado.quantize(Decimal('0.01'))),
-                'diferencia': str(diff.quantize(Decimal('0.01'))),
-            }
-        )
-
-    transferencias = _transferencias_compensacion(deltas, uid_to_nombre)
 
     return {
         'mes': mes_pd.month,
@@ -979,15 +1180,9 @@ def refrescar_resumen_historico_ultimo_mes_cerrado(
     if hoy is None:
         hoy = timezone.localdate()
     mes_pd = ultimo_mes_cerrado(hoy)
-    row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
-    if row is None:
-        return 0
-    ResumenHistoricoMesSnapshot.objects.update_or_create(
-        espacio_id=espacio_id,
-        mes=mes_pd,
-        defaults={'payload': row},
+    return refrescar_resumen_historico_mes(
+        espacio_id, mes_pd, registrar_cambios=False
     )
-    return 1
 
 
 def backfill_resumen_historico_snapshots(espacio_id: int) -> int:
@@ -1004,15 +1199,8 @@ def backfill_resumen_historico_snapshots(espacio_id: int) -> int:
     mes_fin = ultimo_mes_cerrado()
     n = 0
     for mes_pd in meses_desde_hasta(primero, mes_fin):
-        row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
-        if row is None:
-            continue
-        ResumenHistoricoMesSnapshot.objects.update_or_create(
-            espacio_id=espacio_id,
-            mes=mes_pd,
-            defaults={'payload': row},
-        )
-        n += 1
+        if refrescar_resumen_historico_mes(espacio_id, mes_pd, registrar_cambios=False):
+            n += 1
     return n
 
 
@@ -1034,21 +1222,10 @@ def resumen_historico_familia(espacio_id: int) -> list[dict]:
     out: list[dict] = []
 
     for mes_pd in meses_desde_hasta(primero, mes_fin):
-        snap = ResumenHistoricoMesSnapshot.objects.filter(
-            espacio_id=espacio_id, mes=mes_pd
-        ).first()
-        if snap is not None:
-            out.append(snap.payload)
+        payload = _obtener_payload_resumen_mes(espacio_id, mes_pd)
+        if payload is None:
             continue
-        row = calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
-        if row is None:
-            continue
-        ResumenHistoricoMesSnapshot.objects.update_or_create(
-            espacio_id=espacio_id,
-            mes=mes_pd,
-            defaults={'payload': row},
-        )
-        out.append(row)
+        out.append(payload)
     return out
 
 

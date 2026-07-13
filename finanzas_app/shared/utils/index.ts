@@ -1,4 +1,5 @@
 export * from './categoriasFiltroSidebar'
 export * from './formatMontoNetoContribucion'
+export * from './notificacionCompensacion'
 export * from './periodoMovimientos'
 export * from './sueldoProyectadoIngresos'

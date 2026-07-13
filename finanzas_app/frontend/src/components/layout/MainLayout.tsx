@@ -1,10 +1,12 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useEspacio } from '@/context/EspacioContext'
 import { useViaje } from '@/context/ViajeContext'
 import { useConfig } from '@/context/ConfigContext'
 import { useEffect, useMemo } from 'react'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
+import { useApi } from '@/hooks/useApi'
+import { finanzasApi } from '@/api'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import { esViteDemo } from '@/firebase'
 import styles from './MainLayout.module.scss'
@@ -107,12 +109,18 @@ function CuentaItem({ cuenta }: { cuenta: CuentaNav }) {
 
 export default function MainLayout() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user, loading, logout, cambiarUsuarioDemo } = useAuth()
   const { mostrarModulosFamiliares } = useEspacio()
   const esDemoUi = esViteDemo() || Boolean(user?.esDemo)
   const { viajeActivo } = useViaje()
   const { formatMonto } = useConfig()
   const { data: cuentasApi, refetch: refetchCuentas } = useCuentasPersonales()
+  const { data: notifCount } = useApi(
+    () => finanzasApi.getNotificacionesNoLeidasCount(),
+    [user?.email, location.pathname],
+  )
+  const noLeidas = notifCount?.no_leidas ?? 0
   const masItems = useMemo(
     () => (esDemoUi ? MAS_ITEMS.filter((item) => item.to !== '/inversiones' && item.to !== '/viajes') : MAS_ITEMS),
     [esDemoUi],
@@ -183,6 +191,24 @@ export default function MainLayout() {
             <button type="button" className={styles.logoutBtn} onClick={() => logout()}>
               Cerrar sesión
             </button>
+            {!esDemoUi ? (
+              <NavLink
+                to="/notificaciones"
+                className={({ isActive }) =>
+                  `${styles.notifLink} ${isActive ? styles.notifLinkActive : ''}`
+                }
+              >
+                <span className={styles.notifIcon} aria-hidden>
+                  🔔
+                </span>
+                <span className={styles.notifLabel}>Notificaciones</span>
+                {noLeidas > 0 ? (
+                  <span className={styles.notifBadge} aria-label={`${noLeidas} sin leer`}>
+                    {noLeidas > 99 ? '99+' : noLeidas}
+                  </span>
+                ) : null}
+              </NavLink>
+            ) : null}
           </div>
         )}
 

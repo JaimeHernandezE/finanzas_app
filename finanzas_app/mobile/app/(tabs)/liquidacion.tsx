@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useFocusEffect } from 'expo-router'
+import { useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { finanzasApi } from '@finanzas/shared/api/finanzas'
 import { movimientosApi } from '@finanzas/shared/api/movimientos'
@@ -128,9 +128,16 @@ function FilaTotal({ label, monto }: { label: string; monto: number }) {
 
 export default function LiquidacionScreen() {
   const { formatMonto } = useConfig()
+  const params = useLocalSearchParams<{ mes?: string; anio?: string }>()
   const hoy = new Date()
-  const [mes,  setMes]  = useState(hoy.getMonth())
-  const [anio, setAnio] = useState(hoy.getFullYear())
+  const mesParam = Number(params.mes)
+  const anioParam = Number(params.anio)
+  const [mes, setMes] = useState(
+    mesParam >= 1 && mesParam <= 12 ? mesParam - 1 : hoy.getMonth()
+  )
+  const [anio, setAnio] = useState(
+    anioParam >= 2000 ? anioParam : hoy.getFullYear()
+  )
   const [mostrarDetalleGastos, setMostrarDetalleGastos] = useState(false)
   const esActual = mes === hoy.getMonth() && anio === hoy.getFullYear()
 

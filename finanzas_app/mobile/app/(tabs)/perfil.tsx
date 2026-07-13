@@ -10,16 +10,18 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { useRouter } from 'expo-router'
+import { usePathname, useRouter } from 'expo-router'
 import * as DocumentPicker from 'expo-document-picker'
 import * as FileSystem from 'expo-file-system'
 import * as Sharing from 'expo-sharing'
-import { apiErrorMessage, espaciosApi, exportApi, familiaApi } from '@finanzas/shared/api'
+import { apiErrorMessage, espaciosApi, exportApi, familiaApi, finanzasApi } from '@finanzas/shared/api'
 import type { ModoReparto } from '@finanzas/shared/api/espacios'
 import { driveApi } from '@finanzas/shared/api/drive'
 import { useAuth } from '../../context/AuthContext'
 import { useEspacio } from '../../context/EspacioContext'
+import { useApi } from '@finanzas/shared/hooks/useApi'
 import { MobileShell } from '../../components/layout/MobileShell'
+import { abrirNotificaciones } from '../../lib/navegacionNotificaciones'
 
 const MODOS_REPARTO: { value: ModoReparto; label: string }[] = [
   { value: 'PROPORCIONAL', label: 'Proporcional a los ingresos' },
@@ -35,6 +37,7 @@ function rolLabel(rol: string): string {
 
 export default function PerfilScreen() {
   const router = useRouter()
+  const pathname = usePathname()
   const { user, logout, updateNombre, changePassword, refreshUsuario } = useAuth()
   const [nombreEdit, setNombreEdit] = useState(user?.nombre ?? '')
   const [guardando, setGuardando] = useState(false)
@@ -76,6 +79,14 @@ export default function PerfilScreen() {
   const [driveBacking, setDriveBacking] = useState(false)
   const [msgDrive, setMsgDrive] = useState<string | null>(null)
   const [errDrive, setErrDrive] = useState<string | null>(null)
+
+  const { data: notifCount } = useApi(
+    async () => {
+      if (!user) return { data: { no_leidas: 0 } }
+      return finanzasApi.getNotificacionesNoLeidasCount()
+    },
+    [user?.email ?? '']
+  )
 
   useEffect(() => {
     driveApi.status()
@@ -400,6 +411,24 @@ export default function PerfilScreen() {
           </TouchableOpacity>
           {passwordError && <Text className="text-danger text-xs mt-2">{passwordError}</Text>}
           {passwordOk && <Text className="text-success text-xs mt-2">{passwordOk}</Text>}
+        </View>
+
+        <View className="bg-white border border-border rounded-xl p-4 mb-4">
+          <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Cuenta</Text>
+          <TouchableOpacity
+            onPress={() => abrirNotificaciones(router, pathname)}
+            className="flex-row items-center justify-between py-3 border-b border-border"
+          >
+            <Text className="text-dark font-medium">Notificaciones</Text>
+            <View className="flex-row items-center gap-2">
+              {(notifCount?.no_leidas ?? 0) > 0 ? (
+                <Text className="text-xs bg-dark text-white px-2 py-0.5 rounded-full">
+                  {notifCount?.no_leidas}
+                </Text>
+              ) : null}
+              <Text className="text-muted text-sm">›</Text>
+            </View>
+          </TouchableOpacity>
         </View>
 
         <View className="bg-white border border-border rounded-xl p-4 mb-4">

@@ -133,10 +133,68 @@ class TestCalcularResumenMes:
         # 50000 − 200000 = −150000
         assert gc[usuario.pk]['total'] == '-150000.00'
 
+    def test_compensacion_alinea_liquidacion_pagado_menos_deberia(
+        self,
+        usuario,
+        usuario_2,
+        espacio_familiar,
+        categoria_egreso,
+        metodo_efectivo,
+    ):
+        """
+        Misma lógica que LiquidacionPage: pagado − debería.
+        Si pagué 100 y debí 80 → recibo 20.
+        """
+        from applications.finanzas.models import IngresoComun
+
+        mes_pd = date(2026, 4, 1)
+        IngresoComun.objects.create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            mes=mes_pd,
+            monto='800000.00',
+            origen='Sueldo',
+        )
+        IngresoComun.objects.create(
+            usuario=usuario_2,
+            espacio=espacio_familiar,
+            mes=mes_pd,
+            monto='200000.00',
+            origen='Sueldo',
+        )
+        Movimiento.objects.create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            fecha='2026-04-10',
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto='100000.00',
+            comentario='Gasto A',
+            metodo_pago=metodo_efectivo,
+        )
+
+        row = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
+        comp = {p['usuario_id']: p for p in row['compensacion']['por_usuario']}
+
+        assert comp[usuario.pk]['pagado_efectivo'] == '100000.00'
+        assert comp[usuario.pk]['gasto_prorrateado'] == '80000.00'
+        assert comp[usuario.pk]['diferencia'] == '20000.00'
+
+        assert comp[usuario_2.pk]['pagado_efectivo'] == '0.00'
+        assert comp[usuario_2.pk]['gasto_prorrateado'] == '20000.00'
+        assert comp[usuario_2.pk]['diferencia'] == '-20000.00'
+
+        tr = row['compensacion']['transferencias_sugeridas']
+        assert len(tr) == 1
+        assert tr[0]['de_usuario_id'] == usuario_2.pk
+        assert tr[0]['a_usuario_id'] == usuario.pk
+        assert tr[0]['monto'] == '20000.00'
+
 
 @pytest.mark.django_db
 class TestResumenSnapshot:
-    def test_movimiento_comun_borra_snapshot_del_mes(
+    def test_movimiento_comun_reconstruye_snapshot_del_mes(
         self,
         espacio_familiar,
         usuario,
@@ -164,12 +222,12 @@ class TestResumenSnapshot:
 
         payload = services_recalculo.calcular_resumen_mes(espacio_familiar.pk, mes_pd)
         assert payload is not None
-        ResumenHistoricoMesSnapshot.objects.create(
+        snap_antes, _ = ResumenHistoricoMesSnapshot.objects.update_or_create(
             espacio=espacio_familiar,
             mes=mes_pd,
-            payload=payload,
+            defaults={'payload': payload},
         )
-        assert ResumenHistoricoMesSnapshot.objects.filter(espacio=espacio_familiar, mes=mes_pd).exists()
+        total_antes = snap_antes.payload['gasto_comun_total']
 
         Movimiento.objects.create(
             usuario=usuario,
@@ -183,9 +241,11 @@ class TestResumenSnapshot:
             metodo_pago=metodo_efectivo,
         )
 
-        assert not ResumenHistoricoMesSnapshot.objects.filter(
+        snap = ResumenHistoricoMesSnapshot.objects.filter(
             espacio=espacio_familiar, mes=mes_pd
-        ).exists()
+        ).first()
+        assert snap is not None
+        assert snap.payload['gasto_comun_total'] != total_antes
 
     @patch(
         'applications.finanzas.services_recalculo.timezone.localdate',
@@ -204,7 +264,6 @@ class TestResumenSnapshot:
     ):
         """GET resumen-historico calcula y guarda snapshot por mes cerrado (marzo al estar en abril)."""
         mes_pd = date(2026, 3, 1)
-        assert not ResumenHistoricoMesSnapshot.objects.filter(espacio=espacio_familiar).exists()
 
         r = client.get('/api/finanzas/resumen-historico/', **auth_header)
         assert r.status_code == 200

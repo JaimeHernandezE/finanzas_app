@@ -4,12 +4,13 @@ from decimal import Decimal, ROUND_DOWN
 from datetime import date, datetime
 
 from django.contrib.auth import get_user_model
-from django.db.models.signals import post_delete, post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 from dateutil.relativedelta import relativedelta
 
 from .models import (
     CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN,
+    CambioCompensacionMensual,
     Categoria,
     CuentaPersonal,
     IngresoComun,
@@ -18,6 +19,7 @@ from .models import (
     Cuota,
 )
 from . import services_recalculo
+from .recalculo_context import RecalculoContext, recalculo_context
 
 
 @receiver(post_save, sender=get_user_model())
@@ -67,6 +69,26 @@ def _asegurar_cuenta_personal(usuario):
     return cuenta
 
 
+def _meses_compensacion_movimiento(instance: Movimiento) -> set[date]:
+    meses = {services_recalculo.primer_dia_mes(instance.fecha)}
+    prev = getattr(instance, '_fecha_previa_resumen', None)
+    if prev:
+        meses.add(services_recalculo.primer_dia_mes(prev))
+    return meses
+
+
+def _cache_payloads_compensacion_antes(
+    instance, espacio_id: int, meses: set[date]
+) -> dict[str, dict]:
+    """Estado de compensación antes de persistir el cambio (lee la BD aún sin el nuevo valor)."""
+    cache: dict[str, dict] = {}
+    for mes_pd in meses:
+        row = services_recalculo.calcular_resumen_mes(espacio_id, mes_pd, miembros=None)
+        if row is not None:
+            cache[services_recalculo.primer_dia_mes(mes_pd).isoformat()] = row
+    return cache
+
+
 @receiver(pre_save, sender=Movimiento)
 def _cache_movimiento_fecha_resumen(sender, instance, **kwargs):
     if instance.pk:
@@ -77,24 +99,26 @@ def _cache_movimiento_fecha_resumen(sender, instance, **kwargs):
             pass
 
 
-@receiver(post_save, sender=Movimiento)
-def invalidar_resumen_tras_movimiento_comun(sender, instance, **kwargs):
+@receiver(pre_save, sender=Movimiento)
+def _cache_payload_compensacion_antes_movimiento(sender, instance, **kwargs):
     if instance.ambito != 'COMUN' or not instance.espacio_id:
         return
-    meses = {services_recalculo.primer_dia_mes(instance.fecha)}
-    prev = getattr(instance, '_fecha_previa_resumen', None)
-    if prev:
-        meses.add(services_recalculo.primer_dia_mes(prev))
-    services_recalculo.invalidar_snapshots_resumen_historico(instance.espacio_id, meses)
-
-
-@receiver(post_delete, sender=Movimiento)
-def invalidar_resumen_borrar_movimiento_comun(sender, instance, **kwargs):
-    if instance.ambito != 'COMUN' or not instance.espacio_id:
-        return
-    services_recalculo.invalidar_snapshots_resumen_historico(
+    instance._payload_resumen_antes_por_mes = _cache_payloads_compensacion_antes(
+        instance,
         instance.espacio_id,
-        [services_recalculo.primer_dia_mes(instance.fecha)],
+        _meses_compensacion_movimiento(instance),
+    )
+
+
+@receiver(pre_delete, sender=Movimiento)
+def _cache_payload_compensacion_antes_borrar_movimiento(sender, instance, **kwargs):
+    if instance.ambito != 'COMUN' or not instance.espacio_id:
+        return
+    mes_pd = services_recalculo.primer_dia_mes(instance.fecha)
+    instance._payload_resumen_antes_por_mes = _cache_payloads_compensacion_antes(
+        instance,
+        instance.espacio_id,
+        {mes_pd},
     )
 
 
@@ -108,24 +132,30 @@ def _cache_ingreso_comun_mes_resumen(sender, instance, **kwargs):
             pass
 
 
-@receiver(post_save, sender=IngresoComun)
-def invalidar_resumen_tras_ingreso_comun(sender, instance, **kwargs):
+@receiver(pre_save, sender=IngresoComun)
+def _cache_payload_compensacion_antes_ingreso(sender, instance, **kwargs):
     if not instance.espacio_id:
         return
     meses = {services_recalculo.primer_dia_mes(instance.mes)}
     prev = getattr(instance, '_mes_previo_resumen', None)
     if prev:
         meses.add(services_recalculo.primer_dia_mes(prev))
-    services_recalculo.invalidar_snapshots_resumen_historico(instance.espacio_id, meses)
+    instance._payload_resumen_antes_por_mes = _cache_payloads_compensacion_antes(
+        instance,
+        instance.espacio_id,
+        meses,
+    )
 
 
-@receiver(post_delete, sender=IngresoComun)
-def invalidar_resumen_borrar_ingreso_comun(sender, instance, **kwargs):
+@receiver(pre_delete, sender=IngresoComun)
+def _cache_payload_compensacion_antes_borrar_ingreso(sender, instance, **kwargs):
     if not instance.espacio_id:
         return
-    services_recalculo.invalidar_snapshots_resumen_historico(
+    mes_pd = services_recalculo.primer_dia_mes(instance.mes)
+    instance._payload_resumen_antes_por_mes = _cache_payloads_compensacion_antes(
+        instance,
         instance.espacio_id,
-        [services_recalculo.primer_dia_mes(instance.mes)],
+        {mes_pd},
     )
 
 
@@ -183,7 +213,18 @@ def dispatch_recalculo_snapshots_tras_ingreso_comun(sender, instance, **kwargs):
     prev = getattr(instance, '_mes_previo_resumen', None)
     if prev:
         meses.add(services_recalculo.primer_dia_mes(prev))
-    services_recalculo.dispatch_recalculo_multiples_meses(instance.espacio_id, meses)
+    ctx = RecalculoContext(
+        modificado_por_id=instance.usuario_id,
+        origen_tipo=CambioCompensacionMensual.ORIGEN_INGRESO_COMUN,
+        origen_id=instance.pk,
+        payloads_resumen_antes=getattr(instance, '_payload_resumen_antes_por_mes', None),
+    )
+    with recalculo_context(ctx):
+        services_recalculo.dispatch_recalculo_multiples_meses(
+            instance.espacio_id,
+            meses,
+            refrescar_resumen_compensacion=True,
+        )
 
 
 @receiver(post_delete, sender=IngresoComun)
@@ -200,10 +241,18 @@ def dispatch_recalculo_snapshots_borrar_ingreso_comun(sender, instance, **kwargs
     """
     if not instance.espacio_id:
         return
-    services_recalculo.dispatch_recalculo_multiples_meses(
-        instance.espacio_id,
-        services_recalculo.meses_afectados_por_ingreso_comun(instance, None),
+    ctx = RecalculoContext(
+        modificado_por_id=instance.usuario_id,
+        origen_tipo=CambioCompensacionMensual.ORIGEN_INGRESO_COMUN,
+        origen_id=instance.pk,
+        payloads_resumen_antes=getattr(instance, '_payload_resumen_antes_por_mes', None),
     )
+    with recalculo_context(ctx):
+        services_recalculo.dispatch_recalculo_multiples_meses(
+            instance.espacio_id,
+            services_recalculo.meses_afectados_por_ingreso_comun(instance, None),
+            refrescar_resumen_compensacion=True,
+        )
 
 
 def calcular_mes_base(fecha_gasto: date, dia_facturacion: int | None) -> date:
@@ -298,23 +347,50 @@ def generar_cuotas(sender, instance, created, **kwargs):
     Cuota.objects.bulk_create(cuotas)
 
 
-@receiver(post_save, sender=Movimiento)
-def dispatch_recalculo_snapshots_tras_movimiento(sender, instance, **kwargs):
-    """Recalcula snapshots mensuales (liquidación, saldos por cuenta) al crear/editar movimiento."""
-    if not instance.espacio_id:
-        return
+def _meses_movimiento_afectados(instance: Movimiento) -> set[date]:
     meses = {services_recalculo.primer_dia_mes(instance.fecha)}
     prev = getattr(instance, '_fecha_previa_resumen', None)
     if prev:
         meses.add(services_recalculo.primer_dia_mes(prev))
-    services_recalculo.dispatch_recalculo_multiples_meses(instance.espacio_id, meses)
+    return meses
+
+
+@receiver(post_save, sender=Movimiento)
+def dispatch_recalculo_snapshots_tras_movimiento(sender, instance, **kwargs):
+    """Recalcula snapshots mensuales al crear/editar movimiento."""
+    if not instance.espacio_id:
+        return
+    meses = _meses_movimiento_afectados(instance)
+    refrescar_resumen = instance.ambito == 'COMUN'
+    ctx = RecalculoContext(
+        modificado_por_id=instance.usuario_id,
+        origen_tipo=CambioCompensacionMensual.ORIGEN_MOVIMIENTO,
+        origen_id=instance.pk,
+        payloads_resumen_antes=getattr(instance, '_payload_resumen_antes_por_mes', None),
+    )
+    with recalculo_context(ctx):
+        services_recalculo.dispatch_recalculo_multiples_meses(
+            instance.espacio_id,
+            meses,
+            refrescar_resumen_compensacion=refrescar_resumen,
+        )
 
 
 @receiver(post_delete, sender=Movimiento)
 def dispatch_recalculo_snapshots_borrar_movimiento(sender, instance, **kwargs):
     if not instance.espacio_id:
         return
-    services_recalculo.dispatch_recalculo_multiples_meses(
-        instance.espacio_id,
-        {services_recalculo.primer_dia_mes(instance.fecha)},
+    meses = {services_recalculo.primer_dia_mes(instance.fecha)}
+    refrescar_resumen = instance.ambito == 'COMUN'
+    ctx = RecalculoContext(
+        modificado_por_id=instance.usuario_id,
+        origen_tipo=CambioCompensacionMensual.ORIGEN_MOVIMIENTO,
+        origen_id=instance.pk,
+        payloads_resumen_antes=getattr(instance, '_payload_resumen_antes_por_mes', None),
     )
+    with recalculo_context(ctx):
+        services_recalculo.dispatch_recalculo_multiples_meses(
+            instance.espacio_id,
+            meses,
+            refrescar_resumen_compensacion=refrescar_resumen,
+        )

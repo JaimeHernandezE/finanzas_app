@@ -663,3 +663,92 @@ class SueldoEstimadoProrrateoMensual(models.Model):
         return f'Sueldo est. prorrateo u={self.usuario_id} {self.mes:%Y-%m}'
 
 
+class CambioCompensacionMensual(models.Model):
+    """Registro de un cambio en la compensación/prorrateo de un mes familiar."""
+
+    ORIGEN_MOVIMIENTO = 'MOVIMIENTO'
+    ORIGEN_INGRESO_COMUN = 'INGRESO_COMUN'
+    ORIGEN_RECALCULO_MANUAL = 'RECALCULO_MANUAL'
+    ORIGEN_IMPORTACION = 'IMPORTACION'
+    ORIGEN_CHOICES = [
+        (ORIGEN_MOVIMIENTO, 'Movimiento'),
+        (ORIGEN_INGRESO_COMUN, 'Ingreso común'),
+        (ORIGEN_RECALCULO_MANUAL, 'Recálculo manual'),
+        (ORIGEN_IMPORTACION, 'Importación'),
+    ]
+
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.CASCADE,
+        related_name='cambios_compensacion',
+    )
+    mes = models.DateField(help_text='Primer día del mes afectado.')
+    delta = models.JSONField(
+        help_text='Resumen estructurado del cambio (diferencias y transferencias).'
+    )
+    payload_antes = models.JSONField(null=True, blank=True)
+    payload_despues = models.JSONField()
+    origen_tipo = models.CharField(max_length=20, choices=ORIGEN_CHOICES)
+    origen_id = models.PositiveIntegerField(null=True, blank=True)
+    modificado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='cambios_compensacion_realizados',
+    )
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['espacio', 'mes']),
+            models.Index(fields=['creado_at']),
+        ]
+
+    def __str__(self):
+        return f'Cambio compensación {self.espacio_id} {self.mes:%Y-%m}'
+
+
+class NotificacionUsuario(models.Model):
+    """Notificación in-app para un usuario (compensación y otros tipos futuros)."""
+
+    TIPO_CAMBIO_COMPENSACION = 'CAMBIO_COMPENSACION'
+    TIPO_CHOICES = [
+        (TIPO_CAMBIO_COMPENSACION, 'Cambio de compensación'),
+    ]
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='notificaciones',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.CASCADE,
+        related_name='notificaciones',
+    )
+    cambio = models.ForeignKey(
+        CambioCompensacionMensual,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notificaciones',
+    )
+    tipo = models.CharField(max_length=32, choices=TIPO_CHOICES)
+    titulo = models.CharField(max_length=200)
+    mensaje = models.TextField()
+    payload = models.JSONField(default=dict, blank=True)
+    leida_at = models.DateTimeField(null=True, blank=True)
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['usuario', 'leida_at', 'creado_at']),
+            models.Index(fields=['espacio', 'creado_at']),
+        ]
+        ordering = ['-creado_at']
+
+    def __str__(self):
+        return f'Notif u={self.usuario_id} {self.tipo}'
+
+

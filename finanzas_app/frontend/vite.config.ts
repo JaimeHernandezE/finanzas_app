@@ -1,9 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'fs'
 import path from 'path'
 
-export default defineConfig({
-  plugins: [react()],
+/** ../shared en host; /app/shared cuando Docker monta el paquete compartido. */
+function resolveSharedDir(): string {
+  const mountedInApp = path.resolve(__dirname, 'shared')
+  if (fs.existsSync(mountedInApp)) return mountedInApp
+  return path.resolve(__dirname, '../shared')
+}
+
+const sharedDir = resolveSharedDir()
+
+export default defineConfig({  plugins: [react()],
   optimizeDeps: {
     include: ['axios'],
   },
@@ -28,6 +37,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@finanzas/shared': sharedDir,
     },
   },
   css: {

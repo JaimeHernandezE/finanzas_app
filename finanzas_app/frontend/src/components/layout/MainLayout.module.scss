@@ -171,6 +171,65 @@
   }
 }
 
+.notifLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $space-2;
+  width: 100%;
+  margin-top: $space-2;
+  padding: $space-2 $space-3;
+  font-size: $font-size-xs;
+  font-weight: $font-weight-medium;
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.notifLinkActive {
+  background: rgba(200, 240, 96, 0.16);
+  border-color: rgba(200, 240, 96, 0.45);
+  color: #fff;
+}
+
+.notifIcon {
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.notifLabel {
+  white-space: nowrap;
+
+  @media (max-width: 768px) {
+    display: none;
+  }
+}
+
+.notifBadge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 0.65rem;
+  font-weight: $font-weight-semibold;
+  line-height: 18px;
+  text-align: center;
+  color: #fff;
+  background: #e5484d;
+  border-radius: 999px;
+  flex-shrink: 0;
+
+  @media (max-width: 768px) {
+    margin-left: 0;
+  }
+}
+
 // ── Selector de espacio ──────────────────────────────────────────────────────
 
 .espacioSelector {

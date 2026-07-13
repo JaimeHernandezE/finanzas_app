@@ -84,6 +84,23 @@ urlpatterns = [
     path('recalculo/estado/', views.recalculo_estado, name='recalculo-estado'),
     path('recalculo/historico/', views.recalculo_historico, name='recalculo-historico'),
 
+    path('notificaciones/', views.notificaciones_lista, name='notificaciones-lista'),
+    path(
+        'notificaciones/no-leidas/',
+        views.notificaciones_no_leidas_count,
+        name='notificaciones-no-leidas',
+    ),
+    path(
+        'notificaciones/marcar-todas-leidas/',
+        views.notificaciones_marcar_todas_leidas,
+        name='notificaciones-marcar-todas',
+    ),
+    path(
+        'notificaciones/<int:pk>/leida/',
+        views.notificacion_marcar_leida,
+        name='notificacion-marcar-leida',
+    ),
+
     # Importación de planillas
     path(
         'importaciones/cuenta-personal/',

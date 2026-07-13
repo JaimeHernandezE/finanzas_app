@@ -4,6 +4,7 @@ from .models import (
     Categoria, CuentaPersonal, Cuota, IngresoComun,
     MetodoPago, Movimiento, Presupuesto, Tarjeta,
     SueldoEstimadoProrrateoMensual,
+    CambioCompensacionMensual, NotificacionUsuario,
 )
 
 
@@ -78,4 +79,16 @@ class IngresoComunAdmin(admin.ModelAdmin):
 class SueldoEstimadoProrrateoMensualAdmin(admin.ModelAdmin):
     list_display = ['usuario', 'mes', 'monto', 'actualizado_at']
     list_filter = ['mes']
+
+
+@admin.register(CambioCompensacionMensual)
+class CambioCompensacionMensualAdmin(admin.ModelAdmin):
+    list_display = ['espacio', 'mes', 'origen_tipo', 'modificado_por', 'creado_at']
+    list_filter = ['origen_tipo', 'mes']
+
+
+@admin.register(NotificacionUsuario)
+class NotificacionUsuarioAdmin(admin.ModelAdmin):
+    list_display = ['usuario', 'tipo', 'titulo', 'leida_at', 'creado_at']
+    list_filter = ['tipo', 'leida_at']
     raw_id_fields = ['usuario']

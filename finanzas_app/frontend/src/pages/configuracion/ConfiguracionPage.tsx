@@ -18,7 +18,9 @@ import styles from './ConfiguracionPage.module.scss'
 const GRUPOS = [
   {
     grupo: 'CUENTA',
-    items: [{ icon: '◉', label: 'Perfil', to: '/configuracion/perfil' as const }],
+    items: [
+      { icon: '◉', label: 'Perfil', to: '/configuracion/perfil' as const },
+    ],
   },
   {
     grupo: 'FINANZAS',
@@ -118,6 +120,7 @@ export default function ConfiguracionPage() {
     loading: loadC,
     error: errC,
   } = useApi(() => finanzasApi.getCuentasPersonales(), [])
+
   const nC =
     cuentasRaw !== null && cuentasRaw !== undefined ? cuentasRaw.length : undefined
   const [recalculando, setRecalculando] = useState(false)

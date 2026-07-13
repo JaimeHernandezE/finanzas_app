@@ -34,8 +34,11 @@ from .models import (
     IngresoComun,
     Presupuesto,
     SueldoEstimadoProrrateoMensual,
+    NotificacionUsuario,
 )
 from . import services_recalculo
+from . import services_compensacion_cambios
+from .recalculo_context import RecalculoContext, recalculo_context
 from .tenant_helpers import resolver_espacio_id
 from .services.dashboard import obtener_resumen_dashboard
 from .services.presupuesto_mes import build_presupuesto_mes_payload, presupuesto_mes_vacio
@@ -1876,6 +1879,81 @@ def sueldos_estimados_prorrateo(request):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+def notificaciones_lista(request):
+    """GET notificaciones in-app del usuario (espacio activo si aplica)."""
+    usuario, espacio, error = _contexto_espacio(request)
+    if error:
+        return error
+
+    qs = NotificacionUsuario.objects.filter(usuario=usuario)
+    espacio_id = _espacio_id(usuario, espacio)
+    if espacio_id:
+        qs = qs.filter(espacio_id=espacio_id)
+
+    solo_no_leidas = request.GET.get('solo_no_leidas', '').lower() in ('1', 'true', 'yes')
+    if solo_no_leidas:
+        qs = qs.filter(leida_at__isnull=True)
+
+    limite = request.GET.get('limite')
+    try:
+        n = min(int(limite), 100) if limite else 50
+    except (TypeError, ValueError):
+        n = 50
+
+    items = [services_compensacion_cambios.serializar_notificacion(x) for x in qs[:n]]
+    no_leidas = qs.filter(leida_at__isnull=True).count()
+    return Response({'notificaciones': items, 'no_leidas': no_leidas})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def notificaciones_no_leidas_count(request):
+    usuario, espacio, error = _contexto_espacio(request)
+    if error:
+        return error
+    qs = NotificacionUsuario.objects.filter(usuario=usuario, leida_at__isnull=True)
+    espacio_id = _espacio_id(usuario, espacio)
+    if espacio_id:
+        qs = qs.filter(espacio_id=espacio_id)
+    return Response({'no_leidas': qs.count()})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def notificacion_marcar_leida(request, pk):
+    usuario, espacio, error = _contexto_espacio(request)
+    if error:
+        return error
+    try:
+        notif = NotificacionUsuario.objects.get(pk=pk, usuario=usuario)
+    except NotificacionUsuario.DoesNotExist:
+        return Response({'error': 'Notificación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+    if notif.leida_at is None:
+        notif.leida_at = timezone.now()
+        notif.save(update_fields=['leida_at'])
+    return Response(services_compensacion_cambios.serializar_notificacion(notif))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def notificaciones_marcar_todas_leidas(request):
+    usuario, espacio, error = _contexto_espacio(request)
+    if error:
+        return error
+    qs = NotificacionUsuario.objects.filter(usuario=usuario, leida_at__isnull=True)
+    espacio_id = _espacio_id(usuario, espacio)
+    if espacio_id:
+        qs = qs.filter(espacio_id=espacio_id)
+    actualizadas = qs.update(leida_at=timezone.now())
+    return Response({'marcadas': actualizadas})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def recalculo_estado(request):
     """GET estado de recálculo de snapshots históricos."""
     usuario, espacio, error = _contexto_espacio(request)
@@ -1930,10 +2008,16 @@ def recalculo_historico(request):
         )
 
     mes_inicio = services_recalculo.primer_dia_mes(min(candidatos))
-    services_recalculo.recalcular_familia_desde(espacio_id, mes_inicio)
-    meses_resumen_familia = services_recalculo.backfill_resumen_historico_snapshots(
-        espacio_id
-    )
+    with recalculo_context(
+        RecalculoContext(
+            modificado_por_id=usuario.pk,
+            suprimir_notificaciones=True,
+        )
+    ):
+        services_recalculo.recalcular_familia_desde(espacio_id, mes_inicio)
+        meses_resumen_familia = services_recalculo.backfill_resumen_historico_snapshots(
+            espacio_id
+        )
     meses_saldos_usuario = services_recalculo.backfill_saldos_personales_usuario(
         usuario.pk, espacio_id
     )
@@ -2566,48 +2650,57 @@ def importar_sueldos_planilla(request):
     errores = []
     meses_importados = set()
 
-    with transaction.atomic():
-        ingresos_anteriores_eliminados = IngresoComun.objects.filter(
-            espacio_id=espacio.pk,
-            usuario_id=usuario_auth.pk,
-        ).count()
-        IngresoComun.objects.filter(
-            espacio_id=espacio.pk,
-            usuario_id=usuario_auth.pk,
-        ).delete()
+    from .models import CambioCompensacionMensual
 
-        for fila_idx, fila in enumerate(reader, start=2):
-            fila = _reparar_fila_colapsada_sueldos(fila)
-            if _fila_vacia(fila):
-                continue
-            try:
-                dia_txt = _obtener_columna(fila, 'dia') or _obtener_columna(fila, 'día')
-                mes_anio_txt = _obtener_columna(fila, 'mes/año')
-                fecha_pago = _parsear_fecha_pago_desde_dia_o_mes_anio(dia_txt, mes_anio_txt)
-                mes = services_recalculo.primer_dia_mes(fecha_pago)
-                meses_importados.add(services_recalculo.primer_dia_mes(mes))
+    with recalculo_context(
+        RecalculoContext(
+            modificado_por_id=usuario_auth.pk,
+            origen_tipo=CambioCompensacionMensual.ORIGEN_IMPORTACION,
+            suprimir_notificaciones=True,
+        )
+    ):
+        with transaction.atomic():
+            ingresos_anteriores_eliminados = IngresoComun.objects.filter(
+                espacio_id=espacio.pk,
+                usuario_id=usuario_auth.pk,
+            ).count()
+            IngresoComun.objects.filter(
+                espacio_id=espacio.pk,
+                usuario_id=usuario_auth.pk,
+            ).delete()
 
-                sueldo_txt = _obtener_columna(fila, 'sueldo')
-                monto = _parsear_monto_importacion(sueldo_txt)
-                if monto < 0:
-                    monto = abs(monto)
+            for fila_idx, fila in enumerate(reader, start=2):
+                fila = _reparar_fila_colapsada_sueldos(fila)
+                if _fila_vacia(fila):
+                    continue
+                try:
+                    dia_txt = _obtener_columna(fila, 'dia') or _obtener_columna(fila, 'día')
+                    mes_anio_txt = _obtener_columna(fila, 'mes/año')
+                    fecha_pago = _parsear_fecha_pago_desde_dia_o_mes_anio(dia_txt, mes_anio_txt)
+                    mes = services_recalculo.primer_dia_mes(fecha_pago)
+                    meses_importados.add(services_recalculo.primer_dia_mes(mes))
 
-                origen = _obtener_columna(fila, 'descripcion') or ''
+                    sueldo_txt = _obtener_columna(fila, 'sueldo')
+                    monto = _parsear_monto_importacion(sueldo_txt)
+                    if monto < 0:
+                        monto = abs(monto)
 
-                IngresoComun.objects.create(
-                    espacio=espacio,
-                    usuario=usuario_auth,
-                    mes=mes,
-                    fecha_pago=fecha_pago,
-                    monto=monto,
-                    origen=origen,
-                )
-                creados += 1
-            except ValueError as exc:
-                errores.append(f'Fila {fila_idx}: {exc}')
+                    origen = _obtener_columna(fila, 'descripcion') or ''
 
-        if dry_run:
-            transaction.set_rollback(True)
+                    IngresoComun.objects.create(
+                        espacio=espacio,
+                        usuario=usuario_auth,
+                        mes=mes,
+                        fecha_pago=fecha_pago,
+                        monto=monto,
+                        origen=origen,
+                    )
+                    creados += 1
+                except ValueError as exc:
+                    errores.append(f'Fila {fila_idx}: {exc}')
+
+            if dry_run:
+                transaction.set_rollback(True)
 
     if errores:
         return Response(
@@ -2621,9 +2714,20 @@ def importar_sueldos_planilla(request):
         )
 
     if not dry_run and creados and meses_importados:
-        services_recalculo.recalcular_familia_meses(
-            espacio.pk, meses_importados
-        )
+        from .models import CambioCompensacionMensual
+
+        with recalculo_context(
+            RecalculoContext(
+                modificado_por_id=usuario_auth.pk,
+                origen_tipo=CambioCompensacionMensual.ORIGEN_IMPORTACION,
+                suprimir_notificaciones=True,
+            )
+        ):
+            services_recalculo.dispatch_recalculo_multiples_meses(
+                espacio.pk,
+                meses_importados,
+                refrescar_resumen_compensacion=True,
+            )
 
     return Response(
         {
@@ -2848,11 +2952,21 @@ def importar_gastos_comunes_planilla(request):
             )
 
         if not dry_run and creados and meses_importados and _requiere_espacio_familiar(espacio):
-            # Recalcula solo los meses importados para mantener snapshots consistentes.
+            from .models import CambioCompensacionMensual
+
             try:
-                services_recalculo.recalcular_familia_meses(
-                    espacio.pk, meses_importados
-                )
+                with recalculo_context(
+                    RecalculoContext(
+                        modificado_por_id=usuario.pk,
+                        origen_tipo=CambioCompensacionMensual.ORIGEN_IMPORTACION,
+                        suprimir_notificaciones=True,
+                    )
+                ):
+                    services_recalculo.dispatch_recalculo_multiples_meses(
+                        espacio.pk,
+                        meses_importados,
+                        refrescar_resumen_compensacion=True,
+                    )
             except Exception:
                 logger.exception(
                     "Error recalculando snapshots post importación id=%s usuario_id=%s espacio_id=%s meses=%s",
