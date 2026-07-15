@@ -12,6 +12,7 @@ from .models import (
     MetodoPago,
     Tarjeta,
     Movimiento,
+    MovimientoPendiente,
     Cuota,
     IngresoComun,
     Presupuesto,
@@ -98,11 +99,19 @@ class TarjetaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Tarjeta
         fields = [
-            'id', 'nombre', 'banco',
+            'id', 'nombre', 'banco', 'ultimos_4_digitos',
             'dia_facturacion', 'dia_vencimiento',
             'usuario',
         ]
         read_only_fields = ['usuario']
+
+    def validate_ultimos_4_digitos(self, value):
+        value = (value or '').strip()
+        if value and (len(value) != 4 or not value.isdigit()):
+            raise serializers.ValidationError(
+                'Debe ser exactamente 4 dígitos numéricos.'
+            )
+        return value
 
     def validate_dia_facturacion(self, value):
         if value is not None and not (1 <= value <= 31):
@@ -421,3 +430,36 @@ class PresupuestoSerializer(serializers.ModelSerializer):
         model = Presupuesto
         fields = ['id', 'familia', 'usuario', 'categoria', 'mes', 'monto']
         read_only_fields = ['familia', 'usuario', 'categoria', 'mes']
+
+
+class MovimientoPendienteSerializer(serializers.ModelSerializer):
+    categoria_sugerida_nombre = serializers.CharField(
+        source='categoria_sugerida.nombre', read_only=True, allow_null=True,
+    )
+    metodo_pago_sugerido_tipo = serializers.CharField(
+        source='metodo_pago_sugerido.tipo', read_only=True, allow_null=True,
+    )
+    metodo_pago_sugerido_nombre = serializers.CharField(
+        source='metodo_pago_sugerido.nombre', read_only=True, allow_null=True,
+    )
+    tarjeta_sugerida_nombre = serializers.CharField(
+        source='tarjeta_sugerida.nombre', read_only=True, allow_null=True,
+    )
+    cuenta_sugerida_nombre = serializers.CharField(
+        source='cuenta_sugerida.nombre', read_only=True, allow_null=True,
+    )
+
+    class Meta:
+        model = MovimientoPendiente
+        fields = [
+            'id', 'origen', 'tipo', 'monto', 'fecha', 'comercio',
+            'categoria_sugerida', 'categoria_sugerida_nombre',
+            'ambito_sugerido',
+            'metodo_pago_sugerido', 'metodo_pago_sugerido_tipo',
+            'metodo_pago_sugerido_nombre',
+            'tarjeta_sugerida', 'tarjeta_sugerida_nombre',
+            'cuenta_sugerida', 'cuenta_sugerida_nombre',
+            'confianza', 'estado', 'movimiento',
+            'creado_at', 'actualizado_at',
+        ]
+        read_only_fields = fields

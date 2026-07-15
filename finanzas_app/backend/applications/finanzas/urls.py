@@ -1,6 +1,8 @@
 from django.urls import path
 from . import views
+from . import views_pendientes
 from .asistente import views_asistente
+from .captura_bot import views_webhooks
 
 app_name = 'finanzas'
 
@@ -27,6 +29,44 @@ urlpatterns = [
     # Movimientos
     path('movimientos/', views.movimientos, name='movimientos'),
     path('movimientos/<int:pk>/', views.movimiento_detalle, name='movimiento-detalle'),
+
+    # Pendientes (captura — bandeja)
+    path('pendientes/', views_pendientes.pendientes, name='pendientes'),
+    path(
+        'pendientes/contador/',
+        views_pendientes.pendientes_contador,
+        name='pendientes-contador',
+    ),
+    path(
+        'pendientes/<int:pk>/confirmar/',
+        views_pendientes.pendiente_confirmar,
+        name='pendiente-confirmar',
+    ),
+    path(
+        'pendientes/<int:pk>/descartar/',
+        views_pendientes.pendiente_descartar,
+        name='pendiente-descartar',
+    ),
+    path(
+        'captura/vinculo/',
+        views_pendientes.captura_generar_vinculo,
+        name='captura-generar-vinculo',
+    ),
+    path(
+        'captura/vinculo/estado/',
+        views_pendientes.captura_estado_vinculo,
+        name='captura-estado-vinculo',
+    ),
+    path(
+        'captura/webhooks/telegram/',
+        views_webhooks.webhook_telegram,
+        name='captura-webhook-telegram',
+    ),
+    path(
+        'captura/webhooks/whatsapp/',
+        views_webhooks.webhook_whatsapp,
+        name='captura-webhook-whatsapp',
+    ),
 
     # Cuotas
     path('cuotas/', views.cuotas, name='cuotas'),

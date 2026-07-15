@@ -40,6 +40,8 @@ import ImportadorHonorariosPage from '@/pages/configuracion/ImportadorHonorarios
 import ImportadorSueldosPage from '@/pages/configuracion/ImportadorSueldosPage'
 import ImportadorGastosComunesPage from '@/pages/configuracion/ImportadorGastosComunesPage'
 import RespaldoBdPage from '@/pages/configuracion/RespaldoBdPage'
+import PendientesPage from '@/pages/pendientes/PendientesPage'
+import CapturaConfigPage from '@/pages/configuracion/CapturaConfigPage'
 import { esViteDemo } from '@/firebase'
 
 const ES_DEMO = esViteDemo()
@@ -93,6 +95,10 @@ function AppRoutes() {
         <Route path="presupuesto" element={<PresupuestoPage />} />
         <Route path="asistente" element={<AsistentePage />} />
         <Route
+          path="pendientes"
+          element={ES_DEMO ? <Navigate to="/dashboard" replace /> : <PendientesPage />}
+        />
+        <Route
           path="notificaciones"
           element={ES_DEMO ? <Navigate to="/dashboard" replace /> : <NotificacionesPage />}
         />
@@ -131,6 +137,10 @@ function AppRoutes() {
           <Route
             path="notificaciones"
             element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <NotificacionesConfigPage />}
+          />
+          <Route
+            path="captura"
+            element={ES_DEMO ? <Navigate to="/configuracion/categorias" replace /> : <CapturaConfigPage />}
           />
           <Route path="categorias" element={<CategoriasPage />} />
           <Route

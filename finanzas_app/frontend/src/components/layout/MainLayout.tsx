@@ -6,7 +6,7 @@ import { useConfig } from '@/context/ConfigContext'
 import { useEffect, useMemo } from 'react'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useApi } from '@/hooks/useApi'
-import { finanzasApi } from '@/api'
+import { finanzasApi, pendientesApi } from '@/api'
 import { MOCK_PRESUPUESTOS } from '@/pages/viajes/mockViajes'
 import { esViteDemo } from '@/firebase'
 import styles from './MainLayout.module.scss'
@@ -29,6 +29,7 @@ const ANALISIS_ITEMS = [
   { icon: '◈', label: 'Dashboard',   to: '/dashboard'   },
   { icon: '▤', label: 'Presupuesto', to: '/presupuesto' },
   { icon: '◇', label: 'Asistente',   to: '/asistente'   },
+  { icon: '◉', label: 'Pendientes',  to: '/pendientes'  },
 ] as const
 
 const MAS_ITEMS = [
@@ -61,11 +62,12 @@ function GroupLabel({ label }: { label: string }) {
   return <li className={styles.groupLabel}>{label}</li>
 }
 
-function NavItem({ icon, label, to, end }: {
+function NavItem({ icon, label, to, end, badge }: {
   icon:   string
   label:  string
   to:     string
   end?:   boolean
+  badge?: number
 }) {
   return (
     <li>
@@ -78,6 +80,11 @@ function NavItem({ icon, label, to, end }: {
       >
         <span className={styles.navIcon}>{icon}</span>
         <span className={styles.navLabel}>{label}</span>
+        {badge != null && badge > 0 ? (
+          <span className={styles.notifBadge} aria-label={`${badge} pendientes`}>
+            {badge > 99 ? '99+' : badge}
+          </span>
+        ) : null}
       </NavLink>
     </li>
   )
@@ -121,7 +128,12 @@ export default function MainLayout() {
     () => finanzasApi.getNotificacionesNoLeidasCount(),
     [user?.email, location.pathname],
   )
+  const { data: pendientesCount } = useApi(
+    () => (esDemoUi ? Promise.resolve({ data: { count: 0 } }) : pendientesApi.contador()),
+    [user?.email, location.pathname, esDemoUi],
+  )
   const noLeidas = notifCount?.no_leidas ?? 0
+  const nPendientes = pendientesCount?.count ?? 0
   const masItems = useMemo(
     () => (esDemoUi ? MAS_ITEMS.filter((item) => item.to !== '/inversiones' && item.to !== '/viajes') : MAS_ITEMS),
     [esDemoUi],
@@ -240,7 +252,13 @@ export default function MainLayout() {
           {/* Análisis */}
           <GroupLabel label="Análisis" />
           {ANALISIS_ITEMS.map(item => (
-            <NavItem key={item.to} icon={item.icon} label={item.label} to={item.to} />
+            <NavItem
+              key={item.to}
+              icon={item.icon}
+              label={item.label}
+              to={item.to}
+              badge={item.to === '/pendientes' && !esDemoUi ? nPendientes : undefined}
+            />
           ))}
 
           {/* Más */}

@@ -219,50 +219,47 @@ Chat con consultas en lenguaje natural. Diseño:
 
 Detalle: [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
 
-## Sincronización automática de movimientos (fase 3 — planificado)
+## Sincronización automática de movimientos (fase 3 — MVP etapas 1–3)
 
-Registro automático de ingresos y egresos desde fuentes externas (banco, correo, archivos). **No implementado aún.** Hoy el flujo manual más cercano es `importar_movimientos_csv` y la carga desde la UI.
+Reducir registro manual vía **bandeja de pendientes** + confirmación en **WhatsApp, Telegram o la app**. Fuentes: texto en el bot (usuario inicia) y correos bancarios (IMAP).
 
-### Contexto: cómo lo hacen otras apps
+Detalle y estado: [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 
-No se configura cada banco a mano en el código de la app. En la práctica se combinan enfoques según país y madurez del producto:
+**Implementado:** `MovimientoPendiente`, API `/api/finanzas/pendientes/`, UI `/pendientes`, bots (`captura_bot` + webhooks), vínculo chat, `ingestar_correos_bancarios`, tipo `MOVIMIENTO_PENDIENTE`. Activar con env `CAPTURA_*`.
 
-| Enfoque | Descripción | Viabilidad para este proyecto |
-|---------|-------------|-------------------------------|
-| **Import CSV/Excel** | El usuario exporta desde el home banking y sube el archivo. | **Alta** — ya existe `importar_movimientos_csv`; falta UX (preview, mapeo por banco, dedup). |
-| **Parsing de correo** | Lectura de alertas del banco (“abono”, “compra en…”) vía Gmail API o reenvío a una dirección de ingesta. Parsers por plantilla (`BCI`, `Santander`, etc.). | **Media** — pragmático en Chile/LATAM donde open finance aún no cubre todo; frágil si cambian plantillas. |
-| **SMS / notificaciones** | Similar al correo: reenvío o lectura de alertas móviles. | **Media** — útil en móvil; mismas limitaciones que el correo. |
-| **Agregador bancario** | Tercero (p. ej. Fintoc, Belvo, Plaid) conecta vía open banking u otros conectores; la app recibe movimientos normalizados. | **Media-alta** a largo plazo — coste de licencia, compliance y dependencia de terceros. |
-| **Scraping de home banking** | Login automatizado al sitio del banco. | **No recomendado** — frágil, bloqueado por bancos, riesgo legal. |
+**Fuera del producto UX:** import CSV/Excel. `importar_movimientos_csv` sigue como herramienta admin/demo.
 
-Para **ingresos** (sueldo, transferencias) el correo suele ser más fiable que para gastos diarios con tarjeta, porque no todos los movimientos generan alerta por mail.
+**Pendiente:** puente proactivo **correo → WhatsApp**; reglas aprendidas; OCR boletas.
+
+### Contexto: enfoques posibles
+
+| Enfoque | Descripción | Viabilidad / rol aquí |
+|---------|-------------|------------------------|
+| **Mensajería (WhatsApp y Telegram)** | Captura y confirmación; el usuario **abre** el chat. Ambos contemplados. | **Alta** — canal principal. |
+| **Parsing de correo** | Alertas → `MovimientoPendiente` → resolver en app o con «pendientes» en el bot. | **Media** — red de seguridad; sin push WA en el MVP. |
+| **Correo → ping WhatsApp** | Aviso proactivo al llegar el mail. | **Pendiente** — útil, coste de plantillas Meta. |
+| **Agregador bancario** | Fintoc / Belvo / Plaid → misma bandeja. | Largo plazo. |
+| **Scraping de home banking** | Login automatizado al banco. | **No recomendado.** |
 
 ### Diseño previsto por etapas
 
-1. **Corto plazo — import mejorado**
-   - Endpoint/UI de subida con preview antes de persistir.
-   - Mapeo de columnas por banco conocido.
-   - Dedup por `(fecha, monto, comentario_normalizado, origen_ingesta)`.
-   - Reutilizar `RecalculoContext.suprimir_notificaciones` en importaciones masivas.
-
-2. **Medio plazo — ingesta por correo**
-   - Conexión OAuth a Gmail/Outlook con permisos mínimos (solo lectura de remitentes/plantillas acordadas) o reenvío a `ingest@…`.
-   - Cola de **movimientos sugeridos** (`MovimientoPendiente` o similar): el usuario confirma, edita categoría y aprueba antes de crear `Movimiento`.
-   - Parsers por plantilla; registro de `origen_ingesta` y hash del mensaje para no duplicar.
-
-3. **Largo plazo — agregador open finance**
-   - Integración con proveedor externo si el producto escala.
-   - Misma cola de confirmación al inicio; automatización total solo cuando la confianza y dedup sean altas.
+1. **Bandeja de pendientes** — `MovimientoPendiente` + endpoints + vista en la app.
+2. **Bots WhatsApp y Telegram** — misma UX; captura/confirmación iniciada por el usuario (abrir el chat no se considera fricción).
+3. **Correo → pendiente** — parsers + dedup; sin mensaje proactivo al chat.
+4. **Reglas aprendidas** — `ReglaClasificacion`.
+5. **Pendiente — correo → WhatsApp/Telegram proactivo** — cuando se presupueste.
+6. **Largo plazo — agregador open finance** — misma cola de confirmación.
 
 ### Principios de producto
 
-- **Confirmación humana** al principio: nada escribe en `Movimiento` sin revisión explícita (evita datos fantasma y errores de parser).
-- **Trazabilidad**: cada movimiento importado lleva `origen_ingesta` (csv, email, agregador) y referencia externa.
-- **Multitenancy**: la ingesta siempre se asocia al `espacio` activo del usuario; sin cruces entre familias.
-- **Privacidad**: no persistir cuerpos completos de correo si no hace falta; retención acotada de payloads crudos.
-- **Separación de dominios**: la ingesta crea o sugiere movimientos; no altera lógica de efectivo, liquidación ni compensación sin pasar por el flujo normal de `Movimiento`.
+- **Confirmación humana:** nada escribe en `Movimiento` sin revisión (chat o app).
+- **WhatsApp y Telegram:** ambos de primera clase; no un canal “provisional” y otro “final”.
+- **Usuario inicia el chat:** captura y vaciado de pendientes desde mensajería parten de un mensaje del usuario (aceptable en producto; en WA evita plantillas).
+- **Una bandeja, varias superficies:** app y bots equivalentes.
+- **Correo en MVP:** crea pendiente visible; **no** exige ping a WhatsApp (eso queda pendiente).
+- **Trazabilidad / multitenancy / privacidad / separación de dominios:** como en [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 
 ### Relación con otras fases
 
-- **Fase 1 (alertas):** un movimiento confirmado desde ingesta dispara las mismas señales que uno manual.
-- **Fase 2 (asistente):** podría responder “¿de dónde salió este abono?” consultando `origen_ingesta` y el mensaje parseado.
+- **Fase 1 (alertas):** movimiento confirmado desde pendiente → mismas señales que uno manual.
+- **Fase 2 (asistente):** origen / listar pendientes vía tools de solo lectura.

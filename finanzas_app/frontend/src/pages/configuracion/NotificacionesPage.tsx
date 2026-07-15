@@ -109,6 +109,8 @@ export default function NotificacionesPage() {
                 ? `/liquidacion?mes=${mes}&anio=${anio}`
                 : null
             const linkPresupuesto = presupuesto ? linkPresupuestoNotificacion(presupuesto) : null
+            const linkPendientes =
+              n.tipo === 'MOVIMIENTO_PENDIENTE' ? '/pendientes' : null
 
             return (
             <li key={n.id} className={n.leida ? styles.itemLeida : styles.item}>
@@ -128,6 +130,11 @@ export default function NotificacionesPage() {
                   presupuesto={presupuesto}
                   formatMonto={formatMonto}
                 />
+              ) : null}
+              {linkPendientes ? (
+                <Link to={linkPendientes} className={styles.linkLiquidacion}>
+                  Ir a Pendientes →
+                </Link>
               ) : null}
               {linkPresupuesto ? (
                 <Link to={linkPresupuesto} className={styles.linkLiquidacion}>

@@ -157,6 +157,12 @@ class Tarjeta(models.Model):
     )
     nombre          = models.CharField(max_length=100, help_text="Ej: 'Visa BCI', 'Mastercard Santander'")
     banco           = models.CharField(max_length=100)
+    ultimos_4_digitos = models.CharField(
+        max_length=4,
+        blank=True,
+        default='',
+        help_text="Últimos 4 dígitos de la tarjeta (para matching de alertas bancarias).",
+    )
     dia_facturacion = models.IntegerField(
         null=True, blank=True,
         help_text="Día del mes en que cierra el ciclo de facturación (1-31)."
@@ -714,9 +720,11 @@ class NotificacionUsuario(models.Model):
 
     TIPO_CAMBIO_COMPENSACION = 'CAMBIO_COMPENSACION'
     TIPO_PRESUPUESTO_UMBRAL = 'PRESUPUESTO_UMBRAL'
+    TIPO_MOVIMIENTO_PENDIENTE = 'MOVIMIENTO_PENDIENTE'
     TIPO_CHOICES = [
         (TIPO_CAMBIO_COMPENSACION, 'Cambio de compensación'),
         (TIPO_PRESUPUESTO_UMBRAL, 'Alerta de presupuesto'),
+        (TIPO_MOVIMIENTO_PENDIENTE, 'Movimiento pendiente de confirmar'),
     ]
 
     usuario = models.ForeignKey(
@@ -797,5 +805,152 @@ class BrechaConsultaAsistente(models.Model):
 
     def __str__(self):
         return f'Brecha {self.senal} {self.intento_label} u={self.usuario_id}'
+
+
+class MovimientoPendiente(models.Model):
+    """
+    Borrador de movimiento capturado (bot, correo o manual incompleto).
+    Solo se convierte en Movimiento definitivo tras confirmación explícita.
+    """
+
+    ORIGEN_WHATSAPP = 'WHATSAPP'
+    ORIGEN_TELEGRAM = 'TELEGRAM'
+    ORIGEN_EMAIL_BANCO = 'EMAIL_BANCO'
+    ORIGEN_MANUAL = 'MANUAL'
+    ORIGEN_CHOICES = [
+        (ORIGEN_WHATSAPP, 'WhatsApp'),
+        (ORIGEN_TELEGRAM, 'Telegram'),
+        (ORIGEN_EMAIL_BANCO, 'Correo bancario'),
+        (ORIGEN_MANUAL, 'Manual'),
+    ]
+
+    ESTADO_PENDIENTE = 'PENDIENTE'
+    ESTADO_CONFIRMADO = 'CONFIRMADO'
+    ESTADO_DESCARTADO = 'DESCARTADO'
+    ESTADO_DUPLICADO = 'DUPLICADO'
+    ESTADO_CHOICES = [
+        (ESTADO_PENDIENTE, 'Pendiente'),
+        (ESTADO_CONFIRMADO, 'Confirmado'),
+        (ESTADO_DESCARTADO, 'Descartado'),
+        (ESTADO_DUPLICADO, 'Duplicado'),
+    ]
+
+    AMBITO_CHOICES = Movimiento.AMBITO_CHOICES
+    TIPO_CHOICES = Movimiento.TIPO_CHOICES
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='movimientos_pendientes',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.CASCADE,
+        related_name='movimientos_pendientes',
+    )
+    origen = models.CharField(max_length=20, choices=ORIGEN_CHOICES)
+    tipo = models.CharField(max_length=10, choices=TIPO_CHOICES, default='EGRESO')
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    fecha = models.DateField(default=timezone.now)
+    comercio = models.CharField(max_length=255, blank=True, default='')
+    categoria_sugerida = models.ForeignKey(
+        Categoria,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pendientes_sugeridos',
+    )
+    ambito_sugerido = models.CharField(
+        max_length=10,
+        choices=AMBITO_CHOICES,
+        null=True,
+        blank=True,
+    )
+    metodo_pago_sugerido = models.ForeignKey(
+        MetodoPago,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pendientes_sugeridos',
+    )
+    tarjeta_sugerida = models.ForeignKey(
+        Tarjeta,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pendientes_sugeridos',
+    )
+    cuenta_sugerida = models.ForeignKey(
+        CuentaPersonal,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pendientes_sugeridos',
+    )
+    confianza = models.FloatField(default=0.0)
+    payload_original = models.JSONField(default=dict, blank=True)
+    estado = models.CharField(
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default=ESTADO_PENDIENTE,
+    )
+    movimiento = models.ForeignKey(
+        Movimiento,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='origen_pendiente',
+    )
+    hash_externo = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text='Hash del mensaje/correo para deduplicar ingestas.',
+    )
+    creado_at = models.DateTimeField(auto_now_add=True)
+    actualizado_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-creado_at']
+        indexes = [
+            models.Index(fields=['usuario', 'espacio', 'estado', 'creado_at']),
+            models.Index(fields=['hash_externo']),
+        ]
+        verbose_name = 'movimiento pendiente'
+        verbose_name_plural = 'movimientos pendientes'
+
+    def __str__(self):
+        return f'Pendiente {self.estado} ${self.monto} {self.comercio or self.id}'
+
+
+class CodigoVinculoCaptura(models.Model):
+    """Código de un solo uso para vincular Telegram/WhatsApp a un Usuario."""
+
+    CANAL_TELEGRAM = 'TELEGRAM'
+    CANAL_WHATSAPP = 'WHATSAPP'
+    CANAL_CHOICES = [
+        (CANAL_TELEGRAM, 'Telegram'),
+        (CANAL_WHATSAPP, 'WhatsApp'),
+    ]
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='codigos_vinculo_captura',
+    )
+    canal = models.CharField(max_length=20, choices=CANAL_CHOICES)
+    codigo = models.CharField(max_length=12, unique=True)
+    expira_at = models.DateTimeField()
+    usado_at = models.DateTimeField(null=True, blank=True)
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['codigo']),
+            models.Index(fields=['usuario', 'canal']),
+        ]
+
+    def __str__(self):
+        return f'{self.canal} {self.codigo} u={self.usuario_id}'
 
 

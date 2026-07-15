@@ -84,6 +84,20 @@ class Usuario(AbstractUser):
         default=80,
         help_text='Porcentaje de gasto vs presupuesto a partir del cual se envía una alerta (50–100).',
     )
+    telegram_chat_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        help_text='chat_id de Telegram vinculado para captura de movimientos.',
+    )
+    telegram_vinculado = models.BooleanField(default=False)
+    whatsapp_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='Teléfono E.164 vinculado a WhatsApp Business (ej: +56912345678).',
+    )
+    whatsapp_vinculado = models.BooleanField(default=False)
 
     def cuentas_visibles(self):
         """

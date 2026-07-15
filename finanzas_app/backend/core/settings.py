@@ -279,6 +279,20 @@ ASISTENTE_MAX_CHARS_MENSAJE = int(os.environ.get('ASISTENTE_MAX_CHARS_MENSAJE', 
 ASISTENTE_LLM_TIMEOUT_S = float(os.environ.get('ASISTENTE_LLM_TIMEOUT_S', '60'))
 ASISTENTE_LLM_MAX_TOKENS = int(os.environ.get('ASISTENTE_LLM_MAX_TOKENS', '1024'))
 
+# ── CAPTURA DE MOVIMIENTOS (fase 3) ───────────────────────────────────────────
+CAPTURA_TELEGRAM_HABILITADO = _env_flag('CAPTURA_TELEGRAM_HABILITADO', 'false')
+CAPTURA_TELEGRAM_BOT_TOKEN = os.environ.get('CAPTURA_TELEGRAM_BOT_TOKEN', '').strip()
+CAPTURA_TELEGRAM_WEBHOOK_SECRET = os.environ.get('CAPTURA_TELEGRAM_WEBHOOK_SECRET', '').strip()
+CAPTURA_WHATSAPP_HABILITADO = _env_flag('CAPTURA_WHATSAPP_HABILITADO', 'false')
+CAPTURA_WHATSAPP_TOKEN = os.environ.get('CAPTURA_WHATSAPP_TOKEN', '').strip()
+CAPTURA_WHATSAPP_PHONE_NUMBER_ID = os.environ.get('CAPTURA_WHATSAPP_PHONE_NUMBER_ID', '').strip()
+CAPTURA_WHATSAPP_VERIFY_TOKEN = os.environ.get('CAPTURA_WHATSAPP_VERIFY_TOKEN', '').strip()
+CAPTURA_EMAIL_IMAP_HOST = os.environ.get('CAPTURA_EMAIL_IMAP_HOST', '').strip()
+CAPTURA_EMAIL_IMAP_USER = os.environ.get('CAPTURA_EMAIL_IMAP_USER', '').strip()
+CAPTURA_EMAIL_IMAP_PASSWORD = os.environ.get('CAPTURA_EMAIL_IMAP_PASSWORD', '').strip()
+CAPTURA_EMAIL_IMAP_FOLDER = os.environ.get('CAPTURA_EMAIL_IMAP_FOLDER', 'INBOX').strip() or 'INBOX'
+CAPTURA_EMAIL_USUARIO_ID = os.environ.get('CAPTURA_EMAIL_USUARIO_ID', '').strip()
+
 # Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
 from firebase_admin_init import init_firebase
 init_firebase()

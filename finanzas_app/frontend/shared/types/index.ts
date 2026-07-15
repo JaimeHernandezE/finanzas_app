@@ -49,6 +49,7 @@ export interface Tarjeta {
   id:              number
   nombre:          string
   banco:           string
+  ultimos_4_digitos?: string
   dia_facturacion: number | null
   dia_vencimiento: number | null
   usuario:         number
