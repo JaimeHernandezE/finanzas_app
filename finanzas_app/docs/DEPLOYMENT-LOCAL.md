@@ -26,6 +26,20 @@ Variables de entorno del servicio **web** (por defecto en `docker-compose.yml`):
 
 En local conviene copiar [backend/.env.example](../backend/.env.example) a `backend/.env` y ajustar valores; no subas `.env` al repositorio.
 
+### Asistente financiero (opcional)
+
+Para probar `POST /api/finanzas/asistente/consulta/` en local, en `backend/.env` (o variables del servicio `web`):
+
+```
+ASISTENTE_HABILITADO=true
+ASISTENTE_LLM_PROVIDER=nvidia
+ASISTENTE_LLM_MODEL=meta/llama-3.3-70b-instruct
+ASISTENTE_LLM_API_KEY=nvapi-...
+ASISTENTE_LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+```
+
+Sin `ASISTENTE_HABILITADO=true` y API key, el endpoint responde `503`. Detalle: [backend/ASISTENTE-FINANCIERO.md](backend/ASISTENTE-FINANCIERO.md). Tras crear el modelo de brechas, aplica migraciones (`makemigrations` / `migrate` si aún no corriste la `0025`).
+
 ## Comandos rápidos — Docker Compose
 
 Ejecutar **siempre desde la carpeta `backend/`** (donde está el `docker-compose.yml`):

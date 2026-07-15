@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .asistente import views_asistente
 
 app_name = 'finanzas'
 
@@ -99,6 +100,13 @@ urlpatterns = [
         'notificaciones/<int:pk>/leida/',
         views.notificacion_marcar_leida,
         name='notificacion-marcar-leida',
+    ),
+
+    # Asistente financiero (Etapa B)
+    path(
+        'asistente/consulta/',
+        views_asistente.asistente_consulta,
+        name='asistente-consulta',
     ),
 
     # Importación de planillas

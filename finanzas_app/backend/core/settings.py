@@ -261,6 +261,22 @@ LOGGING = {
     },
 }
 
+# ── ASISTENTE FINANCIERO (Etapa B) ────────────────────────────────────────────
+ASISTENTE_HABILITADO = _env_flag('ASISTENTE_HABILITADO', 'false')
+ASISTENTE_LLM_PROVIDER = os.environ.get('ASISTENTE_LLM_PROVIDER', 'nvidia').strip().lower()
+ASISTENTE_LLM_MODEL = os.environ.get(
+    'ASISTENTE_LLM_MODEL',
+    'meta/llama-3.3-70b-instruct',
+).strip()
+ASISTENTE_LLM_API_KEY = os.environ.get('ASISTENTE_LLM_API_KEY', '').strip()
+ASISTENTE_LLM_BASE_URL = os.environ.get(
+    'ASISTENTE_LLM_BASE_URL',
+    'https://integrate.api.nvidia.com/v1',
+).strip()
+ASISTENTE_MAX_TURNOS_HISTORIAL = int(os.environ.get('ASISTENTE_MAX_TURNOS_HISTORIAL', '8'))
+ASISTENTE_RATE_LIMIT_POR_HORA = int(os.environ.get('ASISTENTE_RATE_LIMIT_POR_HORA', '30'))
+ASISTENTE_MAX_CHARS_MENSAJE = int(os.environ.get('ASISTENTE_MAX_CHARS_MENSAJE', '2000'))
+
 # Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
 from firebase_admin_init import init_firebase
 init_firebase()

@@ -31,7 +31,7 @@ backend/
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
 | **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
-| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) — Etapa A (analytics) implementada; chat/LLM pendientes. |
+| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) — Etapas A+B hechas (analytics + chat API); UI pendiente. |
 
 ## Comandos útiles (dentro del contenedor)
 
@@ -210,14 +210,12 @@ Expuestas en `GET/PATCH /api/usuarios/me/` junto al resto de preferencias de UI.
 
 ## Asistente financiero (fase 2 — en progreso)
 
-Chat con consultas en lenguaje natural sobre los datos del usuario. Diseño:
+Chat con consultas en lenguaje natural. Diseño:
 
-1. **Capa analytics** — **Etapa A hecha:** `applications/finanzas/services/analytics/` (`gasto_categoria_por_mes`, `avance_presupuesto_mes`, `listar_alertas_recientes`, `resumen_mes_cerrado`). Tests: `tests/test_analytics_asistente.py`.
-2. **Endpoint chat** — `POST /api/finanzas/asistente/consulta/` con function-calling (**pendiente**); el LLM **nunca** ejecuta SQL directo.
-3. **LLM gratuito (API cloud)** — NVIDIA NIM como candidato principal; Groq o Gemini como alternativa (**pendiente**).
-4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto (**pendiente**).
-
-Las alertas de presupuesto de la fase 1 comparten `NotificacionUsuario` y podrían referenciarse en respuestas del asistente (“ya te avisamos el 12 jul…”).
+1. **Capa analytics** — **Etapa A hecha:** `applications/finanzas/services/analytics/`.
+2. **Endpoint chat** — **Etapa B hecha:** `POST /api/finanzas/asistente/consulta/` (function-calling; requiere `ASISTENTE_HABILITADO` + API key). Paquete `applications/finanzas/asistente/`. Telemetría: `BrechaConsultaAsistente`. Tests: `tests/test_asistente_consulta.py`.
+3. **LLM** — NVIDIA NIM (OpenAI-compatible) vía env `ASISTENTE_LLM_*`.
+4. **UI** — panel de chat (**pendiente**, Etapa C).
 
 Detalle: [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
 

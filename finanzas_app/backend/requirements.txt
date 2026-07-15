@@ -16,6 +16,9 @@ whitenoise
 dj-database-url
 python-dotenv
 
+# Asistente financiero (LLM OpenAI-compatible: NVIDIA NIM, etc.)
+openai>=1.40.0
+
 # Testing
 pytest
 pytest-django

@@ -1,6 +1,6 @@
-# Asistente financiero (fase 2 — planificado)
+# Asistente financiero (fase 2)
 
-Chat con consultas en lenguaje natural sobre los datos del usuario. **Etapa A (capa analytics) implementada;** chat/LLM/UI pendientes.
+Chat con consultas en lenguaje natural sobre los datos del usuario. **Etapas A y B implementadas** (analytics + `POST /asistente/consulta/` + NIM); UI pendiente (Etapa C).
 
 Resumen corto en [backend/README.md — Asistente financiero](README.md#asistente-financiero-fase-2--en-progreso). Este documento desarrolla arquitectura, herramientas, seguridad y etapas de implementación.
 
@@ -95,9 +95,12 @@ Tests: `tests/test_analytics_asistente.py`.
 | `avance_presupuesto_mes` | **Lista (A)** | «¿Cómo voy con mis presupuestos?» | `build_presupuesto_mes_payload`. |
 | `listar_alertas_recientes` | **Lista (A)** | «¿Me avisaste algo del presupuesto?» | `NotificacionUsuario` + `serializar_notificacion`. |
 | `resumen_mes_cerrado` | **Lista (A)** | «¿Cómo cerramos junio en el común?» | Snapshot / `calcular_resumen_mes` (solo meses cerrados). |
-| `comparar_gasto_anual` | Pendiente | «Este año vs el anterior en supermercado» | Agregación por mes/año sobre `Movimiento` + `Cuota`. |
-| `sugerir_presupuestos` | Pendiente | «¿Qué presupuesto me sugerirías?» | Media / percentiles de gasto de N meses anteriores. |
-| `desglose_por_metodo_pago` | Pendiente | «¿Cuánto fue a crédito este mes?» | `MetodoPago.tipo` + cuotas del ciclo. |
+| `comparar_gasto_anual` | Pendiente | «Este año vs el anterior…»; «¿en qué mes gasté menos en X?» | Agregación por mes/año; “qué hice distinto” = comparar **composición** de categorías (no narrativa inventada). |
+| `sugerir_presupuestos` | Pendiente | «¿Qué presupuesto me sugerirías?» / «¿dónde podría bajar gastos?» | Percentiles de gasto; ver criterio explícito abajo (no dejar que el LLM improvise). |
+| `desglose_por_metodo_pago` | Pendiente | «¿Cuánto a crédito este ciclo?» + cuotas próximas | `MetodoPago.tipo` + proyección de `Cuota` por `mes_facturacion`. |
+| `comparar_ritmo_mes` | Candidata | «¿Voy más rápido/lento que el mes pasado a esta fecha?» | Gasto acumulado hasta el día equivalente del mes anterior. |
+| `proyeccion_presupuesto_mes` | Candidata | «Si sigo a este ritmo, ¿cierro dentro del presupuesto?» | Proyección **lineal simple** (ritmo diario × días del mes vs monto presupuestado). |
+| `top_gastos` | Candidata | «¿Cuáles fueron mis mayores gastos?» | Top-N por monto o por categoría; preferible vía `agregar_movimientos` (ver backlog). |
 
 ### Reglas de reutilización
 
@@ -107,23 +110,79 @@ Tests: `tests/test_analytics_asistente.py`.
 
 ### Fuera de v1 (posible después)
 
-- Búsqueda por texto libre sobre `comentario` de movimientos (con límite y redacción).
-- Simulaciones («si bajo supermercado un 10%…») sobre proyecciones.
+- Búsqueda por texto libre sobre `comentario` de movimientos (con límite y redacción) — **muy demandada** en la práctica («cosas del auto/perro/regalo»); sigue fuera de v1 porque cruza categorías y solo el comentario lo captura. `intento_label` esperado: `buscar_comentario` / `gasto_por_texto`.
+- Simulaciones («si bajo supermercado un 10%…») sobre proyecciones más allá de la lineal simple.
 - Escritura asistida: «crea este presupuesto» → tool con confirmación en UI, no en el primer mensaje del LLM.
+
+### Backlog de preguntas → tools
+
+Mapa de intención de producto. **No es un roadmap de sprint:** no implementar el backlog completo antes de ver `intento_label` reales vía [telemetría de brechas](#telemetría-de-brechas-preguntas-sin-tool--recurrentes). Priorizar lo que la telemetría confirme.
+
+#### Cubiertas o casi cubiertas por el catálogo actual/pendiente
+
+| Pregunta | Tool / extensión |
+|----------|------------------|
+| ¿Cuánto llevo a crédito este ciclo y cuánto viene en cuotas los próximos meses? | `desglose_por_metodo_pago` + proyección de `Cuota` |
+| ¿En qué mes del año pasado gasté menos en X? ¿Qué hice distinto? | `comparar_gasto_anual` (mínimo mensual + desglose de composición) |
+| ¿Voy más rápido o más lento que el mes pasado a esta misma fecha? | `comparar_ritmo_mes` |
+| Si sigo a este ritmo, ¿cierro el mes dentro del presupuesto? | `proyeccion_presupuesto_mes` |
+| ¿Cuáles son mis top gastos / en qué más gasté? | `top_gastos` o `agregar_movimientos` |
+| ¿Dónde podría bajar gastos? / sugerencia de presupuestos | `sugerir_presupuestos` con **criterio explícito en código** (p. ej. alta variabilidad mes a mes + categoría sin presupuesto asociado, o umbral de % del gasto total). El LLM solo redacta el resultado de esa regla; no inventa recomendaciones. |
+
+#### Candidatas nuevas por dominio
+
+| Dominio | Ejemplos de pregunta | Tool candidata / nota |
+|---------|----------------------|------------------------|
+| Anomalías y hábitos | ¿Gasto inusual este mes? (outlier vs promedio); gastos «hormiga»; ¿qué se repite todos los meses? (suscripciones/fijos); ¿día de la semana más gastador? | Preferir **una** tool parametrizada `agregar_movimientos` (ver abajo), no N tools sueltas. |
+| Espacio familiar | ¿Quién aportó más al gasto común este mes? ¿Cómo se repartió en el año? ¿En qué categorías crecimos más este semestre? | Agregaciones COMÚN + miembros; reutilizar lógica de resumen/prorrateo. |
+| Viajes | ¿Cuánto costó el viaje X? ¿Nos pasamos del presupuesto? ¿Viaje más caro por día? | Tools sobre FK `viaje` / `PresupuestoViaje` (mismo espíritu que el ejemplo de brechas). |
+| Ingresos y saldo | ¿Qué % del ingreso gasto/ahorro cada mes? ¿En qué meses gasté más de lo que ingresó? | Snapshots / ingresos vs egresos mensuales. |
+| Texto libre (`comentario`) | «Cosas del auto / perro / regalo de la abuela» | Fuera de v1; registrar brechas con `intento_label` de búsqueda por texto. |
+
+#### Principio de diseño: `agregar_movimientos` parametrizada
+
+Varias preguntas (“gasto más recurrente”, “gastos hormiga”, “suscripciones”, “top gastos”, “por día de la semana”) son la **misma agregación** sobre `Movimiento` (y cuotas cuando aplique) con distinto agrupador.
+
+Diseño previsto (cuando la telemetría lo justifique):
+
+```text
+agregar_movimientos(
+  periodo=...,           # mes / rango acotado (límite duro de meses)
+  agrupar_por=...,       # categoria | dia_semana | monto_bucket | comercio_o_comentario_norm | usuario
+  metricas=...,          # suma, conteo, avg
+  filtros=...,           # ambito, metodo_pago, viaje_id, umbral_hormiga, etc.
+  orden=...,             # top-N
+  limite=...             # cap de filas; nunca dump completo
+)
+```
+
+- **No** convertir cada variante en una tool del catálogo del LLM: menos schemas, menos prompt injection superficial y respeto a los límites duros ya definidos.
+- El LLM elige `agrupar_por` / filtros; el backend valida enums y caps.
+- “Suscripciones/fijos” = agrupación por comentario normalizado (o comercio) con baja varianza de monto entre meses; el criterio de “fijo” vive en la tool, no en el system prompt improvisado.
+
+#### Priorización
+
+1. Cerrar Etapa B (chat + brechas) con las 4 tools de Etapa A.
+2. Ampliar solo lo que `intento_label` + `senal` muestren como recurrente.
+3. Cuando aparezcan varios labels del bloque “hábitos/anomalías”, implementar `agregar_movimientos` una vez en lugar de cinco wrappers.
 
 ---
 
 ## 2. Endpoint chat
 
-Ruta prevista:
+**Estado: Etapa B implementada.**
 
 ```
 POST /api/finanzas/asistente/consulta/
 ```
 
-Auth: mismo esquema que el resto de finanzas (Bearer Firebase / JWT demo). Espacio: `_contexto_espacio(request)` / `usuario_y_espacio`.
+Paquete: `applications/finanzas/asistente/` (`llm.py`, `tools.py`, `orquestador.py`, `brechas.py`, `views_asistente.py`).
 
-### Request (borrador)
+Auth: Firebase/JWT demo vía `usuario_y_espacio` (mismo patrón que finanzas; `@authentication_classes([])`). Espacio: header `X-Espacio-Id` o default.
+
+Requisitos de runtime: `ASISTENTE_HABILITADO=true` **y** `ASISTENTE_LLM_API_KEY` no vacío; si no → `503`. Rate limit: `ASISTENTE_RATE_LIMIT_POR_HORA` (cache Django) → `429`.
+
+### Request
 
 ```json
 {
@@ -135,10 +194,10 @@ Auth: mismo esquema que el resto de finanzas (Bearer Firebase / JWT demo). Espac
 }
 ```
 
-- `historial` opcional y **acotado** (p. ej. últimas 6–10 turnos) para no explotar tokens ni filtrar datos de otras sesiones.
+- `historial` opcional y **acotado** (`ASISTENTE_MAX_TURNOS_HISTORIAL`, default 8).
 - No enviar al LLM IDs internos innecesarios ni PII de otros miembros más allá de lo que la pantalla familiar ya muestra al usuario.
 
-### Response (borrador)
+### Response
 
 ```json
 {
@@ -148,12 +207,16 @@ Auth: mismo esquema que el resto de finanzas (Bearer Firebase / JWT demo). Espac
     "avance_presupuesto_mes": { "...": "payload crudo opcional para la UI" }
   },
   "sugerencias_seguimiento": [
-    "Comparar con el mismo mes del año pasado"
+    "¿Cómo voy con mis presupuestos este mes?"
   ]
 }
 ```
 
 `datos` permite a la UI mostrar chips, mini-gráficos o enlaces a pantallas existentes sin parsear el texto libre.
+
+Tools cableadas: `avance_presupuesto_mes`, `gasto_categoria_por_mes`, `listar_alertas_recientes`, `resumen_mes_cerrado`.
+
+Tests: `tests/test_asistente_consulta.py` (LLM mockeado; sin red).
 
 ### Flujo de function-calling (servidor)
 
@@ -162,9 +225,9 @@ Auth: mismo esquema que el resto de finanzas (Bearer Firebase / JWT demo). Espac
 3. Enviar mensaje + schemas de tools al proveedor LLM.
 4. Si el modelo pide `tool_call`s: ejecutar en proceso Django con `usuario`/`espacio` inyectados (ignorar o sobrescribir cualquier `espacio_id` que invente el modelo).
 5. Devolver resultados de tools al modelo; obtener respuesta final en texto.
-6. Persistir opcionalmente un log de turno (sin cuerpos completos si no hace falta) para depuración y métricas.
+6. Registrar `BrechaConsultaAsistente` en `SIN_TOOL` / `TOOL_VACIA` (telemetría; no el hilo completo).
 
-Timeouts y límites: 1–2 rondas de tools por turno en v1; si falla el LLM, error controlado `503`/`502` sin partial leaks.
+Timeouts y límites: hasta 2 rondas de tools por turno; si falla el LLM, `503` sin partial leaks.
 
 ### Telemetría de brechas (preguntas sin tool / recurrentes)
 
@@ -185,17 +248,19 @@ Los turnos exitosos con tools útiles pueden loguearse solo como contador agrega
 
 #### Qué persistir (mínimo útil)
 
-Modelo previsto: `BrechaConsultaAsistente` (o tabla de telemetría equivalente), **sin** FK obligatoria a movimiento/presupuesto:
+Modelo: `BrechaConsultaAsistente` (migración `0025_brechaconsultaasistente`). Admin solo lectura.
+
+#### Qué persistir (mínimo útil)
 
 | Campo | Contenido |
 |-------|-----------|
 | `creado_at` | Timestamp. |
-| `espacio_id` / `usuario_id` | Para scope operativo y rate abuse; **no** exportar a datasets públicos. |
+| `espacio` / `usuario` | Scope operativo; **no** exportar a datasets públicos. |
 | `senal` | Uno de los enums de arriba. |
-| `mensaje_normalizado` | Texto del usuario **recortado** (p. ej. máx. 240 chars), opcionalmente sin dígitos (sustituir montos por `#`). |
-| `intento_label` | Etiqueta corta estable generada en el mismo turno: p. ej. `comparar_gasto_viaje`, `proyeccion_sueldo`, `listar_movimientos_comentario`. Puede salir de una segunda pasada barata del LLM («clasifica en ≤6 palabras snake_case; si no encaja, `otro`») o de reglas si `SIN_TOOL`. |
-| `tools_intentadas` | Lista de nombres si hubo llamadas fallidas/vacías. |
-| `modelo` / `provider` | Para correlacionar fallos de tool-calling vs falta real de capacidad. |
+| `mensaje_normalizado` | Texto del usuario **recortado** (máx. 240 chars), dígitos → `#`. |
+| `intento_label` | Etiqueta corta (heurística en backend; p. ej. `buscar_comentario`, `otro`). |
+| `tools_intentadas` | Lista JSON si hubo llamadas vacías/fallidas. |
+| `modelo` / `provider` | Correlacionar fallos de tool-calling vs falta real de capacidad. |
 
 Privacidad: no guardar respuestas del asistente con cifras; no guardar historial completo; retención acotada (p. ej. 90 días) o agregación que borre el texto crudo.
 
@@ -317,12 +382,13 @@ Cuando exista `origen_ingesta` / cola de pendientes, el asistente podría respon
 2. ~~Endpoints internos opcionales~~ — omitidos; solo consumo desde código/tests.
 3. ~~Paridad~~ — gasto/avance alineados a `presupuesto_mes`; resumen a mes cerrado; alertas scoped por usuario/espacio.
 
-### Etapa B — Orquestador + API cloud (NIM u otro)
+### Etapa B — Orquestador + API cloud (NIM) ✅
 
-1. `LLMClient` (OpenAI-compatible) + schemas de 2–3 tools (`avance_presupuesto_mes`, `gasto_categoria_por_mes`, `listar_alertas_recientes`).
-2. Integración contra **NVIDIA NIM** (o Groq/Gemini) con la misma config en local y en el entorno desplegado.
-3. `POST /asistente/consulta/` detrás de flag.
-4. Smoke test de integración con mock del LLM (no llamar red en CI); smoke manual opcional contra NIM con API key de desarrollo.
+1. ~~`LLMClient` + schemas~~ → `asistente/llm.py` + `tools.py` (4 tools de Etapa A).
+2. ~~Integración NIM~~ → `ASISTENTE_LLM_*` (OpenAI-compatible; default NVIDIA).
+3. ~~`POST /asistente/consulta/`~~ detrás de `ASISTENTE_HABILITADO` + API key.
+4. ~~Tests mock~~ → `tests/test_asistente_consulta.py`; smoke manual contra NIM con API key propio.
+5. ~~Brechas~~ → modelo `BrechaConsultaAsistente` + registro en `SIN_TOOL` / `TOOL_VACIA`.
 
 ### Etapa C — Producto
 
@@ -365,7 +431,8 @@ Prohibido usar `finanzas_db` de desarrollo para experimentos ad hoc (ver `.curso
 ## Criterios de «listo para usuarios beta»
 
 - [x] Al menos 3 tools con tests de paridad vs pantallas existentes. *(Etapa A: 4 funciones)*
-- [ ] Ninguna ruta ejecuta SQL/ORM fuera del catálogo. *(aplica cuando exista el endpoint chat)*
-- [ ] Flag de encendido y rate limit en producción.
-- [ ] Respuestas en español coherentes con montos CLP de fixtures de demo.
-- [ ] Documentación de env vars en `DEPLOYMENT-LOCAL.md` / producción cuando se implemente.
+- [x] Ninguna ruta ejecuta SQL/ORM fuera del catálogo. *(tools registry en Etapa B)*
+- [x] Flag de encendido y rate limit en producción. *(ASISTENTE_HABILITADO + rate/hora)*
+- [ ] Respuestas en español coherentes con montos CLP de fixtures de demo. *(smoke manual con NIM)*
+- [x] Documentación de env vars en `DEPLOYMENT-LOCAL.md` / `.env.example`.
+- [ ] UI de chat (Etapa C).

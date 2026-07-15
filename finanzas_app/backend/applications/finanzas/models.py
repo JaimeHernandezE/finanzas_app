@@ -754,3 +754,48 @@ class NotificacionUsuario(models.Model):
         return f'Notif u={self.usuario_id} {self.tipo}'
 
 
+class BrechaConsultaAsistente(models.Model):
+    """
+    Telemetría de preguntas del asistente sin cobertura útil (Etapa B).
+    No guarda el hilo completo ni montos; solo señales de producto.
+    """
+
+    SENAL_SIN_TOOL = 'SIN_TOOL'
+    SENAL_TOOL_VACIA = 'TOOL_VACIA'
+    SENAL_FUERA_DE_ALCANCE = 'FUERA_DE_ALCANCE'
+    SENAL_CHOICES = [
+        (SENAL_SIN_TOOL, 'Sin tool'),
+        (SENAL_TOOL_VACIA, 'Tool vacía'),
+        (SENAL_FUERA_DE_ALCANCE, 'Fuera de alcance'),
+    ]
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='brechas_asistente',
+    )
+    espacio = models.ForeignKey(
+        'espacios.Espacio',
+        on_delete=models.CASCADE,
+        related_name='brechas_asistente',
+    )
+    senal = models.CharField(max_length=32, choices=SENAL_CHOICES)
+    mensaje_normalizado = models.CharField(max_length=240, blank=True, default='')
+    intento_label = models.CharField(max_length=64, blank=True, default='otro')
+    tools_intentadas = models.JSONField(default=list, blank=True)
+    modelo = models.CharField(max_length=128, blank=True, default='')
+    provider = models.CharField(max_length=32, blank=True, default='')
+    creado_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['senal', 'creado_at']),
+            models.Index(fields=['intento_label', 'creado_at']),
+            models.Index(fields=['espacio', 'creado_at']),
+        ]
+        ordering = ['-creado_at']
+
+    def __str__(self):
+        return f'Brecha {self.senal} {self.intento_label} u={self.usuario_id}'
+
+
