@@ -96,6 +96,19 @@ export interface NotificacionesListaResp {
   no_leidas: number
 }
 
+/** POST /api/finanzas/asistente/consulta/ */
+export interface AsistenteHistorialItem {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AsistenteConsultaResp {
+  respuesta: string
+  herramientas_usadas: string[]
+  datos: Record<string, unknown>
+  sugerencias_seguimiento: string[]
+}
+
 /** GET/PUT /api/finanzas/sueldos-estimados-prorrateo/ */
 export interface SueldosEstimadosProrrateoResp {
   mes: number
@@ -397,4 +410,11 @@ export const finanzasApi = {
 
   marcarTodasNotificacionesLeidas: () =>
     client.post<{ marcadas: number }>('/api/finanzas/notificaciones/marcar-todas-leidas/'),
+
+  /** Chat del asistente financiero (Etapa B/C). Requiere ASISTENTE_HABILITADO + API key. */
+  consultarAsistente: (mensaje: string, historial?: AsistenteHistorialItem[]) =>
+    client.post<AsistenteConsultaResp>('/api/finanzas/asistente/consulta/', {
+      mensaje,
+      ...(historial != null ? { historial } : {}),
+    }),
 }

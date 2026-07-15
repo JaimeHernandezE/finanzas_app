@@ -1,6 +1,6 @@
 # Asistente financiero (fase 2)
 
-Chat con consultas en lenguaje natural sobre los datos del usuario. **Etapas A y B implementadas** (analytics + `POST /asistente/consulta/` + NIM); UI pendiente (Etapa C).
+Chat con consultas en lenguaje natural sobre los datos del usuario. **Etapas A–C implementadas** (analytics + API + UI web `/asistente`); móvil y ampliar catálogo pendientes.
 
 Resumen corto en [backend/README.md — Asistente financiero](README.md#asistente-financiero-fase-2--en-progreso). Este documento desarrolla arquitectura, herramientas, seguridad y etapas de implementación.
 
@@ -331,11 +331,15 @@ El system prompt y los JSON Schema de tools viven en código versionado (`applic
 
 ## 4. UI
 
-- Panel de chat **separado** del centro de notificaciones (fase 1). Las alertas siguen siendo push/lista in-app; el asistente es consulta bajo demanda.
-- Entradas posibles: FAB o ítem de menú en web y móvil; opcionalmente deep-link desde una notificación («preguntar al asistente sobre esto») pasando contexto mínimo (`tipo`, `categoria_id`, `mes`) en el primer mensaje del sistema, no datos sensibles extra.
-- La UI no llama al LLM directo: solo `POST …/asistente/consulta/`.
-- Estados: cargando, error de red/proveedor, «sin datos para ese período».
-- No mezclar streaming en v1 salvo que el proveedor y el proxy Django lo justifiquen; respuesta completa es suficiente al inicio.
+**Estado: Etapa C (web) implementada.**
+
+- Ruta web: `/asistente` (`frontend/src/pages/asistente/AsistentePage.tsx`), en el menú Análisis.
+- Separada del centro de notificaciones (`/notificaciones`).
+- Cliente: `finanzasApi.consultarAsistente`; maneja `503` / `429` vía `apiErrorMessage`.
+- Chips de ejemplo / `sugerencias_seguimiento`; etiquetas de `herramientas_usadas` (sin dump de `datos`).
+- Sin streaming ni FAB; sin app móvil en esta etapa.
+
+Entradas previstas después: deep-link desde una notificación; UI Expo.
 
 ---
 
@@ -390,12 +394,13 @@ Cuando exista `origen_ingesta` / cola de pendientes, el asistente podría respon
 4. ~~Tests mock~~ → `tests/test_asistente_consulta.py`; smoke manual contra NIM con API key propio.
 5. ~~Brechas~~ → modelo `BrechaConsultaAsistente` + registro en `SIN_TOOL` / `TOOL_VACIA`.
 
-### Etapa C — Producto
+### Etapa C — Producto ✅ (web)
 
-1. UI chat mínima (web primero o móvil según prioridad).
-2. Variables en despliegue + manejo de créditos agotados / 429.
-3. Rate limit propio, logging de `herramientas_usadas`, métricas de error/latencia.
-4. Ampliar catálogo (`comparar_gasto_anual`, `sugerir_presupuestos`).
+1. ~~UI chat mínima web~~ → `/asistente` + nav Análisis.
+2. ~~Variables en despliegue + 503/429~~ → docs local/producción; UI muestra mensajes claros.
+3. ~~Rate limit~~ (Etapa B) + ~~logging~~ de `herramientas_usadas` / latencia en orquestador.
+4. Ampliar catálogo (`comparar_gasto_anual`, `sugerir_presupuestos`) — **pendiente** (priorizar `intento_label` de brechas).
+5. UI móvil Expo — **pendiente**.
 
 ### Etapa D — Confirmaciones de escritura (opcional)
 
@@ -435,4 +440,5 @@ Prohibido usar `finanzas_db` de desarrollo para experimentos ad hoc (ver `.curso
 - [x] Flag de encendido y rate limit en producción. *(ASISTENTE_HABILITADO + rate/hora)*
 - [ ] Respuestas en español coherentes con montos CLP de fixtures de demo. *(smoke manual con NIM)*
 - [x] Documentación de env vars en `DEPLOYMENT-LOCAL.md` / `.env.example`.
-- [ ] UI de chat (Etapa C).
+- [x] UI de chat web (Etapa C).
+- [ ] UI móvil / ampliar catálogo analytics.

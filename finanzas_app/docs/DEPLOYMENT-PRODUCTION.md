@@ -48,6 +48,22 @@ ALLOWED_HOSTS=<tu-backend>.up.railway.app
 CORS_ALLOWED_ORIGINS=https://<tu-frontend>.up.railway.app
 ```
 
+### Asistente financiero (opcional)
+
+Para habilitar `POST /api/finanzas/asistente/consulta/` y la UI web `/asistente`:
+
+```env
+ASISTENTE_HABILITADO=true
+ASISTENTE_LLM_PROVIDER=nvidia
+ASISTENTE_LLM_MODEL=meta/llama-3.3-70b-instruct
+ASISTENTE_LLM_API_KEY=nvapi-...
+ASISTENTE_LLM_BASE_URL=https://integrate.api.nvidia.com/v1
+# ASISTENTE_RATE_LIMIT_POR_HORA=30
+# ASISTENTE_MAX_TURNOS_HISTORIAL=8
+```
+
+Sin flag + API key el endpoint responde `503`. Detalle: [backend/ASISTENTE-FINANCIERO.md](backend/ASISTENTE-FINANCIERO.md).
+
 Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase Admin en ese servicio.
 
 ### Frontend web demo (Railway)

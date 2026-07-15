@@ -28,6 +28,7 @@ const FAMILIA_FIJOS = [
 const ANALISIS_ITEMS = [
   { icon: '◈', label: 'Dashboard',   to: '/dashboard'   },
   { icon: '▤', label: 'Presupuesto', to: '/presupuesto' },
+  { icon: '◇', label: 'Asistente',   to: '/asistente'   },
 ] as const
 
 const MAS_ITEMS = [

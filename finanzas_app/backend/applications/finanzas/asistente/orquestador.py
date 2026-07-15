@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Any
 
 from django.conf import settings
@@ -16,6 +18,8 @@ from applications.finanzas.asistente.tools import (
     tool_resultado_vacio,
 )
 from applications.finanzas.models import BrechaConsultaAsistente
+
+logger = logging.getLogger(__name__)
 
 _MAX_RONDAS_TOOLS = 2
 
@@ -42,6 +46,24 @@ def _truncar_historial(historial: list | None, max_turnos: int) -> list[dict]:
     return limpios
 
 
+def _log_turno(
+    *,
+    usuario,
+    espacio,
+    herramientas_usadas: list[str],
+    latencia_ms: int,
+    senal_brecha: str | None,
+) -> None:
+    logger.info(
+        'asistente_turno usuario_id=%s espacio_id=%s tools=%s latencia_ms=%s brecha=%s',
+        getattr(usuario, 'pk', None),
+        getattr(espacio, 'pk', None),
+        ','.join(herramientas_usadas) or '-',
+        latencia_ms,
+        senal_brecha or '-',
+    )
+
+
 def consultar(
     *,
     usuario,
@@ -56,6 +78,7 @@ def consultar(
     Raises:
         LLMUnavailableError: proveedor caído / sin key.
     """
+    t0 = time.perf_counter()
     client = llm or LLMClient()
     messages: list[dict] = [
         {
@@ -75,6 +98,10 @@ def consultar(
     datos: dict[str, Any] = {}
     hubo_tool_vacia = False
     tools_vacias: list[str] = []
+    senal_brecha: str | None = None
+
+    def _latencia_ms() -> int:
+        return int((time.perf_counter() - t0) * 1000)
 
     for _ in range(_MAX_RONDAS_TOOLS):
         result = client.chat(messages, tools=TOOL_SCHEMAS, tool_choice='auto')
@@ -91,6 +118,7 @@ def consultar(
                     modelo=client.model,
                     provider=client.provider,
                 )
+                senal_brecha = BrechaConsultaAsistente.SENAL_SIN_TOOL
             elif hubo_tool_vacia:
                 brechas_svc.registrar_brecha(
                     usuario=usuario,
@@ -101,18 +129,27 @@ def consultar(
                     modelo=client.model,
                     provider=client.provider,
                 )
-            return {
+                senal_brecha = BrechaConsultaAsistente.SENAL_TOOL_VACIA
+            payload = {
                 'respuesta': contenido
                 or 'No pude generar una respuesta con los datos disponibles.',
                 'herramientas_usadas': herramientas_usadas,
                 'datos': datos,
                 'sugerencias_seguimiento': list(_SUGERENCIAS_DEFAULT),
             }
+            _log_turno(
+                usuario=usuario,
+                espacio=espacio,
+                herramientas_usadas=herramientas_usadas,
+                latencia_ms=_latencia_ms(),
+                senal_brecha=senal_brecha,
+            )
+            return payload
 
         messages.append(result['raw_message'])
         for tc in tool_calls:
             nombre = tc['name']
-            payload = ejecutar_tool(
+            payload_tool = ejecutar_tool(
                 nombre,
                 tc.get('arguments_json') or '{}',
                 usuario,
@@ -120,8 +157,8 @@ def consultar(
             )
             if nombre not in herramientas_usadas:
                 herramientas_usadas.append(nombre)
-            datos[nombre] = payload
-            if tool_resultado_vacio(nombre, payload):
+            datos[nombre] = payload_tool
+            if tool_resultado_vacio(nombre, payload_tool):
                 hubo_tool_vacia = True
                 if nombre not in tools_vacias:
                     tools_vacias.append(nombre)
@@ -130,7 +167,7 @@ def consultar(
                     'role': 'tool',
                     'tool_call_id': tc['id'],
                     'name': nombre,
-                    'content': json.dumps(payload, ensure_ascii=False, default=str),
+                    'content': json.dumps(payload_tool, ensure_ascii=False, default=str),
                 }
             )
 
@@ -147,10 +184,19 @@ def consultar(
             modelo=client.model,
             provider=client.provider,
         )
-    return {
+        senal_brecha = BrechaConsultaAsistente.SENAL_TOOL_VACIA
+    payload = {
         'respuesta': contenido
         or 'Consulté los datos pero no pude redactar una respuesta. Revisa los totales en la app.',
         'herramientas_usadas': herramientas_usadas,
         'datos': datos,
         'sugerencias_seguimiento': list(_SUGERENCIAS_DEFAULT),
     }
+    _log_turno(
+        usuario=usuario,
+        espacio=espacio,
+        herramientas_usadas=herramientas_usadas,
+        latencia_ms=_latencia_ms(),
+        senal_brecha=senal_brecha,
+    )
+    return payload

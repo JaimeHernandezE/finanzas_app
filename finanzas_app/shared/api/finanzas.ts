@@ -124,6 +124,18 @@ export interface NotificacionesListaResp {
   no_leidas: number
 }
 
+export interface AsistenteHistorialItem {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface AsistenteConsultaResp {
+  respuesta: string
+  herramientas_usadas: string[]
+  datos: Record<string, unknown>
+  sugerencias_seguimiento: string[]
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),
@@ -220,4 +232,10 @@ export const finanzasApi = {
 
   marcarTodasNotificacionesLeidas: () =>
     client.post<{ marcadas: number }>('/api/finanzas/notificaciones/marcar-todas-leidas/'),
+
+  consultarAsistente: (mensaje: string, historial?: AsistenteHistorialItem[]) =>
+    client.post<AsistenteConsultaResp>('/api/finanzas/asistente/consulta/', {
+      mensaje,
+      ...(historial != null ? { historial } : {}),
+    }),
 }

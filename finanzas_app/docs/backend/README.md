@@ -31,7 +31,7 @@ backend/
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
 | **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
-| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) — Etapas A+B hechas (analytics + chat API); UI pendiente. |
+| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) — Etapas A–C (analytics + chat API + UI web); móvil/catálogo backlog pendientes. |
 
 ## Comandos útiles (dentro del contenedor)
 
@@ -213,9 +213,9 @@ Expuestas en `GET/PATCH /api/usuarios/me/` junto al resto de preferencias de UI.
 Chat con consultas en lenguaje natural. Diseño:
 
 1. **Capa analytics** — **Etapa A hecha:** `applications/finanzas/services/analytics/`.
-2. **Endpoint chat** — **Etapa B hecha:** `POST /api/finanzas/asistente/consulta/` (function-calling; requiere `ASISTENTE_HABILITADO` + API key). Paquete `applications/finanzas/asistente/`. Telemetría: `BrechaConsultaAsistente`. Tests: `tests/test_asistente_consulta.py`.
-3. **LLM** — NVIDIA NIM (OpenAI-compatible) vía env `ASISTENTE_LLM_*`.
-4. **UI** — panel de chat (**pendiente**, Etapa C).
+2. **Endpoint chat** — **Etapa B hecha:** `POST /api/finanzas/asistente/consulta/` (`ASISTENTE_HABILITADO` + API key). Paquete `applications/finanzas/asistente/`.
+3. **UI web** — **Etapa C hecha:** ruta `/asistente` (menú Análisis).
+4. **Pendiente:** UI móvil; ampliar tools del backlog según brechas.
 
 Detalle: [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
 

@@ -23,6 +23,12 @@ export function apiErrorMessage(err: unknown): string {
     if (status === 403) {
       return 'No tienes permiso para esta acción (403). Solo administradores pueden usar el respaldo a Drive.'
     }
+    if (status === 429) {
+      return 'Demasiadas consultas al asistente (429). Espera un momento e intenta de nuevo.'
+    }
+    if (status === 503) {
+      return 'El asistente no está disponible (503). Puede estar deshabilitado o sin cuota del proveedor LLM.'
+    }
   }
   if (err instanceof Error) return err.message
   return 'Error desconocido'
