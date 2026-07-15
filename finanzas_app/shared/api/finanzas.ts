@@ -234,8 +234,12 @@ export const finanzasApi = {
     client.post<{ marcadas: number }>('/api/finanzas/notificaciones/marcar-todas-leidas/'),
 
   consultarAsistente: (mensaje: string, historial?: AsistenteHistorialItem[]) =>
-    client.post<AsistenteConsultaResp>('/api/finanzas/asistente/consulta/', {
-      mensaje,
-      ...(historial != null ? { historial } : {}),
-    }),
+    client.post<AsistenteConsultaResp>(
+      '/api/finanzas/asistente/consulta/',
+      {
+        mensaje,
+        ...(historial != null ? { historial } : {}),
+      },
+      { timeout: 90_000 },
+    ),
 }

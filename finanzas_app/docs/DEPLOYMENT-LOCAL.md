@@ -33,7 +33,7 @@ Para probar `POST /api/finanzas/asistente/consulta/` en local, en `backend/.env`
 ```
 ASISTENTE_HABILITADO=true
 ASISTENTE_LLM_PROVIDER=nvidia
-ASISTENTE_LLM_MODEL=meta/llama-3.3-70b-instruct
+ASISTENTE_LLM_MODEL=meta/llama-3.1-8b-instruct
 ASISTENTE_LLM_API_KEY=nvapi-...
 ASISTENTE_LLM_BASE_URL=https://integrate.api.nvidia.com/v1
 ```

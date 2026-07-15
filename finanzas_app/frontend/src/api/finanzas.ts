@@ -413,8 +413,12 @@ export const finanzasApi = {
 
   /** Chat del asistente financiero (Etapa B/C). Requiere ASISTENTE_HABILITADO + API key. */
   consultarAsistente: (mensaje: string, historial?: AsistenteHistorialItem[]) =>
-    client.post<AsistenteConsultaResp>('/api/finanzas/asistente/consulta/', {
-      mensaje,
-      ...(historial != null ? { historial } : {}),
-    }),
+    client.post<AsistenteConsultaResp>(
+      '/api/finanzas/asistente/consulta/',
+      {
+        mensaje,
+        ...(historial != null ? { historial } : {}),
+      },
+      { timeout: 90_000 },
+    ),
 }

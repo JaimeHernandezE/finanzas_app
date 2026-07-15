@@ -221,11 +221,12 @@ Tests: `tests/test_asistente_consulta.py` (LLM mockeado; sin red).
 ### Flujo de function-calling (servidor)
 
 1. Validar mensaje (longitud, rate limit por usuario/espacio).
-2. Armar system prompt: rol, límites, «solo usar tools», idioma `es-CL`, no inventar cifras.
+2. Armar system prompt: rol, límites, «solo usar tools», **fecha Hoy (America/Santiago)**, idioma `es-CL`, no inventar cifras.
 3. Enviar mensaje + schemas de tools al proveedor LLM.
-4. Si el modelo pide `tool_call`s: ejecutar en proceso Django con `usuario`/`espacio` inyectados (ignorar o sobrescribir cualquier `espacio_id` que invente el modelo).
-5. Devolver resultados de tools al modelo; obtener respuesta final en texto.
-6. Registrar `BrechaConsultaAsistente` en `SIN_TOOL` / `TOOL_VACIA` (telemetría; no el hilo completo).
+4. Si el modelo pide `tool_call`s (API) **o** pega la llamada en texto JSON (rescate vía `tool_call_text`, típico en 8B): ejecutar en Django con `usuario`/`espacio` inyectados; sanitizar `mes`/`anio` absurdos.
+5. `gasto_categoria_por_mes` acepta `categoria_nombre` o un nombre metido en `categoria_id` (p. ej. «comida» → «Alimentación» vía resolución + sinónimos).
+6. Devolver resultados de tools al modelo (`periodo` explícito); obtener respuesta final en texto. Si la pasada final vuelve a pegar JSON de tool, se reintenta una vez y no se muestra el JSON al usuario.
+7. Registrar `BrechaConsultaAsistente` en `SIN_TOOL` / `TOOL_VACIA` (telemetría; no el hilo completo).
 
 Timeouts y límites: hasta 2 rondas de tools por turno; si falla el LLM, `503` sin partial leaks.
 

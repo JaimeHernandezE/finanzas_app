@@ -266,7 +266,7 @@ ASISTENTE_HABILITADO = _env_flag('ASISTENTE_HABILITADO', 'false')
 ASISTENTE_LLM_PROVIDER = os.environ.get('ASISTENTE_LLM_PROVIDER', 'nvidia').strip().lower()
 ASISTENTE_LLM_MODEL = os.environ.get(
     'ASISTENTE_LLM_MODEL',
-    'meta/llama-3.3-70b-instruct',
+    'meta/llama-3.1-8b-instruct',
 ).strip()
 ASISTENTE_LLM_API_KEY = os.environ.get('ASISTENTE_LLM_API_KEY', '').strip()
 ASISTENTE_LLM_BASE_URL = os.environ.get(
@@ -276,6 +276,8 @@ ASISTENTE_LLM_BASE_URL = os.environ.get(
 ASISTENTE_MAX_TURNOS_HISTORIAL = int(os.environ.get('ASISTENTE_MAX_TURNOS_HISTORIAL', '8'))
 ASISTENTE_RATE_LIMIT_POR_HORA = int(os.environ.get('ASISTENTE_RATE_LIMIT_POR_HORA', '30'))
 ASISTENTE_MAX_CHARS_MENSAJE = int(os.environ.get('ASISTENTE_MAX_CHARS_MENSAJE', '2000'))
+ASISTENTE_LLM_TIMEOUT_S = float(os.environ.get('ASISTENTE_LLM_TIMEOUT_S', '60'))
+ASISTENTE_LLM_MAX_TOKENS = int(os.environ.get('ASISTENTE_LLM_MAX_TOKENS', '1024'))
 
 # Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
 from firebase_admin_init import init_firebase

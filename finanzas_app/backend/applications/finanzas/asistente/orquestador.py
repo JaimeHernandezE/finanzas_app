@@ -13,8 +13,9 @@ from applications.finanzas.asistente import brechas as brechas_svc
 from applications.finanzas.asistente.llm import LLMClient, LLMUnavailableError
 from applications.finanzas.asistente.prompts import system_prompt_para_espacio
 from applications.finanzas.asistente.tools import (
-    TOOL_SCHEMAS,
     ejecutar_tool,
+    get_tool_schemas,
+    nombres_tools,
     tool_resultado_vacio,
 )
 from applications.finanzas.models import BrechaConsultaAsistente
@@ -27,6 +28,28 @@ _SUGERENCIAS_DEFAULT = [
     '¿Cómo voy con mis presupuestos este mes?',
     '¿Me avisaste alguna alerta de presupuesto?',
 ]
+
+
+def _sugerencias_desde_datos(datos: dict[str, Any]) -> list[str]:
+    """Si una tool devolvió candidatos de categoría, priorizar chips con esos nombres."""
+    for payload in datos.values():
+        if not isinstance(payload, dict):
+            continue
+        chips = payload.get('sugerencias_seguimiento')
+        if isinstance(chips, list) and chips:
+            return [str(c) for c in chips if c][:6]
+        candidatos = payload.get('candidatos')
+        if isinstance(candidatos, list) and candidatos:
+            nombres = []
+            for c in candidatos:
+                if not isinstance(c, dict):
+                    continue
+                n = c.get('categoria_nombre')
+                if n and n not in nombres:
+                    nombres.append(str(n))
+            if nombres:
+                return [f'¿Cómo voy en {n} en gastos comunes este mes?' for n in nombres[:6]]
+    return list(_SUGERENCIAS_DEFAULT)
 
 
 def _truncar_historial(historial: list | None, max_turnos: int) -> list[dict]:
@@ -104,7 +127,7 @@ def consultar(
         return int((time.perf_counter() - t0) * 1000)
 
     for _ in range(_MAX_RONDAS_TOOLS):
-        result = client.chat(messages, tools=TOOL_SCHEMAS, tool_choice='auto')
+        result = client.chat(messages, tools=get_tool_schemas(), tool_choice='auto')
         tool_calls = result.get('tool_calls') or []
         if not tool_calls:
             contenido = (result.get('content') or '').strip()
@@ -135,7 +158,7 @@ def consultar(
                 or 'No pude generar una respuesta con los datos disponibles.',
                 'herramientas_usadas': herramientas_usadas,
                 'datos': datos,
-                'sugerencias_seguimiento': list(_SUGERENCIAS_DEFAULT),
+                'sugerencias_seguimiento': _sugerencias_desde_datos(datos),
             }
             _log_turno(
                 usuario=usuario,
@@ -171,9 +194,53 @@ def consultar(
                 }
             )
 
-    # Última pasada sin pedir más tools (o con tools aún disponibles).
-    final = client.chat(messages, tools=TOOL_SCHEMAS, tool_choice='none')
+    # Última pasada: pedir texto; si el modelo vuelve a pegar JSON de tool, rescatar
+    # ejecutando la tool (una ronda extra) en vez de mostrarlo al usuario.
+    final = client.chat(messages, tools=get_tool_schemas(), tool_choice='none')
     contenido = (final.get('content') or '').strip()
+
+    from applications.finanzas.asistente.tool_call_text import (
+        enriquecer_resultado_con_rescate,
+    )
+
+    rescued_final = enriquecer_resultado_con_rescate(
+        {'content': contenido, 'tool_calls': [], 'raw_message': final.get('raw_message')},
+        nombres_tools(),
+    )
+    if rescued_final.get('tool_calls') and len(herramientas_usadas) < 4:
+        messages.append(rescued_final['raw_message'])
+        for tc in rescued_final['tool_calls']:
+            nombre = tc['name']
+            payload_tool = ejecutar_tool(
+                nombre,
+                tc.get('arguments_json') or '{}',
+                usuario,
+                espacio,
+            )
+            if nombre not in herramientas_usadas:
+                herramientas_usadas.append(nombre)
+            datos[nombre] = payload_tool
+            if tool_resultado_vacio(nombre, payload_tool):
+                hubo_tool_vacia = True
+                if nombre not in tools_vacias:
+                    tools_vacias.append(nombre)
+            messages.append(
+                {
+                    'role': 'tool',
+                    'tool_call_id': tc['id'],
+                    'name': nombre,
+                    'content': json.dumps(payload_tool, ensure_ascii=False, default=str),
+                }
+            )
+        final = client.chat(messages, tools=get_tool_schemas(), tool_choice='none')
+        contenido = (final.get('content') or '').strip()
+        # Si aún pega JSON, no lo mostremos como respuesta.
+        if enriquecer_resultado_con_rescate(
+            {'content': contenido, 'tool_calls': [], 'raw_message': {}},
+            nombres_tools(),
+        ).get('tool_calls'):
+            contenido = ''
+
     if hubo_tool_vacia and not contenido:
         brechas_svc.registrar_brecha(
             usuario=usuario,
@@ -190,7 +257,7 @@ def consultar(
         or 'Consulté los datos pero no pude redactar una respuesta. Revisa los totales en la app.',
         'herramientas_usadas': herramientas_usadas,
         'datos': datos,
-        'sugerencias_seguimiento': list(_SUGERENCIAS_DEFAULT),
+        'sugerencias_seguimiento': _sugerencias_desde_datos(datos),
     }
     _log_turno(
         usuario=usuario,

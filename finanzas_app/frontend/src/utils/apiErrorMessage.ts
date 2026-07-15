@@ -29,7 +29,16 @@ export function apiErrorMessage(err: unknown): string {
     if (status === 503) {
       return 'El asistente no está disponible (503). Puede estar deshabilitado o sin cuota del proveedor LLM.'
     }
+    if (status == null && ax.code === 'ECONNABORTED') {
+      return 'La consulta al asistente tardó demasiado. Intenta de nuevo o revisa la clave/cuota de NVIDIA.'
+    }
   }
-  if (err instanceof Error) return err.message
+  if (err instanceof Error) {
+    const code = (err as { code?: string }).code
+    if (code === 'ECONNABORTED' || /timeout/i.test(err.message)) {
+      return 'La consulta al asistente tardó demasiado. Intenta de nuevo o revisa la clave/cuota de NVIDIA.'
+    }
+    return err.message
+  }
   return 'Error desconocido'
 }

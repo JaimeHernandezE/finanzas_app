@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from django.utils import timezone
 
+from applications.finanzas.asistente.categorias import resolver_categoria
 from applications.finanzas.services import analytics as analytics_svc
 
 # Args que el LLM no puede usar para cambiar de tenant.
@@ -18,93 +19,127 @@ def _hoy() -> date:
     return timezone.localdate()
 
 
-TOOL_SCHEMAS: list[dict] = [
-    {
-        'type': 'function',
-        'function': {
-            'name': 'avance_presupuesto_mes',
-            'description': (
-                'Avance de presupuestos vs gasto del mes (filas por categoría + resumen). '
-                'Ámbito FAMILIAR (gastos comunes) o PERSONAL.'
-            ),
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'mes': {'type': 'integer', 'description': 'Mes 1-12'},
-                    'anio': {'type': 'integer', 'description': 'Año YYYY'},
-                    'ambito': {
-                        'type': 'string',
-                        'enum': ['FAMILIAR', 'PERSONAL'],
+def _schemas_tools() -> list[dict]:
+    """Schemas con mes/anio actuales en las descripciones (evita sesgo 2023/2024 del LLM)."""
+    hoy = _hoy()
+    mes_desc = f'Mes 1-12. Para «este mes» usa {hoy.month}.'
+    anio_desc = (
+        f'Año YYYY. Para «este mes» o si el usuario no precisa año, usa {hoy.year} '
+        '(no inventes 2023/2024).'
+    )
+    return [
+        {
+            'type': 'function',
+            'function': {
+                'name': 'avance_presupuesto_mes',
+                'description': (
+                    'Avance de presupuestos vs gasto del mes en curso o de un mes concreto '
+                    '(filas por categoría + resumen). Usar para «cómo voy», «este mes», '
+                    'presupuesto actual. Ámbito FAMILIAR (gastos comunes) o PERSONAL. '
+                    f'Hoy: mes={hoy.month}, anio={hoy.year}.'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'mes': {'type': 'integer', 'description': mes_desc},
+                        'anio': {'type': 'integer', 'description': anio_desc},
+                        'ambito': {
+                            'type': 'string',
+                            'enum': ['FAMILIAR', 'PERSONAL'],
+                        },
+                        'cuenta_id': {
+                            'type': 'integer',
+                            'description': 'Opcional; solo ámbito PERSONAL',
+                        },
                     },
-                    'cuenta_id': {
-                        'type': 'integer',
-                        'description': 'Opcional; solo ámbito PERSONAL',
-                    },
+                    'required': ['mes', 'anio', 'ambito'],
                 },
-                'required': ['mes', 'anio', 'ambito'],
             },
         },
-    },
-    {
-        'type': 'function',
-        'function': {
-            'name': 'gasto_categoria_por_mes',
-            'description': 'Gasto de una categoría en un mes (efectivo + cuotas crédito).',
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'categoria_id': {'type': 'integer'},
-                    'mes': {'type': 'integer'},
-                    'anio': {'type': 'integer'},
-                    'ambito': {
-                        'type': 'string',
-                        'enum': ['FAMILIAR', 'PERSONAL'],
+        {
+            'type': 'function',
+            'function': {
+                'name': 'gasto_categoria_por_mes',
+                'description': (
+                    'Gasto de una categoría en un mes (efectivo + cuotas crédito). '
+                    'Prefiere categoria_nombre con el nombre que dijo el usuario '
+                    '(ej. «comida», «Bencina»). Solo usa categoria_id si conoces el entero. '
+                    f'Hoy: mes={hoy.month}, anio={hoy.year}.'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'categoria_id': {
+                            'type': 'integer',
+                            'description': 'ID numérico de categoría (opcional si das categoria_nombre)',
+                        },
+                        'categoria_nombre': {
+                            'type': 'string',
+                            'description': (
+                                'Nombre o fragmento de categoría como lo dice el usuario '
+                                '(ej. comida, supermercado, bencina).'
+                            ),
+                        },
+                        'mes': {'type': 'integer', 'description': mes_desc},
+                        'anio': {'type': 'integer', 'description': anio_desc},
+                        'ambito': {
+                            'type': 'string',
+                            'enum': ['FAMILIAR', 'PERSONAL'],
+                        },
+                        'cuenta_id': {'type': 'integer'},
                     },
-                    'cuenta_id': {'type': 'integer'},
+                    'required': ['mes', 'anio', 'ambito'],
                 },
-                'required': ['categoria_id', 'mes', 'anio', 'ambito'],
             },
         },
-    },
-    {
-        'type': 'function',
-        'function': {
-            'name': 'listar_alertas_recientes',
-            'description': (
-                'Notificaciones recientes del usuario en el espacio '
-                '(presupuesto umbral y cambios de compensación).'
-            ),
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'limite': {
-                        'type': 'integer',
-                        'description': 'Máximo de filas (default 20, max 50)',
+        {
+            'type': 'function',
+            'function': {
+                'name': 'listar_alertas_recientes',
+                'description': (
+                    'Notificaciones recientes del usuario en el espacio '
+                    '(presupuesto umbral y cambios de compensación).'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'limite': {
+                            'type': 'integer',
+                            'description': 'Máximo de filas (default 20, max 50)',
+                        },
                     },
+                    'required': [],
                 },
-                'required': [],
             },
         },
-    },
-    {
-        'type': 'function',
-        'function': {
-            'name': 'resumen_mes_cerrado',
-            'description': (
-                'Resumen familiar de un mes calendario ya cerrado '
-                '(prorrateo, compensación). No incluye el mes en curso.'
-            ),
-            'parameters': {
-                'type': 'object',
-                'properties': {
-                    'mes': {'type': 'integer'},
-                    'anio': {'type': 'integer'},
+        {
+            'type': 'function',
+            'function': {
+                'name': 'resumen_mes_cerrado',
+                'description': (
+                    'Resumen familiar de un mes calendario YA CERRADO (prorrateo, compensación). '
+                    'NO usar para el mes en curso ni para «cómo voy con el presupuesto». '
+                    f'El mes en curso es {hoy.month}/{hoy.year}; el último mes cerrado es anterior a ese.'
+                ),
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'mes': {'type': 'integer', 'description': mes_desc},
+                        'anio': {'type': 'integer', 'description': anio_desc},
+                    },
+                    'required': ['mes', 'anio'],
                 },
-                'required': ['mes', 'anio'],
             },
         },
-    },
-]
+    ]
+
+
+# Compat: imports que lean TOOL_SCHEMAS al import time.
+TOOL_SCHEMAS: list[dict] = _schemas_tools()
+
+
+def get_tool_schemas() -> list[dict]:
+    return _schemas_tools()
 
 
 def _limpiar_args(raw: dict) -> dict:
@@ -122,40 +157,74 @@ def _parse_args(arguments_json: str) -> dict:
 
 
 def _defaults_mes_anio(args: dict) -> dict:
+    """Rellena mes/anio y corrige años absurdos (sesgo típico 2023/2024 del LLM)."""
     hoy = _hoy()
     out = dict(args)
-    if 'mes' not in out:
-        out['mes'] = hoy.month
-    if 'anio' not in out:
-        out['anio'] = hoy.year
+    try:
+        mes = int(out['mes']) if 'mes' in out and out['mes'] is not None else hoy.month
+    except (TypeError, ValueError):
+        mes = hoy.month
+    try:
+        anio = int(out['anio']) if 'anio' in out and out['anio'] is not None else hoy.year
+    except (TypeError, ValueError):
+        anio = hoy.year
+
+    if not 1 <= mes <= 12:
+        mes = hoy.month
+    # Futuro, o más de 1 año atrás → año actual (hallucination típica en «este mes»).
+    if anio > hoy.year or anio < hoy.year - 1:
+        anio = hoy.year
+    if anio == hoy.year and mes > hoy.month:
+        mes = hoy.month
+    out['mes'] = mes
+    out['anio'] = anio
+    return out
+
+
+def _con_periodo(payload: dict, mes: int, anio: int) -> dict:
+    """Añade periodo explícito para que el LLM no invente la fecha al redactar."""
+    out = dict(payload)
+    out['periodo'] = {'mes': mes, 'anio': anio}
     return out
 
 
 def _run_avance(usuario, espacio, args: dict) -> dict:
     a = _defaults_mes_anio(args)
-    return analytics_svc.avance_presupuesto_mes(
+    mes, anio = int(a['mes']), int(a['anio'])
+    payload = analytics_svc.avance_presupuesto_mes(
         usuario,
         espacio,
-        mes=int(a['mes']),
-        anio=int(a['anio']),
+        mes=mes,
+        anio=anio,
         ambito=str(a.get('ambito', 'FAMILIAR')).upper(),
         cuenta_id=int(a['cuenta_id']) if a.get('cuenta_id') is not None else None,
     )
+    return _con_periodo(payload, mes, anio)
 
 
 def _run_gasto(usuario, espacio, args: dict) -> dict:
     a = _defaults_mes_anio(args)
-    if a.get('categoria_id') is None:
-        return {'error': 'categoria_id es obligatorio'}
-    return analytics_svc.gasto_categoria_por_mes(
+    mes, anio = int(a['mes']), int(a['anio'])
+    ambito = str(a.get('ambito', 'FAMILIAR')).upper()
+    resuelto = resolver_categoria(
         usuario,
         espacio,
-        categoria_id=int(a['categoria_id']),
-        mes=int(a['mes']),
-        anio=int(a['anio']),
-        ambito=str(a.get('ambito', 'FAMILIAR')).upper(),
+        categoria_id=a.get('categoria_id'),
+        categoria_nombre=a.get('categoria_nombre'),
+        ambito=ambito,
+    )
+    if resuelto.get('error'):
+        return {**resuelto, 'periodo': {'mes': mes, 'anio': anio}}
+    payload = analytics_svc.gasto_categoria_por_mes(
+        usuario,
+        espacio,
+        categoria_id=int(resuelto['categoria_id']),
+        mes=mes,
+        anio=anio,
+        ambito=ambito,
         cuenta_id=int(a['cuenta_id']) if a.get('cuenta_id') is not None else None,
     )
+    return _con_periodo(payload, mes, anio)
 
 
 def _run_alertas(usuario, espacio, args: dict) -> dict:
@@ -169,12 +238,25 @@ def _run_alertas(usuario, espacio, args: dict) -> dict:
 
 def _run_resumen(usuario, espacio, args: dict) -> dict:
     a = _defaults_mes_anio(args)
-    return analytics_svc.resumen_mes_cerrado(
+    mes, anio = int(a['mes']), int(a['anio'])
+    hoy = _hoy()
+    if mes == hoy.month and anio == hoy.year:
+        return {
+            'periodo': {'mes': mes, 'anio': anio},
+            'mes_cerrado': False,
+            'resumen': None,
+            'error': (
+                'Ese mes aún está en curso. Para «cómo voy este mes» usa '
+                'avance_presupuesto_mes con el mismo mes/anio.'
+            ),
+        }
+    payload = analytics_svc.resumen_mes_cerrado(
         usuario,
         espacio,
-        mes=int(a['mes']),
-        anio=int(a['anio']),
+        mes=mes,
+        anio=anio,
     )
+    return _con_periodo(payload, mes, anio)
 
 
 _HANDLERS: dict[str, Callable[..., dict]] = {
@@ -215,6 +297,9 @@ def tool_resultado_vacio(nombre: str, resultado: dict) -> bool:
     if not isinstance(resultado, dict):
         return True
     if resultado.get('error'):
+        # Mes en curso rechazado: el LLM debe reintentar con avance; no es “sin datos”.
+        if nombre == 'resumen_mes_cerrado' and resultado.get('mes_cerrado') is False:
+            return False
         return True
     if nombre == 'avance_presupuesto_mes':
         resumen = resultado.get('resumen') or {}

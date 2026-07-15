@@ -40,7 +40,7 @@ services:
       # Asistente financiero (Etapa B): requiere ASISTENTE_HABILITADO=true y API key
       - ASISTENTE_HABILITADO=${ASISTENTE_HABILITADO:-false}
       - ASISTENTE_LLM_PROVIDER=${ASISTENTE_LLM_PROVIDER:-nvidia}
-      - ASISTENTE_LLM_MODEL=${ASISTENTE_LLM_MODEL:-meta/llama-3.3-70b-instruct}
+      - ASISTENTE_LLM_MODEL=${ASISTENTE_LLM_MODEL:-meta/llama-3.1-8b-instruct}
       - ASISTENTE_LLM_API_KEY=${ASISTENTE_LLM_API_KEY:-}
       - ASISTENTE_LLM_BASE_URL=${ASISTENTE_LLM_BASE_URL:-https://integrate.api.nvidia.com/v1}
 

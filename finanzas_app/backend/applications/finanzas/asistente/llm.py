@@ -7,6 +7,8 @@ from typing import Any
 
 from django.conf import settings
 
+from applications.finanzas.asistente.tool_call_text import enriquecer_resultado_con_rescate
+
 
 class LLMUnavailableError(Exception):
     """Proveedor no disponible o mal configurado."""
@@ -77,10 +79,19 @@ class LLMClient:
                 'Paquete openai no instalado. Añádelo a requirements e instala dependencias.'
             ) from exc
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        timeout_s = float(getattr(settings, 'ASISTENTE_LLM_TIMEOUT_S', 60) or 60)
+        max_tokens = int(getattr(settings, 'ASISTENTE_LLM_MAX_TOKENS', 1024) or 1024)
+        client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url,
+            timeout=timeout_s,
+            max_retries=0,
+        )
         kwargs: dict[str, Any] = {
             'model': self.model,
             'messages': messages,
+            'max_tokens': max_tokens,
+            'temperature': 0.2,
         }
         if tools:
             kwargs['tools'] = tools
@@ -120,8 +131,21 @@ class LLMClient:
                 for tc in tool_calls
             ]
 
-        return {
+        result = {
             'content': choice.content,
             'tool_calls': tool_calls,
             'raw_message': raw,
         }
+
+        # Modelos pequeños a veces pegan la llamada en texto en vez de tool_calls.
+        if tools and tool_choice != 'none' and not tool_calls:
+            nombres = []
+            for t in tools:
+                fn = (t.get('function') or {}) if isinstance(t, dict) else {}
+                n = fn.get('name')
+                if n:
+                    nombres.append(n)
+            if nombres:
+                result = enriquecer_resultado_con_rescate(result, nombres)
+
+        return result
