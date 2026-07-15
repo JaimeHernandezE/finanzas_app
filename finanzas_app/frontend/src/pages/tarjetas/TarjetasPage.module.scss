@@ -70,11 +70,25 @@
   margin-bottom: $space-3;
 }
 
+.grupoTipo {
+  margin-bottom: $space-6;
+
+  &:last-of-type {
+    margin-bottom: $space-8;
+  }
+}
+
+.grupoTipoTitle {
+  font-size: $font-size-base;
+  font-weight: $font-weight-semibold;
+  color: $color-text;
+  margin-bottom: $space-3;
+}
+
 .lista {
   display: flex;
   flex-direction: column;
   gap: $space-3;
-  margin-bottom: $space-8;
 }
 
 .tarjetaCard {
@@ -174,6 +188,7 @@
   color: $color-text-muted;
   font-size: $font-size-sm;
   padding: $space-4 0;
+  margin-bottom: $space-8;
 }
 
 .formCard {
@@ -213,4 +228,31 @@
   color: #b91c1c;
   font-size: $font-size-sm;
   margin-top: $space-2;
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: $space-1;
+  font-size: $font-size-sm;
+  color: $color-text-muted;
+  flex: 1;
+}
+
+.selectField {
+  padding: $space-2 $space-3;
+  border: 1px solid $color-border;
+  border-radius: $radius-base;
+  font-size: $font-size-sm;
+  background: $color-bg-white;
+  color: $color-text;
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  color: $color-text;
+  margin-bottom: $space-4;
 }

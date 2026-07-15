@@ -99,7 +99,7 @@ class TarjetaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Tarjeta
         fields = [
-            'id', 'nombre', 'banco', 'ultimos_4_digitos',
+            'id', 'nombre', 'banco', 'tipo', 'ultimos_4_digitos', 'es_por_defecto',
             'dia_facturacion', 'dia_vencimiento',
             'usuario',
         ]
@@ -225,17 +225,37 @@ class MovimientoSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, data):
-        """Valida que si el método es crédito, se proporcione tarjeta y num_cuotas."""
+        """Valida tarjeta/cuotas según método de pago y coherencia tipo de tarjeta."""
         metodo = data.get('metodo_pago')
+        if metodo is None and self.instance is not None:
+            metodo = self.instance.metodo_pago
+        tarjeta = data.get('tarjeta')
+        if 'tarjeta' not in data and self.instance is not None:
+            tarjeta = self.instance.tarjeta
+
         if metodo and metodo.tipo == 'CREDITO':
-            if not data.get('tarjeta'):
+            if not tarjeta:
                 raise serializers.ValidationError(
                     {'tarjeta': 'La tarjeta es obligatoria para pagos con crédito.'}
                 )
-            if not data.get('num_cuotas'):
+            num_cuotas = data.get('num_cuotas')
+            if num_cuotas is None and self.instance is not None and 'num_cuotas' not in data:
+                num_cuotas = self.instance.num_cuotas
+            if not num_cuotas:
                 raise serializers.ValidationError(
                     {'num_cuotas': 'El número de cuotas es obligatorio para pagos con crédito.'}
                 )
+            if tarjeta and getattr(tarjeta, 'tipo', None) and tarjeta.tipo != 'CREDITO':
+                raise serializers.ValidationError(
+                    {'tarjeta': 'Para crédito debes elegir una tarjeta de tipo crédito.'}
+                )
+
+        if metodo and metodo.tipo == 'DEBITO':
+            if tarjeta and getattr(tarjeta, 'tipo', None) and tarjeta.tipo != 'DEBITO':
+                raise serializers.ValidationError(
+                    {'tarjeta': 'Para débito debes elegir una tarjeta de tipo débito.'}
+                )
+
         categoria = data.get('categoria')
         if categoria is None and self.instance is not None:
             categoria = self.instance.categoria

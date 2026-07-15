@@ -54,10 +54,17 @@ export default function MovimientoFormPage() {
         : undefined,
   })
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string; categoria_padre: number | null; es_padre: boolean }[]
-  const tarjetas   = (tarjetasData ?? []) as { id: number; nombre: string }[]
+  const tarjetas = (tarjetasData ?? []) as {
+    id: number
+    nombre: string
+    tipo?: 'DEBITO' | 'CREDITO'
+    ultimos_4_digitos?: string
+    es_por_defecto?: boolean
+  }[]
   const metodos    = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
   const [categoriaId, setCategoriaId] = useState<string>('')
   const [metodo,    setMetodo]    = useState<Metodo>('DEBITO')
+  const [tarjetaId, setTarjetaId] = useState<string>('')
   const [monto,     setMonto]     = useState('')
   const [numCuotas, setNumCuotas] = useState('')
   const [montoCuotaManual, setMontoCuotaManual] = useState('')
@@ -77,9 +84,31 @@ export default function MovimientoFormPage() {
   // Reset categoría cuando cambia tipo o cuenta (puede que la seleccionada ya no esté disponible)
   useEffect(() => { setCategoriaId('') }, [tipo, cuentaSeleccionada])
 
-  const tarjetaOpciones: SelectOption[] = useMemo(() =>
-    tarjetas.map(t => ({ value: String(t.id), label: t.nombre })),
-  [tarjetas])
+  const tarjetaOpciones: SelectOption[] = useMemo(() => {
+    const filtradas = tarjetas.filter(t => {
+      if (metodo === 'CREDITO') return (t.tipo ?? 'CREDITO') === 'CREDITO'
+      if (metodo === 'DEBITO') return t.tipo === 'DEBITO'
+      return false
+    })
+    return filtradas.map(t => ({
+      value: String(t.id),
+      label: t.ultimos_4_digitos
+        ? `${t.nombre} ···${t.ultimos_4_digitos}${t.es_por_defecto ? ' (defecto)' : ''}`
+        : `${t.nombre}${t.es_por_defecto ? ' (defecto)' : ''}`,
+    }))
+  }, [tarjetas, metodo])
+
+  useEffect(() => {
+    if (metodo !== 'DEBITO' && metodo !== 'CREDITO') {
+      setTarjetaId('')
+      return
+    }
+    const delTipo = tarjetas.filter(t =>
+      metodo === 'CREDITO' ? (t.tipo ?? 'CREDITO') === 'CREDITO' : t.tipo === 'DEBITO',
+    )
+    const def = delTipo.find(t => t.es_por_defecto) ?? delTipo[0]
+    setTarjetaId(def ? String(def.id) : '')
+  }, [metodo, tarjetas])
 
   const metodoPagoId = useMemo(() => {
     const m = metodos.find(x => x.tipo === metodo)
@@ -108,11 +137,14 @@ export default function MovimientoFormPage() {
     if (!monto || montoNum <= 0) next.monto = 'El monto es obligatorio.'
     if (!categoriaId) next.categoria = 'Selecciona una categoría.'
     if (metodo === 'CREDITO') {
-      if (!data.get('tarjeta'))  next.tarjeta   = 'Selecciona una tarjeta.'
+      if (!tarjetaId) next.tarjeta = 'Selecciona una tarjeta.'
       if (!numCuotas)            next.numCuotas = 'Ingresa el número de cuotas.'
       if (montoCuotaManual.trim() && (!montoCuotaManualNum || montoCuotaManualNum <= 0)) {
         next.montoCuota = 'Valor de cuota inválido o déjalo vacío.'
       }
+    }
+    if (metodo === 'DEBITO' && tarjetaOpciones.length > 0 && !tarjetaId) {
+      next.tarjeta = 'Selecciona una tarjeta de débito.'
     }
     if (ambito === 'PERSONAL' && cuentasOpciones.length > 0 && !data.get('cuenta')) {
       next.cuenta = 'Selecciona una cuenta personal.'
@@ -141,7 +173,10 @@ export default function MovimientoFormPage() {
         monto: String(montoNum),
         comentario: ((data.get('comentario') as string) ?? '').trim(),
         metodo_pago: metodoPagoId,
-        tarjeta: metodo === 'CREDITO' && data.get('tarjeta') ? Number(data.get('tarjeta')) : null,
+        tarjeta:
+          (metodo === 'CREDITO' || metodo === 'DEBITO') && tarjetaId
+            ? Number(tarjetaId)
+            : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
         monto_cuota: metodo === 'CREDITO' && montoCuotaEfectivo ? montoCuotaEfectivo : null,
       }
@@ -281,51 +316,68 @@ export default function MovimientoFormPage() {
             </div>
           )}
 
-          {/* Panel crédito (solo egreso) */}
-          {tipo === 'EGRESO' && metodo === 'CREDITO' && (
+          {/* Panel tarjeta (débito o crédito) */}
+          {tipo === 'EGRESO' && (metodo === 'CREDITO' || metodo === 'DEBITO') && (
             <div className={styles.creditoPanel}>
-              <div className={styles.row}>
-                <Select
-                  name="tarjeta"
-                  label="Tarjeta"
-                  options={tarjetaOpciones}
-                  placeholder="Selecciona…"
-                  error={errors.tarjeta}
-                  required
-                />
-                <Input
-                  name="numCuotas"
-                  label="N° cuotas"
-                  type="number"
-                  min="1"
-                  max="48"
-                  placeholder="Ej: 12"
-                  value={numCuotas}
-                  onChange={e => setNumCuotas(e.target.value)}
-                  error={errors.numCuotas}
-                  required
-                />
-              </div>
-              <Input
-                name="montoCuota"
-                label="Valor cuota (opcional)"
-                type="text"
-                inputMode="numeric"
-                value={montoCuotaManual}
-                onChange={e => setMontoCuotaManual(e.target.value)}
-                placeholder={
-                  montoCuotaCalculado
-                    ? `${formatMonto(montoCuotaCalculado)} (calculado)`
-                    : 'Se calcula automático'
-                }
-                error={errors.montoCuota}
-                helperText="Si no ingresas, se divide monto ÷ cuotas. La diferencia de centavos va a la primera."
-              />
-              {montoCuotaEfectivo != null && numCuotas && (
+              {tarjetaOpciones.length === 0 ? (
                 <p className={styles.cuotaPreview}>
-                  {numCuotas} cuotas de {formatMonto(montoCuotaEfectivo)}
-                  {montoCuotaManualNum ? ' (manual)' : ' (calculado)'}
+                  No hay tarjetas de {metodo === 'DEBITO' ? 'débito' : 'crédito'}.{' '}
+                  <Link to="/tarjetas">Registra una en Tarjetas</Link>.
                 </p>
+              ) : (
+                <div className={styles.row}>
+                  <Select
+                    name="tarjeta"
+                    label={metodo === 'DEBITO' ? 'Tarjeta de débito' : 'Tarjeta de crédito'}
+                    options={tarjetaOpciones}
+                    value={tarjetaId}
+                    onChange={e => setTarjetaId(e.target.value)}
+                    placeholder="Selecciona…"
+                    error={errors.tarjeta}
+                    required
+                  />
+                  {metodo === 'CREDITO' ? (
+                    <Input
+                      name="numCuotas"
+                      label="N° cuotas"
+                      type="number"
+                      min="1"
+                      max="48"
+                      placeholder="Ej: 12"
+                      value={numCuotas}
+                      onChange={e => setNumCuotas(e.target.value)}
+                      error={errors.numCuotas}
+                      required
+                    />
+                  ) : (
+                    <div />
+                  )}
+                </div>
+              )}
+              {metodo === 'CREDITO' && (
+                <>
+                  <Input
+                    name="montoCuota"
+                    label="Valor cuota (opcional)"
+                    type="text"
+                    inputMode="numeric"
+                    value={montoCuotaManual}
+                    onChange={e => setMontoCuotaManual(e.target.value)}
+                    placeholder={
+                      montoCuotaCalculado
+                        ? `${formatMonto(montoCuotaCalculado)} (calculado)`
+                        : 'Se calcula automático'
+                    }
+                    error={errors.montoCuota}
+                    helperText="Si no ingresas, se divide monto ÷ cuotas. La diferencia de centavos va a la primera."
+                  />
+                  {montoCuotaEfectivo != null && numCuotas && (
+                    <p className={styles.cuotaPreview}>
+                      {numCuotas} cuotas de {formatMonto(montoCuotaEfectivo)}
+                      {montoCuotaManualNum ? ' (manual)' : ' (calculado)'}
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

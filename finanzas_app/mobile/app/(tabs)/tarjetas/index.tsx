@@ -12,6 +12,9 @@ interface Tarjeta {
   id: number
   nombre: string
   banco: string
+  tipo?: 'DEBITO' | 'CREDITO'
+  ultimos_4_digitos?: string
+  es_por_defecto?: boolean
   dia_facturacion: number | null
   dia_vencimiento: number | null
 }
@@ -34,7 +37,15 @@ function parseDia(val: string): number | null {
   return n
 }
 
-const FORM_VACIO = { nombre: '', banco: '', diaFac: '', diaVen: '' }
+const FORM_VACIO = {
+  nombre: '',
+  banco: '',
+  tipo: 'CREDITO' as 'DEBITO' | 'CREDITO',
+  ultimos4: '',
+  esPorDefecto: false,
+  diaFac: '',
+  diaVen: '',
+}
 type FormTarjetaState = typeof FORM_VACIO
 
 function FormTarjeta(props: {
@@ -64,30 +75,78 @@ function FormTarjeta(props: {
         placeholderTextColor="#888884"
         className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
       />
+      <Text className="text-muted text-[10px] mb-1 ml-1">Tipo</Text>
       <View className="flex-row gap-2 mb-2">
-        <View className="flex-1">
-          <Text className="text-muted text-[10px] mb-1 ml-1">Día cierre</Text>
-          <TextInput
-            value={form.diaFac}
-            onChangeText={(v) => setForm((f) => ({ ...f, diaFac: v }))}
-            placeholder="1-31"
-            placeholderTextColor="#888884"
-            keyboardType="numeric"
-            className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
-          />
-        </View>
-        <View className="flex-1">
-          <Text className="text-muted text-[10px] mb-1 ml-1">Día vencimiento</Text>
-          <TextInput
-            value={form.diaVen}
-            onChangeText={(v) => setForm((f) => ({ ...f, diaVen: v }))}
-            placeholder="1-31"
-            placeholderTextColor="#888884"
-            keyboardType="numeric"
-            className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
-          />
-        </View>
+        {(['CREDITO', 'DEBITO'] as const).map((t) => (
+          <TouchableOpacity
+            key={t}
+            onPress={() =>
+              setForm((f) => ({
+                ...f,
+                tipo: t,
+                ...(t === 'DEBITO' ? { diaFac: '', diaVen: '' } : null),
+              }))
+            }
+            className={`flex-1 py-2 rounded-lg border items-center ${
+              form.tipo === t ? 'bg-dark border-dark' : 'bg-surface border-border'
+            }`}
+          >
+            <Text className={`text-xs font-semibold ${form.tipo === t ? 'text-white' : 'text-dark'}`}>
+              {t === 'CREDITO' ? 'Crédito' : 'Débito'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
+      <TextInput
+        value={form.ultimos4}
+        onChangeText={(v) => setForm((f) => ({ ...f, ultimos4: v.replace(/\D/g, '').slice(0, 4) }))}
+        placeholder="Últimos 4 dígitos"
+        placeholderTextColor="#888884"
+        keyboardType="numeric"
+        maxLength={4}
+        className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+      />
+      {form.tipo === 'CREDITO' ? (
+        <View className="flex-row gap-2 mb-2">
+          <View className="flex-1">
+            <Text className="text-muted text-[10px] mb-1 ml-1">Día cierre</Text>
+            <TextInput
+              value={form.diaFac}
+              onChangeText={(v) => setForm((f) => ({ ...f, diaFac: v }))}
+              placeholder="1-31"
+              placeholderTextColor="#888884"
+              keyboardType="numeric"
+              className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
+            />
+          </View>
+          <View className="flex-1">
+            <Text className="text-muted text-[10px] mb-1 ml-1">Día vencimiento</Text>
+            <TextInput
+              value={form.diaVen}
+              onChangeText={(v) => setForm((f) => ({ ...f, diaVen: v }))}
+              placeholder="1-31"
+              placeholderTextColor="#888884"
+              keyboardType="numeric"
+              className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm"
+            />
+          </View>
+        </View>
+      ) : null}
+      <TouchableOpacity
+        onPress={() => setForm((f) => ({ ...f, esPorDefecto: !f.esPorDefecto }))}
+        className="flex-row items-center gap-2 mb-3"
+      >
+        <View
+          className={`w-5 h-5 rounded border items-center justify-center ${
+            form.esPorDefecto ? 'bg-dark border-dark' : 'border-border bg-surface'
+          }`}
+        >
+          {form.esPorDefecto ? <Text className="text-white text-[10px]">✓</Text> : null}
+        </View>
+        <Text className="text-sm text-dark flex-1">
+          Usar por defecto al pagar con {form.tipo === 'DEBITO' ? 'débito' : 'crédito'}
+        </Text>
+      </TouchableOpacity>
       {formError && <Text className="text-danger text-xs mb-2">{formError}</Text>}
       <View className="flex-row gap-2">
         <TouchableOpacity
@@ -115,6 +174,14 @@ export default function TarjetasScreen() {
   const router = useRouter()
   const { data: tarjetasRaw, loading: loadingTarjetas, refetch: refetchTarjetas } = useTarjetas()
   const tarjetas = (tarjetasRaw as Tarjeta[] | null) ?? []
+  const tarjetasCredito = useMemo(
+    () => tarjetas.filter((t) => (t.tipo ?? 'CREDITO') === 'CREDITO'),
+    [tarjetas],
+  )
+  const tarjetasDebito = useMemo(
+    () => tarjetas.filter((t) => t.tipo === 'DEBITO'),
+    [tarjetas],
+  )
   const {
     data: cuotasData,
     loading: loadingCuotas,
@@ -200,14 +267,21 @@ export default function TarjetasScreen() {
     setForm({
       nombre: t.nombre,
       banco: t.banco ?? '',
+      tipo: t.tipo === 'DEBITO' ? 'DEBITO' : 'CREDITO',
+      ultimos4: t.ultimos_4_digitos ?? '',
+      esPorDefecto: Boolean(t.es_por_defecto),
       diaFac: t.dia_facturacion != null ? String(t.dia_facturacion) : '',
       diaVen: t.dia_vencimiento != null ? String(t.dia_vencimiento) : '',
     })
   }
 
   async function guardarNueva() {
-    if (!form.nombre.trim()) {
-      setFormError('El nombre es obligatorio.')
+    if (!form.nombre.trim() || !form.banco.trim()) {
+      setFormError('Nombre y banco son obligatorios.')
+      return
+    }
+    if (form.ultimos4 && form.ultimos4.length !== 4) {
+      setFormError('Últimos 4: exactamente 4 dígitos o vacío.')
       return
     }
     setFormError(null)
@@ -215,9 +289,12 @@ export default function TarjetasScreen() {
     try {
       await catalogosApi.createTarjeta({
         nombre: form.nombre.trim(),
-        banco: form.banco.trim() || '',
-        dia_facturacion: form.diaFac ? parseDia(form.diaFac) : null,
-        dia_vencimiento: form.diaVen ? parseDia(form.diaVen) : null,
+        banco: form.banco.trim(),
+        tipo: form.tipo,
+        ultimos_4_digitos: form.ultimos4,
+        es_por_defecto: form.esPorDefecto,
+        dia_facturacion: form.tipo === 'CREDITO' && form.diaFac ? parseDia(form.diaFac) : null,
+        dia_vencimiento: form.tipo === 'CREDITO' && form.diaVen ? parseDia(form.diaVen) : null,
       })
       cancelarForm()
       void refetchTarjetas()
@@ -230,8 +307,12 @@ export default function TarjetasScreen() {
 
   async function guardarEdicion() {
     if (editandoId == null) return
-    if (!form.nombre.trim()) {
-      setFormError('El nombre es obligatorio.')
+    if (!form.nombre.trim() || !form.banco.trim()) {
+      setFormError('Nombre y banco son obligatorios.')
+      return
+    }
+    if (form.ultimos4 && form.ultimos4.length !== 4) {
+      setFormError('Últimos 4: exactamente 4 dígitos o vacío.')
       return
     }
     setFormError(null)
@@ -239,9 +320,12 @@ export default function TarjetasScreen() {
     try {
       await catalogosApi.updateTarjeta(editandoId, {
         nombre: form.nombre.trim(),
-        banco: form.banco.trim() || '',
-        dia_facturacion: form.diaFac ? parseDia(form.diaFac) : null,
-        dia_vencimiento: form.diaVen ? parseDia(form.diaVen) : null,
+        banco: form.banco.trim(),
+        tipo: form.tipo,
+        ultimos_4_digitos: form.ultimos4,
+        es_por_defecto: form.esPorDefecto,
+        dia_facturacion: form.tipo === 'CREDITO' && form.diaFac ? parseDia(form.diaFac) : null,
+        dia_vencimiento: form.tipo === 'CREDITO' && form.diaVen ? parseDia(form.diaVen) : null,
       })
       cancelarForm()
       void refetchTarjetas()
@@ -265,12 +349,14 @@ export default function TarjetasScreen() {
             )}
           </View>
 
-          <View className="bg-white border border-border rounded-xl px-4 py-3 mb-3">
-            <Text className="text-[11px] text-muted font-semibold uppercase tracking-wide">
-              Utilizado total
-            </Text>
-            <Text className="text-dark text-2xl font-bold mt-1">{formatMonto(totalUtilizado)}</Text>
-          </View>
+          {tarjetasCredito.length > 0 ? (
+            <View className="bg-white border border-border rounded-xl px-4 py-3 mb-3">
+              <Text className="text-[11px] text-muted font-semibold uppercase tracking-wide">
+                Utilizado total (crédito)
+              </Text>
+              <Text className="text-dark text-2xl font-bold mt-1">{formatMonto(totalUtilizado)}</Text>
+            </View>
+          ) : null}
 
           {(loadingTarjetas || loadingCuotas || loadingMovimientosCredito) && (
             <View className="py-6 items-center">
@@ -289,79 +375,109 @@ export default function TarjetasScreen() {
           {!loadingTarjetas && tarjetas.length === 0 && !agregando && (
             <View className="bg-white border border-border rounded-xl p-6 mb-4 items-center">
               <Text className="text-muted text-sm text-center">
-                No tienes tarjetas registradas.{'\n'}Agrega una para gestionar tus cuotas.
+                No tienes tarjetas registradas.{'\n'}Agrega débito o crédito desde aquí.
               </Text>
             </View>
           )}
 
           {!loadingTarjetas &&
-            tarjetas.map((t) => {
-              if (editandoId === t.id) {
-                return (
-                  <FormTarjeta
-                    key={t.id}
-                    titulo={`Editar ${t.nombre}`}
-                    form={form}
-                    setForm={setForm}
-                    formError={formError}
-                    guardando={guardando}
-                    onGuardar={guardarEdicion}
-                    onCancelar={cancelarForm}
-                  />
-                )
-              }
-              const seleccionada = t.id === tarjetaSeleccionadaId
-              return (
-                <View
-                  key={t.id}
-                  className={`bg-white border rounded-xl px-4 py-3 mb-2 ${seleccionada ? 'border-dark' : 'border-border'}`}
-                >
-                  <TouchableOpacity activeOpacity={0.7} onPress={() => setTarjetaSeleccionadaId(t.id)}>
-                    <View className="flex-row items-center">
-                      <View className="flex-1 mr-2">
-                        <Text className="text-dark font-semibold text-sm">{t.nombre}</Text>
-                        {t.banco ? <Text className="text-muted text-xs mt-0.5">{t.banco}</Text> : null}
-                        {(t.dia_facturacion || t.dia_vencimiento) && (
-                          <Text className="text-muted text-xs mt-0.5">
-                            {[
-                              t.dia_facturacion ? `Cierre dia ${t.dia_facturacion}` : null,
-                              t.dia_vencimiento ? `Vence dia ${t.dia_vencimiento}` : null,
-                            ]
-                              .filter(Boolean)
-                              .join('  ·  ')}
-                          </Text>
-                        )}
-                        <View className="mt-2">
-                          <Text className="text-[10px] text-muted uppercase tracking-wide">Utilizado</Text>
-                          <Text className="text-dark text-sm font-semibold">
-                            {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
-                          </Text>
+            (
+              [
+                { titulo: 'Crédito', items: tarjetasCredito },
+                { titulo: 'Débito', items: tarjetasDebito },
+              ] as const
+            ).map((grupo) =>
+              grupo.items.length === 0 ? null : (
+                <View key={grupo.titulo} className="mb-4">
+                  <Text className="text-sm font-semibold text-dark mb-2">{grupo.titulo}</Text>
+                  {grupo.items.map((t) => {
+                    if (editandoId === t.id) {
+                      return (
+                        <FormTarjeta
+                          key={t.id}
+                          titulo={`Editar ${t.nombre}`}
+                          form={form}
+                          setForm={setForm}
+                          formError={formError}
+                          guardando={guardando}
+                          onGuardar={guardarEdicion}
+                          onCancelar={cancelarForm}
+                        />
+                      )
+                    }
+                    const seleccionada = t.id === tarjetaSeleccionadaId
+                    return (
+                      <View
+                        key={t.id}
+                        className={`bg-white border rounded-xl px-4 py-3 mb-2 ${seleccionada ? 'border-dark' : 'border-border'}`}
+                      >
+                        <TouchableOpacity
+                          activeOpacity={0.7}
+                          onPress={() => setTarjetaSeleccionadaId(t.id)}
+                        >
+                          <View className="flex-row items-center">
+                            <View className="flex-1 mr-2">
+                              <Text className="text-dark font-semibold text-sm">
+                                {t.nombre}
+                                {t.ultimos_4_digitos ? ` ···${t.ultimos_4_digitos}` : ''}
+                              </Text>
+                              <Text className="text-muted text-xs mt-0.5">
+                                {[t.banco, t.es_por_defecto ? 'Por defecto' : null]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </Text>
+                              {t.tipo !== 'DEBITO' && (t.dia_facturacion || t.dia_vencimiento) && (
+                                <Text className="text-muted text-xs mt-0.5">
+                                  {[
+                                    t.dia_facturacion ? `Cierre dia ${t.dia_facturacion}` : null,
+                                    t.dia_vencimiento ? `Vence dia ${t.dia_vencimiento}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join('  ·  ')}
+                                </Text>
+                              )}
+                              {(t.tipo ?? 'CREDITO') === 'CREDITO' ? (
+                                <View className="mt-2">
+                                  <Text className="text-[10px] text-muted uppercase tracking-wide">
+                                    Utilizado
+                                  </Text>
+                                  <Text className="text-dark text-sm font-semibold">
+                                    {formatMonto(deudaPorTarjeta.get(t.id) ?? 0)}
+                                  </Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            {seleccionada && (
+                              <View className="w-5 h-5 rounded-full bg-dark items-center justify-center">
+                                <Text className="text-white text-xs font-bold">✓</Text>
+                              </View>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                        <View className="flex-row gap-2 mt-2 pt-2 border-t border-border">
+                          <TouchableOpacity
+                            onPress={() => abrirEdicion(t)}
+                            className="flex-1 border border-border rounded-lg py-1.5 items-center"
+                          >
+                            <Text className="text-dark text-xs font-semibold">Editar</Text>
+                          </TouchableOpacity>
+                          {(t.tipo ?? 'CREDITO') === 'CREDITO' ? (
+                            <TouchableOpacity
+                              onPress={() =>
+                                router.push(`/(tabs)/tarjeta-pagar?tarjeta=${t.id}` as never)
+                              }
+                              className="flex-1 bg-dark rounded-lg py-1.5 items-center"
+                            >
+                              <Text className="text-white text-xs font-semibold">Ver detalle</Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       </View>
-                      {seleccionada && (
-                        <View className="w-5 h-5 rounded-full bg-dark items-center justify-center">
-                          <Text className="text-white text-xs font-bold">✓</Text>
-                        </View>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                  <View className="flex-row gap-2 mt-2 pt-2 border-t border-border">
-                    <TouchableOpacity
-                      onPress={() => abrirEdicion(t)}
-                      className="flex-1 border border-border rounded-lg py-1.5 items-center"
-                    >
-                      <Text className="text-dark text-xs font-semibold">Editar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => router.push(`/(tabs)/tarjeta-pagar?tarjeta=${t.id}` as never)}
-                      className="flex-1 bg-dark rounded-lg py-1.5 items-center"
-                    >
-                      <Text className="text-white text-xs font-semibold">Ver detalle</Text>
-                    </TouchableOpacity>
-                  </View>
+                    )
+                  })}
                 </View>
-              )
-            })}
+              ),
+            )}
 
           {agregando && (
             <FormTarjeta

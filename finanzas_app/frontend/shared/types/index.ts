@@ -49,7 +49,9 @@ export interface Tarjeta {
   id:              number
   nombre:          string
   banco:           string
+  tipo?:           'DEBITO' | 'CREDITO'
   ultimos_4_digitos?: string
+  es_por_defecto?: boolean
   dia_facturacion: number | null
   dia_vencimiento: number | null
   usuario:         number

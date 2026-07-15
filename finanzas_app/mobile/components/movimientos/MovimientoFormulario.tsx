@@ -75,6 +75,9 @@ interface MetodoPago {
 interface Tarjeta {
   id: number
   nombre: string
+  tipo?: 'DEBITO' | 'CREDITO'
+  ultimos_4_digitos?: string
+  es_por_defecto?: boolean
 }
 type TipoMovimiento = 'EGRESO' | 'INGRESO'
 type MetodoTipo = 'EFECTIVO' | 'DEBITO' | 'CREDITO'
@@ -304,8 +307,26 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     const categorias = (catData as Categoria[] | null) ?? []
     const metodos = (metData as MetodoPago[] | null) ?? []
     const tarjetas = (tarjetasData as Tarjeta[] | null) ?? []
-
     const modoTarjetaCreditoFija = creditoTarjetaFijaId != null
+    const tarjetasDelMetodo = useMemo(() => {
+      if (metodoTipo === 'CREDITO') {
+        return tarjetas.filter((t) => (t.tipo ?? 'CREDITO') === 'CREDITO')
+      }
+      if (metodoTipo === 'DEBITO') {
+        return tarjetas.filter((t) => t.tipo === 'DEBITO')
+      }
+      return []
+    }, [tarjetas, metodoTipo])
+
+    useEffect(() => {
+      if (metodoTipo !== 'DEBITO' && metodoTipo !== 'CREDITO') return
+      if (modoTarjetaCreditoFija) return
+      if (form.tarjeta) return
+      const def = tarjetasDelMetodo.find((t) => t.es_por_defecto) ?? tarjetasDelMetodo[0]
+      if (def) {
+        setForm((f) => (f.tarjeta ? f : { ...f, tarjeta: def.id }))
+      }
+    }, [metodoTipo, tarjetasDelMetodo, modoTarjetaCreditoFija, form.tarjeta])
 
     const cerrarForm = useCallback(() => {
       if (esStandalone && returnToSafe) {
@@ -609,11 +630,19 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
     function onElegirMetodoPago(m: MetodoTipo) {
       if (modoTarjetaCreditoFija) return
       if (metodoTipo === 'CREDITO' && m !== 'CREDITO') {
-        setField('tarjeta', 0)
         setField('num_cuotas', '')
         setField('monto_cuota', '')
       }
       setMetodoTipo(m)
+      if (m === 'DEBITO' || m === 'CREDITO') {
+        const pool = tarjetas.filter((t) =>
+          m === 'CREDITO' ? (t.tipo ?? 'CREDITO') === 'CREDITO' : t.tipo === 'DEBITO',
+        )
+        const def = pool.find((t) => t.es_por_defecto) ?? pool[0]
+        setField('tarjeta', def?.id ?? 0)
+      } else {
+        setField('tarjeta', 0)
+      }
     }
 
     function onFocusComentario() {
@@ -723,12 +752,12 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         return
       }
 
-      // Crédito: misma validación que la web (MovimientoFormPage / MovimientoEditarPage)
+      // Crédito / débito: tarjeta según tipo
       if (tipo === 'EGRESO' && metodoTipo === 'CREDITO') {
-        if (tarjetas.length === 0) {
+        if (tarjetasDelMetodo.length === 0) {
           Alert.alert(
-            'Sin tarjetas',
-            'Crea al menos una tarjeta en Configuración para registrar gastos con crédito.',
+            'Sin tarjetas de crédito',
+            'Crea al menos una tarjeta de tipo crédito en Tarjetas.',
           )
           return
         }
@@ -761,6 +790,10 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
             return
           }
         }
+      }
+      if (tipo === 'EGRESO' && metodoTipo === 'DEBITO' && tarjetasDelMetodo.length > 0 && !form.tarjeta) {
+        Alert.alert('Falta tarjeta', 'Selecciona una tarjeta de débito.')
+        return
       }
 
       // Cuenta personal: la web solo exige cuenta si hay cuentas propias disponibles
@@ -797,7 +830,11 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
         cuenta:
           form.ambito === 'PERSONAL' && form.cuenta > 0 ? form.cuenta : null,
         tarjeta:
-          tipo === 'EGRESO' && metodoTipo === 'CREDITO' && form.tarjeta ? form.tarjeta : null,
+          tipo === 'EGRESO' &&
+          (metodoTipo === 'CREDITO' || metodoTipo === 'DEBITO') &&
+          form.tarjeta
+            ? form.tarjeta
+            : null,
         num_cuotas:
           tipo === 'EGRESO' && metodoTipo === 'CREDITO' && cuotas ? cuotas : null,
         monto_cuota:
@@ -1198,16 +1235,18 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
           </View>
         )}
 
-        {/* Tarjeta + cuotas */}
-        {tipo === 'EGRESO' && metodoTipo === 'CREDITO' && !vinculoIngresoComun && (
+        {/* Tarjeta (débito o crédito) + cuotas si crédito */}
+        {tipo === 'EGRESO' && (metodoTipo === 'CREDITO' || metodoTipo === 'DEBITO') && !vinculoIngresoComun && (
           <View className="bg-surface border border-border rounded-xl p-3 mb-4">
-            <Text className="text-xs text-muted font-semibold mb-2">Tarjeta *</Text>
-            {tarjetas.length === 0 ? (
+            <Text className="text-xs text-muted font-semibold mb-2">
+              {metodoTipo === 'DEBITO' ? 'Tarjeta de débito *' : 'Tarjeta de crédito *'}
+            </Text>
+            {tarjetasDelMetodo.length === 0 ? (
               <Text className="text-sm text-muted mb-3">
-                No tienes tarjetas registradas. Añádelas desde la sección «Tarjetas» en la app (misma idea
-                que Configuración → Tarjetas en la web) y vuelve aquí.
+                No tienes tarjetas de {metodoTipo === 'DEBITO' ? 'débito' : 'crédito'}. Añádelas en
+                «Tarjetas» (elige el tipo) y vuelve aquí.
               </Text>
-            ) : modoTarjetaCreditoFija ? (
+            ) : modoTarjetaCreditoFija && metodoTipo === 'CREDITO' ? (
               <View className="border border-border rounded-lg py-2.5 px-3 mb-3 bg-white">
                 <Text className="text-dark font-semibold">
                   {tarjetas.find((t) => t.id === form.tarjeta)?.nombre ?? '—'}
@@ -1215,7 +1254,7 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
               </View>
             ) : (
               <View className="flex-row flex-wrap gap-2 mb-3">
-                {tarjetas.map((t) => (
+                {tarjetasDelMetodo.map((t) => (
                   <TouchableOpacity
                     key={t.id}
                     onPress={() => setField('tarjeta', t.id)}
@@ -1227,40 +1266,46 @@ export const MovimientoFormulario = forwardRef<MovimientoFormularioRef, Movimien
                       className={`text-xs font-medium ${form.tarjeta === t.id ? 'text-white' : 'text-dark'}`}
                     >
                       {t.nombre}
+                      {t.ultimos_4_digitos ? ` ···${t.ultimos_4_digitos}` : ''}
+                      {t.es_por_defecto ? ' ★' : ''}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             )}
 
-            <Text className="text-xs text-muted font-semibold mb-1">N° cuotas *</Text>
-            <TextInput
-              value={form.num_cuotas}
-              onChangeText={(v) => setField('num_cuotas', v.replace(/\D/g, '').slice(0, 2))}
-              keyboardType="numeric"
-              placeholder={`Ej: 12 (${NUM_CUOTAS_MIN}–${NUM_CUOTAS_MAX})`}
-              className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
-            />
-            <Text className="text-xs text-muted font-semibold mb-1">Valor cuota (opcional)</Text>
-            <TextInput
-              value={form.monto_cuota}
-              onChangeText={(v) => setField('monto_cuota', parsearMontoDecimal(v))}
-              keyboardType="numeric"
-              placeholder="Se calcula automático"
-              className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
-            />
-            <Text className="text-xs text-muted mb-2">
-              Si indicas un valor de cuota manual, se usa ese monto. Si lo dejas vacío, se divide monto ÷
-              cuotas (redondeo arriba); la diferencia de centavos va a la primera cuota.
-            </Text>
-            {previewMontoCuotaCredito != null && form.num_cuotas.trim() !== '' && (
-              <Text className="text-sm text-dark font-medium">
-                {form.num_cuotas.trim()} cuota
-                {parseInt(form.num_cuotas, 10) !== 1 ? 's' : ''} de{' '}
-                {formatearMiles(String(previewMontoCuotaCredito))}
-                {form.monto_cuota.trim() ? ' (manual)' : ' (calculado)'}
-              </Text>
-            )}
+            {metodoTipo === 'CREDITO' ? (
+              <>
+                <Text className="text-xs text-muted font-semibold mb-1">N° cuotas *</Text>
+                <TextInput
+                  value={form.num_cuotas}
+                  onChangeText={(v) => setField('num_cuotas', v.replace(/\D/g, '').slice(0, 2))}
+                  keyboardType="numeric"
+                  placeholder={`Ej: 12 (${NUM_CUOTAS_MIN}–${NUM_CUOTAS_MAX})`}
+                  className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
+                />
+                <Text className="text-xs text-muted font-semibold mb-1">Valor cuota (opcional)</Text>
+                <TextInput
+                  value={form.monto_cuota}
+                  onChangeText={(v) => setField('monto_cuota', parsearMontoDecimal(v))}
+                  keyboardType="numeric"
+                  placeholder="Se calcula automático"
+                  className="border border-border rounded-lg px-3 py-2.5 text-dark mb-2 bg-white"
+                />
+                <Text className="text-xs text-muted mb-2">
+                  Si indicas un valor de cuota manual, se usa ese monto. Si lo dejas vacío, se divide monto ÷
+                  cuotas (redondeo arriba); la diferencia de centavos va a la primera cuota.
+                </Text>
+                {previewMontoCuotaCredito != null && form.num_cuotas.trim() !== '' && (
+                  <Text className="text-sm text-dark font-medium">
+                    {form.num_cuotas.trim()} cuota
+                    {parseInt(form.num_cuotas, 10) !== 1 ? 's' : ''} de{' '}
+                    {formatearMiles(String(previewMontoCuotaCredito))}
+                    {form.monto_cuota.trim() ? ' (manual)' : ' (calculado)'}
+                  </Text>
+                )}
+              </>
+            ) : null}
           </View>
         )}
         {tipo === 'EGRESO' && metodoTipo === 'CREDITO' && vinculoIngresoComun && (

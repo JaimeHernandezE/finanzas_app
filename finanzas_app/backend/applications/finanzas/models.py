@@ -136,18 +136,20 @@ class MetodoPago(models.Model):
 
 class Tarjeta(models.Model):
     """
-    Tarjetas de crédito del usuario. Son personales: cada usuario gestiona
-    las suyas. La separación entre gastos personales y comunes la determina
-    el campo 'ambito' en Movimiento, no la tarjeta en sí.
+    Instrumento de pago del usuario (débito o crédito). Son personales.
+    La separación personal/común la determina `ambito` en Movimiento.
 
-    dia_facturacion: día del mes en que el banco genera el estado de cuenta.
-                     Determina en qué ciclo cae cada gasto.
-                     Ej: 15 → gastos del 16 al 15 del mes siguiente forman un ciclo.
-
-    dia_vencimiento: día del mes en que vence el pago del estado de cuenta.
-                     Generalmente es el mes siguiente al de facturación.
-                     Ej: 5 → el pago vence el 5 del mes siguiente al cierre.
+    tipo=CREDITO: usa dia_facturacion / dia_vencimiento para el ciclo de cuotas.
+    tipo=DEBITO: se asocia al movimiento para trazabilidad (últimos 4, alertas bancarias);
+                 es_por_defecto preselecciona al registrar gastos con débito.
     """
+    TIPO_DEBITO = 'DEBITO'
+    TIPO_CREDITO = 'CREDITO'
+    TIPO_CHOICES = [
+        (TIPO_DEBITO, 'Débito'),
+        (TIPO_CREDITO, 'Crédito'),
+    ]
+
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -155,25 +157,46 @@ class Tarjeta(models.Model):
         help_text="Propietario de la tarjeta. Solo este usuario puede "
                   "usarla al registrar movimientos."
     )
-    nombre          = models.CharField(max_length=100, help_text="Ej: 'Visa BCI', 'Mastercard Santander'")
-    banco           = models.CharField(max_length=100)
+    nombre = models.CharField(max_length=100, help_text="Ej: 'Visa BCI', 'Cuenta RUT'")
+    banco = models.CharField(max_length=100)
+    tipo = models.CharField(
+        max_length=10,
+        choices=TIPO_CHOICES,
+        default=TIPO_CREDITO,
+        help_text="Débito o crédito; filtra el selector según método de pago del movimiento.",
+    )
     ultimos_4_digitos = models.CharField(
         max_length=4,
         blank=True,
         default='',
-        help_text="Últimos 4 dígitos de la tarjeta (para matching de alertas bancarias).",
+        help_text="Últimos 4 dígitos (matching de alertas bancarias y etiqueta en UI).",
+    )
+    es_por_defecto = models.BooleanField(
+        default=False,
+        help_text="Si es True, se preselecciona al registrar un egreso con el mismo tipo "
+                  "(una por defecto por usuario y tipo).",
     )
     dia_facturacion = models.IntegerField(
         null=True, blank=True,
-        help_text="Día del mes en que cierra el ciclo de facturación (1-31)."
+        help_text="Día del mes en que cierra el ciclo de facturación (1-31). Solo crédito.",
     )
     dia_vencimiento = models.IntegerField(
         null=True, blank=True,
-        help_text="Día del mes en que vence el pago (1-31)."
+        help_text="Día del mes en que vence el pago (1-31). Solo crédito.",
     )
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.es_por_defecto:
+            Tarjeta.objects.filter(
+                usuario_id=self.usuario_id,
+                tipo=self.tipo,
+                es_por_defecto=True,
+            ).exclude(pk=self.pk).update(es_por_defecto=False)
+
     def __str__(self):
-        return f"{self.nombre} — {self.usuario}"
+        suf = f' ···{self.ultimos_4_digitos}' if self.ultimos_4_digitos else ''
+        return f"{self.nombre}{suf} ({self.tipo}) — {self.usuario}"
 
 
 class CuentaPersonal(models.Model):
@@ -325,7 +348,8 @@ class Movimiento(models.Model):
         null=True, blank=True,
         related_name='movimientos',
         help_text="Obligatorio si metodo_pago.tipo == 'CREDITO'. "
-                  "El signal de post_save valida esta condición antes de generar cuotas."
+                  "Recomendado/requerido si hay tarjetas de débito y metodo_pago es DEBITO. "
+                  "El signal de post_save valida crédito antes de generar cuotas."
     )
     num_cuotas  = models.IntegerField(
         null=True, blank=True,

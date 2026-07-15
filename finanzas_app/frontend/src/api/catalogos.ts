@@ -41,7 +41,9 @@ export const catalogosApi = {
   createTarjeta: (data: {
     nombre: string
     banco: string
+    tipo?: 'DEBITO' | 'CREDITO'
     ultimos_4_digitos?: string
+    es_por_defecto?: boolean
     dia_facturacion?: number | null
     dia_vencimiento?: number | null
   }) =>
@@ -50,7 +52,9 @@ export const catalogosApi = {
   updateTarjeta: (id: number, data: Partial<{
     nombre: string
     banco: string
+    tipo: 'DEBITO' | 'CREDITO'
     ultimos_4_digitos: string
+    es_por_defecto: boolean
     dia_facturacion: number | null
     dia_vencimiento: number | null
   }>) =>

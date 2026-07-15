@@ -100,7 +100,13 @@ export default function MovimientoEditarPage() {
   })
 
   const categorias = (categoriasData ?? []) as { id: number; nombre: string; tipo: string; categoria_padre: number | null; es_padre: boolean }[]
-  const tarjetas = (tarjetasData ?? []) as { id: number; nombre: string }[]
+  const tarjetas = (tarjetasData ?? []) as {
+    id: number
+    nombre: string
+    tipo?: 'DEBITO' | 'CREDITO'
+    ultimos_4_digitos?: string
+    es_por_defecto?: boolean
+  }[]
   const metodos = (metodosData ?? []) as { id: number; nombre: string; tipo: string }[]
 
   const cuentasOpciones: SelectOption[] = useMemo(
@@ -112,10 +118,19 @@ export default function MovimientoEditarPage() {
   )
 
 
-  const tarjetaOpciones: SelectOption[] = useMemo(
-    () => tarjetas.map(t => ({ value: String(t.id), label: t.nombre })),
-    [tarjetas],
-  )
+  const tarjetaOpciones: SelectOption[] = useMemo(() => {
+    const filtradas = tarjetas.filter(t => {
+      if (metodo === 'CREDITO') return (t.tipo ?? 'CREDITO') === 'CREDITO'
+      if (metodo === 'DEBITO') return t.tipo === 'DEBITO'
+      return false
+    })
+    return filtradas.map(t => ({
+      value: String(t.id),
+      label: t.ultimos_4_digitos
+        ? `${t.nombre} ···${t.ultimos_4_digitos}${t.es_por_defecto ? ' (defecto)' : ''}`
+        : `${t.nombre}${t.es_por_defecto ? ' (defecto)' : ''}`,
+    }))
+  }, [tarjetas, metodo])
 
   const metodoPagoId = useMemo(() => {
     const m = metodos.find(x => x.tipo === metodo)
@@ -241,6 +256,9 @@ export default function MovimientoEditarPage() {
         next.montoCuota = 'Valor de cuota inválido o déjalo vacío.'
       }
     }
+    if (metodo === 'DEBITO' && tarjetaOpciones.length > 0 && !tarjetaId) {
+      next.tarjeta = 'Selecciona una tarjeta de débito.'
+    }
     if (ambito === 'PERSONAL' && cuentasOpciones.length > 0 && !cuentaId) {
       next.cuenta = 'Selecciona una cuenta personal.'
     }
@@ -273,7 +291,10 @@ export default function MovimientoEditarPage() {
         monto: String(montoNum),
         comentario: comentario.trim(),
         metodo_pago: metodoPagoId,
-        tarjeta: metodo === 'CREDITO' && tarjetaId ? Number(tarjetaId) : null,
+        tarjeta:
+          (metodo === 'CREDITO' || metodo === 'DEBITO') && tarjetaId
+            ? Number(tarjetaId)
+            : null,
         num_cuotas: metodo === 'CREDITO' && numCuotas ? parseInt(numCuotas, 10) : null,
         monto_cuota: montoCuotaPayload,
       }
@@ -518,41 +539,54 @@ export default function MovimientoEditarPage() {
               </div>
             </div>
 
-            {metodo === 'CREDITO' && (
+            { (metodo === 'CREDITO' || metodo === 'DEBITO') && (
               <div className={styles.creditoPanel}>
-                <div className={styles.row}>
-                  <Select
-                    name="tarjeta"
-                    label="Tarjeta"
-                    options={tarjetaOpciones}
-                    value={tarjetaId}
-                    onChange={e => setTarjetaId(e.target.value)}
-                    placeholder="Selecciona…"
-                    error={errors.tarjeta}
+                {tarjetaOpciones.length === 0 ? (
+                  <p className={styles.cuotaPreview}>
+                    No hay tarjetas de {metodo === 'DEBITO' ? 'débito' : 'crédito'}.{' '}
+                    <Link to="/tarjetas">Registra una en Tarjetas</Link>.
+                  </p>
+                ) : (
+                  <div className={styles.row}>
+                    <Select
+                      name="tarjeta"
+                      label={metodo === 'DEBITO' ? 'Tarjeta de débito' : 'Tarjeta de crédito'}
+                      options={tarjetaOpciones}
+                      value={tarjetaId}
+                      onChange={e => setTarjetaId(e.target.value)}
+                      placeholder="Selecciona…"
+                      error={errors.tarjeta}
+                    />
+                    {metodo === 'CREDITO' ? (
+                      <Input
+                        name="numCuotas"
+                        label="N° cuotas"
+                        type="number"
+                        min="1"
+                        max="48"
+                        value={numCuotas}
+                        onChange={e => setNumCuotas(e.target.value)}
+                        error={errors.numCuotas}
+                      />
+                    ) : (
+                      <div />
+                    )}
+                  </div>
+                )}
+                {metodo === 'CREDITO' && (
+                  <InputMontoClp
+                    name="montoCuota"
+                    label="Valor cuota (opcional)"
+                    value={montoCuotaInput}
+                    onChange={setMontoCuotaInput}
+                    error={errors.montoCuota}
+                    helperText={
+                      montoCuotaCalculado
+                        ? `Si no ingresas, se usa ${formatMonto(montoCuotaCalculado)} (calculado).`
+                        : 'Si no ingresas, se divide monto ÷ cuotas.'
+                    }
                   />
-                  <Input
-                    name="numCuotas"
-                    label="N° cuotas"
-                    type="number"
-                    min="1"
-                    max="48"
-                    value={numCuotas}
-                    onChange={e => setNumCuotas(e.target.value)}
-                    error={errors.numCuotas}
-                  />
-                </div>
-                <InputMontoClp
-                  name="montoCuota"
-                  label="Valor cuota (opcional)"
-                  value={montoCuotaInput}
-                  onChange={setMontoCuotaInput}
-                  error={errors.montoCuota}
-                  helperText={
-                    montoCuotaCalculado
-                      ? `Si no ingresas, se usa ${formatMonto(montoCuotaCalculado)} (calculado).`
-                      : 'Si no ingresas, se divide monto ÷ cuotas.'
-                  }
-                />
+                )}
               </div>
             )}
 
