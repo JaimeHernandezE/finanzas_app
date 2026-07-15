@@ -31,6 +31,7 @@ backend/
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
 | **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
+| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) |
 
 ## Comandos útiles (dentro del contenedor)
 
@@ -213,10 +214,12 @@ Chat con consultas en lenguaje natural sobre los datos del usuario. **No impleme
 
 1. **Capa analytics** — funciones reutilizables (`comparar_gasto_anual`, `gasto_categoria_por_mes`, `sugerir_presupuestos`) sobre los mismos querysets que `presupuesto_mes` y `resumen_historico`.
 2. **Endpoint chat** — `POST /api/finanzas/asistente/consulta/` con function-calling; el LLM **nunca** ejecuta SQL directo (multitenancy y seguridad).
-3. **LLM gratuito** — Ollama local en desarrollo; Groq o Gemini free tier en producción.
+3. **LLM gratuito (API cloud)** — NVIDIA NIM como candidato principal; Groq o Gemini como alternativa. Mismo proveedor en desarrollo y producción (sin LLM local).
 4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto.
 
 Las alertas de presupuesto de la fase 1 comparten `NotificacionUsuario` y podrían referenciarse en respuestas del asistente (“ya te avisamos el 12 jul…”).
+
+Detalle (arquitectura, catálogo de tools, seguridad, etapas): [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
 
 ## Sincronización automática de movimientos (fase 3 — planificado)
 
