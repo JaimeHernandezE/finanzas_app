@@ -24,7 +24,7 @@ Regla práctica:
 | [DEPLOYMENT-LOCAL.md](DEPLOYMENT-LOCAL.md) | Docker Compose en tu máquina: servicios, comandos, migraciones, hot reload, URLs locales. |
 | [DEPLOYMENT-PRODUCTION.md](DEPLOYMENT-PRODUCTION.md) | Producción (Render), secretos, Firebase; roadmap Google Cloud, Supabase, Expo. |
 | [backend/README.md](backend/README.md) | Resumen del backend, estructura de apps y enlaces al resto de docs del backend. |
-| [backend/ASISTENTE-FINANCIERO.md](backend/ASISTENTE-FINANCIERO.md) | Plan del asistente financiero (fase 2): analytics, chat con function-calling, LLM, seguridad. |
+| [backend/ASISTENTE-FINANCIERO.md](backend/ASISTENTE-FINANCIERO.md) | Asistente financiero: Etapa A (analytics) hecha; chat/LLM planificados. |
 | [backend/TESTING.md](backend/TESTING.md) | Pruebas del backend (pytest): fixtures, tests de catálogos, comandos y cobertura. |
 | [frontend/README.md](frontend/README.md) | App Expo (RN): comandos rápidos de variables EAS y builds. |
 | [frontend/GUIA-EAS-EXPO-REPLICABLE.md](frontend/GUIA-EAS-EXPO-REPLICABLE.md) | **Guía reproducible:** decisiones, checklist y diagnóstico para replicar el flujo en otras apps. |

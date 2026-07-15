@@ -1,8 +1,8 @@
 # Asistente financiero (fase 2 — planificado)
 
-Chat con consultas en lenguaje natural sobre los datos del usuario. **No implementado aún.**
+Chat con consultas en lenguaje natural sobre los datos del usuario. **Etapa A (capa analytics) implementada;** chat/LLM/UI pendientes.
 
-Resumen corto en [backend/README.md — Asistente financiero](README.md#asistente-financiero-fase-2--planificado). Este documento desarrolla arquitectura, herramientas, seguridad y etapas de implementación.
+Resumen corto en [backend/README.md — Asistente financiero](README.md#asistente-financiero-fase-2--en-progreso). Este documento desarrolla arquitectura, herramientas, seguridad y etapas de implementación.
 
 ---
 
@@ -66,25 +66,38 @@ Principio central: el LLM **elige qué función llamar y con qué argumentos**; 
 
 ## 1. Capa analytics
 
-Módulo previsto: `applications/finanzas/services/analytics/` (o `services_analytics.py` si se prefiere un solo archivo al inicio).
+**Estado: Etapa A implementada** (solo lectura, sin LLM ni HTTP).
+
+Paquete: `applications/finanzas/services/analytics/`
+
+| Módulo | Funciones |
+|--------|-----------|
+| `presupuesto.py` | `gasto_categoria_por_mes`, `avance_presupuesto_mes` |
+| `alertas.py` | `listar_alertas_recientes` |
+| `resumen.py` | `resumen_mes_cerrado` |
+
+Import: `from applications.finanzas.services import analytics` (o `from applications.finanzas.services.analytics import …`).
 
 Cada función:
 
 1. Recibe `usuario`, `espacio` (y filtros temporales/categoría ya validados).
-2. Reutiliza querysets y reglas de negocio existentes (`gasto_categoria_mes`, snapshots, filtros `oculto=False`, crédito vía `Cuota`, etc.).
-3. Devuelve un **dict JSON-serializable** acotado (montos, listas cortas, etiquetas), no modelos ORM.
+2. Exige pertenencia activa al espacio; si no hay membresía, devuelve vacío/`null` (no filtra por tenant ajeno “a ciegas”).
+3. Reutiliza querysets y reglas de negocio existentes (`gasto_categoria_mes`, snapshots, filtros `oculto=False`, crédito vía `Cuota`, etc.).
+4. Devuelve un **dict JSON-serializable** acotado (montos, listas cortas, etiquetas), no modelos ORM.
+
+Tests: `tests/test_analytics_asistente.py`.
 
 ### Herramientas candidatas (catálogo v1)
 
-| Función | Pregunta típica | Fuente de verdad |
-|---------|-----------------|------------------|
-| `gasto_categoria_por_mes` | «¿Cuánto gasté en X en marzo?» | Misma lógica que `services/presupuesto_mes.py` (`gasto_categoria_mes` / querysets de egreso + cuotas). |
-| `comparar_gasto_anual` | «Este año vs el anterior en supermercado» | Agregación por mes/año sobre `Movimiento` + `Cuota`, scoped a `espacio`. |
-| `avance_presupuesto_mes` | «¿Cómo voy con mis presupuestos?» | `build_presupuesto_mes_payload` / filas ya usadas por `GET presupuesto-mes/`. |
-| `sugerir_presupuestos` | «¿Qué presupuesto me sugerirías?» | Media / percentiles de gasto de N meses anteriores por categoría; salida solo sugerida. |
-| `resumen_mes_cerrado` | «¿Cómo cerramos junio en el común?» | `resumen_historico_familia` / `ResumenHistoricoMesSnapshot` (meses cerrados). |
-| `listar_alertas_recientes` | «¿Me avisaste algo del presupuesto?» | `NotificacionUsuario` del usuario en el espacio (tipos `PRESUPUESTO_UMBRAL`, opcionalmente `CAMBIO_COMPENSACION`). |
-| `desglose_por_metodo_pago` | «¿Cuánto fue a crédito este mes?» | Filtros por `MetodoPago.tipo` + cuotas del ciclo. |
+| Función | Estado | Pregunta típica | Fuente de verdad |
+|---------|--------|-----------------|------------------|
+| `gasto_categoria_por_mes` | **Lista (A)** | «¿Cuánto gasté en X en marzo?» | `services/presupuesto_mes.py` (`gasto_categoria_mes`). |
+| `avance_presupuesto_mes` | **Lista (A)** | «¿Cómo voy con mis presupuestos?» | `build_presupuesto_mes_payload`. |
+| `listar_alertas_recientes` | **Lista (A)** | «¿Me avisaste algo del presupuesto?» | `NotificacionUsuario` + `serializar_notificacion`. |
+| `resumen_mes_cerrado` | **Lista (A)** | «¿Cómo cerramos junio en el común?» | Snapshot / `calcular_resumen_mes` (solo meses cerrados). |
+| `comparar_gasto_anual` | Pendiente | «Este año vs el anterior en supermercado» | Agregación por mes/año sobre `Movimiento` + `Cuota`. |
+| `sugerir_presupuestos` | Pendiente | «¿Qué presupuesto me sugerirías?» | Media / percentiles de gasto de N meses anteriores. |
+| `desglose_por_metodo_pago` | Pendiente | «¿Cuánto fue a crédito este mes?» | `MetodoPago.tipo` + cuotas del ciclo. |
 
 ### Reglas de reutilización
 
@@ -298,11 +311,11 @@ Cuando exista `origen_ingesta` / cola de pendientes, el asistente podría respon
 
 ## Etapas de implementación sugeridas
 
-### Etapa A — Analytics sin LLM
+### Etapa A — Analytics sin LLM ✅
 
-1. Extraer/envolver funciones puras con tests unitarios (`tests/test_analytics_*.py`).
-2. Exponer temporalmente endpoints internos o solo uso desde tests (opcional).
-3. Verificar paridad de cifras con `presupuesto-mes` y resumen histórico para los mismos fixtures.
+1. ~~Extraer/envolver funciones puras con tests unitarios (`tests/test_analytics_*.py`).~~ → `services/analytics/` + `tests/test_analytics_asistente.py`.
+2. ~~Endpoints internos opcionales~~ — omitidos; solo consumo desde código/tests.
+3. ~~Paridad~~ — gasto/avance alineados a `presupuesto_mes`; resumen a mes cerrado; alertas scoped por usuario/espacio.
 
 ### Etapa B — Orquestador + API cloud (NIM u otro)
 
@@ -351,8 +364,8 @@ Prohibido usar `finanzas_db` de desarrollo para experimentos ad hoc (ver `.curso
 
 ## Criterios de «listo para usuarios beta»
 
-- [ ] Al menos 3 tools con tests de paridad vs pantallas existentes.
-- [ ] Ninguna ruta ejecuta SQL/ORM fuera del catálogo.
+- [x] Al menos 3 tools con tests de paridad vs pantallas existentes. *(Etapa A: 4 funciones)*
+- [ ] Ninguna ruta ejecuta SQL/ORM fuera del catálogo. *(aplica cuando exista el endpoint chat)*
 - [ ] Flag de encendido y rate limit en producción.
 - [ ] Respuestas en español coherentes con montos CLP de fixtures de demo.
 - [ ] Documentación de env vars en `DEPLOYMENT-LOCAL.md` / producción cuando se implemente.

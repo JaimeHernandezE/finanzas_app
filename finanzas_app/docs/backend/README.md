@@ -31,7 +31,7 @@ backend/
 | **Migraciones** | El usuario ejecuta siempre `makemigrations` y `migrate` manualmente (regla en `.cursor/rules/django-migrations.mdc`). |
 | **Apps y modelos** | Ver [plan de arquitectura](../../plan%20de%20arquitectura.md) y código en `applications/*/models.py`. |
 | **Pruebas (pytest)** | [TESTING.md](TESTING.md) |
-| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) |
+| **Asistente financiero (plan)** | [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md) — Etapa A (analytics) implementada; chat/LLM pendientes. |
 
 ## Comandos útiles (dentro del contenedor)
 
@@ -208,18 +208,18 @@ Expuestas en `GET/PATCH /api/usuarios/me/` junto al resto de preferencias de UI.
 | POST | `/api/finanzas/notificaciones/<id>/leida/` | Marcar una como leída. |
 | POST | `/api/finanzas/notificaciones/marcar-todas-leidas/` | Marcar todas como leídas. |
 
-## Asistente financiero (fase 2 — planificado)
+## Asistente financiero (fase 2 — en progreso)
 
-Chat con consultas en lenguaje natural sobre los datos del usuario. **No implementado aún.** Diseño previsto:
+Chat con consultas en lenguaje natural sobre los datos del usuario. Diseño:
 
-1. **Capa analytics** — funciones reutilizables (`comparar_gasto_anual`, `gasto_categoria_por_mes`, `sugerir_presupuestos`) sobre los mismos querysets que `presupuesto_mes` y `resumen_historico`.
-2. **Endpoint chat** — `POST /api/finanzas/asistente/consulta/` con function-calling; el LLM **nunca** ejecuta SQL directo (multitenancy y seguridad).
-3. **LLM gratuito (API cloud)** — NVIDIA NIM como candidato principal; Groq o Gemini como alternativa. Mismo proveedor en desarrollo y producción (sin LLM local).
-4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto.
+1. **Capa analytics** — **Etapa A hecha:** `applications/finanzas/services/analytics/` (`gasto_categoria_por_mes`, `avance_presupuesto_mes`, `listar_alertas_recientes`, `resumen_mes_cerrado`). Tests: `tests/test_analytics_asistente.py`.
+2. **Endpoint chat** — `POST /api/finanzas/asistente/consulta/` con function-calling (**pendiente**); el LLM **nunca** ejecuta SQL directo.
+3. **LLM gratuito (API cloud)** — NVIDIA NIM como candidato principal; Groq o Gemini como alternativa (**pendiente**).
+4. **UI** — panel de chat en web/móvil, separado de las alertas de presupuesto (**pendiente**).
 
 Las alertas de presupuesto de la fase 1 comparten `NotificacionUsuario` y podrían referenciarse en respuestas del asistente (“ya te avisamos el 12 jul…”).
 
-Detalle (arquitectura, catálogo de tools, seguridad, etapas): [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
+Detalle: [ASISTENTE-FINANCIERO.md](ASISTENTE-FINANCIERO.md).
 
 ## Sincronización automática de movimientos (fase 3 — planificado)
 
