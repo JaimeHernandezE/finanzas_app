@@ -26,6 +26,8 @@ from django.utils import timezone
 
 from applications.finanzas import services_recalculo
 from applications.finanzas.models import (
+    BrechaConsultaAsistente,
+    CambioCompensacionMensual,
     Categoria,
     Cuota,
     CuentaPersonal,
@@ -33,6 +35,7 @@ from applications.finanzas.models import (
     LiquidacionComunMensualSnapshot,
     MetodoPago,
     Movimiento,
+    NotificacionUsuario,
     Presupuesto,
     ResumenHistoricoMesSnapshot,
     SaldoMensualSnapshot,
@@ -48,6 +51,34 @@ from applications.usuarios.demo_constants import (
     FAMILIA_DEMO_NOMBRE,
 )
 from applications.usuarios.models import Familia, InvitacionPendiente, Usuario
+
+
+def _crear_usuario_demo(*, email, firebase_uid, rol, first_name, last_name, espacio_familiar):
+    """Usuario demo sin FK familia (multitenant vía PertenenciaEspacio)."""
+    from applications.espacios.models import PertenenciaEspacio
+
+    usuario = Usuario.objects.create_user(
+        username=email,
+        email=email,
+        password='unused-demo',
+        firebase_uid=firebase_uid,
+        rol=rol,
+        first_name=first_name,
+        last_name=last_name,
+    )
+    PertenenciaEspacio.objects.get_or_create(
+        usuario=usuario,
+        espacio=espacio_familiar,
+        defaults={
+            'rol': (
+                PertenenciaEspacio.ROL_ADMIN
+                if rol == 'ADMIN'
+                else PertenenciaEspacio.ROL_MIEMBRO
+            ),
+        },
+    )
+    return usuario
+
 
 MESES_HISTORIA_DEFAULT = 15
 
@@ -215,15 +246,44 @@ def _asegurar_metodos():
 
 
 def _limpiar_datos_espacio(espacio_id: int):
-    """Borra datos tenant de un espacio (finanzas + snapshots)."""
+    """
+    Borra datos tenant de un espacio (finanzas + snapshots).
+
+    Importante: primero movimientos/ingresos (y cuotas); al final los snapshots.
+    Si se borran snapshots antes, las signals de delete/recalc los recrean y
+    Espacio.delete() falla con ProtectedError.
+    """
+    from applications.inversiones.models import Aporte, Fondo, RegistroValor
+    from applications.viajes.models import PresupuestoViaje, Viaje
+
+    NotificacionUsuario.objects.filter(espacio_id=espacio_id).delete()
+    BrechaConsultaAsistente.objects.filter(espacio_id=espacio_id).delete()
+    CambioCompensacionMensual.objects.filter(espacio_id=espacio_id).delete()
+
+    for Model in (Categoria, Movimiento, Presupuesto):
+        Model.objects.filter(origen_familia_id=espacio_id).update(origen_familia=None)
+
+    Cuota.objects.filter(movimiento__espacio_id=espacio_id).delete()
+    IngresoComun.objects.filter(espacio_id=espacio_id).delete()
+    Movimiento.objects.filter(espacio_id=espacio_id).delete()
+    Presupuesto.objects.filter(espacio_id=espacio_id).delete()
+
+    viaje_ids = list(Viaje.objects.filter(espacio_id=espacio_id).values_list('pk', flat=True))
+    if viaje_ids:
+        PresupuestoViaje.objects.filter(viaje_id__in=viaje_ids).delete()
+        Viaje.objects.filter(pk__in=viaje_ids).delete()
+
+    fondo_ids = list(Fondo.objects.filter(espacio_id=espacio_id).values_list('pk', flat=True))
+    if fondo_ids:
+        Aporte.objects.filter(fondo_id__in=fondo_ids).delete()
+        RegistroValor.objects.filter(fondo_id__in=fondo_ids).delete()
+        Fondo.objects.filter(pk__in=fondo_ids).delete()
+
+    Categoria.objects.filter(espacio_id=espacio_id).delete()
+
     ResumenHistoricoMesSnapshot.objects.filter(espacio_id=espacio_id).delete()
     LiquidacionComunMensualSnapshot.objects.filter(espacio_id=espacio_id).delete()
     SaldoMensualSnapshot.objects.filter(espacio_id=espacio_id).delete()
-    Cuota.objects.filter(movimiento__espacio_id=espacio_id).delete()
-    Movimiento.objects.filter(espacio_id=espacio_id).delete()
-    IngresoComun.objects.filter(espacio_id=espacio_id).delete()
-    Presupuesto.objects.filter(espacio_id=espacio_id).delete()
-    Categoria.objects.filter(espacio_id=espacio_id).delete()
 
 
 def _wipe_familia_demo():
@@ -290,25 +350,24 @@ class Command(BaseCommand):
             metodos = {'efectivo': efectivo, 'debito': debito, 'credito': credito}
 
             familia = Familia.objects.create(nombre=FAMILIA_DEMO_NOMBRE)
-            jaime = Usuario.objects.create_user(
-                username=DEMO_EMAIL_JAIME,
+            from applications.espacios.services import espacio_para_familia
+
+            espacio = espacio_para_familia(familia)
+            jaime = _crear_usuario_demo(
                 email=DEMO_EMAIL_JAIME,
-                password='unused-demo',
                 firebase_uid=DEMO_FIREBASE_UID_JAIME,
-                familia=familia,
                 rol='ADMIN',
                 first_name='Jaime',
                 last_name='Demo',
+                espacio_familiar=espacio,
             )
-            glori = Usuario.objects.create_user(
-                username=DEMO_EMAIL_GLORI,
+            glori = _crear_usuario_demo(
                 email=DEMO_EMAIL_GLORI,
-                password='unused-demo',
                 firebase_uid=DEMO_FIREBASE_UID_GLORI,
-                familia=familia,
                 rol='MIEMBRO',
                 first_name='Glori',
                 last_name='Demo',
+                espacio_familiar=espacio,
             )
 
             cuenta_j = CuentaPersonal.objects.get(usuario=jaime, nombre='Personal')
@@ -341,7 +400,7 @@ class Command(BaseCommand):
             for nombre, _, _ in CATEGORIAS_COMUNES_OPERATIVAS:
                 cat, _ = Categoria.objects.get_or_create(
                     nombre=nombre,
-                    familia=familia,
+                    espacio=espacio,
                     usuario=None,
                     defaults={'tipo': 'EGRESO', 'es_inversion': False},
                 )
@@ -349,7 +408,7 @@ class Command(BaseCommand):
 
             cat_fondo, _ = Categoria.objects.get_or_create(
                 nombre=NOMBRE_FONDO_MUTUO,
-                familia=familia,
+                espacio=espacio,
                 usuario=None,
                 defaults={'tipo': 'EGRESO', 'es_inversion': False},
             )
@@ -360,7 +419,7 @@ class Command(BaseCommand):
 
             cat_sueldo, _ = Categoria.objects.get_or_create(
                 nombre='Sueldo',
-                familia=None,
+                espacio=None,
                 usuario=None,
                 defaults={'tipo': 'INGRESO', 'es_inversion': False},
             )
@@ -369,7 +428,7 @@ class Command(BaseCommand):
             for nombre, _, _ in CATEGORIAS_JAIME:
                 cat, _ = Categoria.objects.get_or_create(
                     nombre=nombre,
-                    familia=familia,
+                    espacio=espacio,
                     usuario=jaime,
                     defaults={
                         'tipo': 'EGRESO',
@@ -385,7 +444,7 @@ class Command(BaseCommand):
             for nombre, _, _ in CATEGORIAS_GLORI:
                 cat, _ = Categoria.objects.get_or_create(
                     nombre=nombre,
-                    familia=familia,
+                    espacio=espacio,
                     usuario=glori,
                     defaults={
                         'tipo': 'EGRESO',
@@ -407,14 +466,14 @@ class Command(BaseCommand):
                 es_mes_actual = i == 0
 
                 ic_j = IngresoComun.objects.create(
-                    familia=familia,
+                    espacio=espacio,
                     usuario=jaime,
                     mes=primer_dia,
                     monto=_monto_variado(SUELDO_MENSUAL_MIN, SUELDO_MENSUAL_MAX),
                     origen='Sueldo',
                 )
                 ic_g = IngresoComun.objects.create(
-                    familia=familia,
+                    espacio=espacio,
                     usuario=glori,
                     mes=primer_dia,
                     monto=_monto_variado(SUELDO_MENSUAL_MIN, SUELDO_MENSUAL_MAX),
@@ -460,7 +519,7 @@ class Command(BaseCommand):
 
                         Movimiento.objects.create(
                             usuario=autor,
-                            familia=familia,
+                            espacio=espacio,
                             fecha=_fecha_en_mes(anio, mes, 15, fecha_tope=ref),
                             tipo='EGRESO',
                             ambito='COMUN',
@@ -477,7 +536,7 @@ class Command(BaseCommand):
                     if f_j >= 1000:
                         Movimiento.objects.create(
                             usuario=jaime,
-                            familia=familia,
+                            espacio=espacio,
                             fecha=_fecha_en_mes(anio, mes, 8, fecha_tope=ref),
                             tipo='EGRESO',
                             ambito='COMUN',
@@ -489,7 +548,7 @@ class Command(BaseCommand):
                     if f_g >= 1000:
                         Movimiento.objects.create(
                             usuario=glori,
-                            familia=familia,
+                            espacio=espacio,
                             fecha=_fecha_en_mes(anio, mes, 9, fecha_tope=ref),
                             tipo='EGRESO',
                             ambito='COMUN',
@@ -523,7 +582,7 @@ class Command(BaseCommand):
                             num_cuotas = random.choice([1, 3, 6])
                         Movimiento.objects.create(
                             usuario=jaime,
-                            familia=familia,
+                            espacio=espacio,
                             cuenta=cuenta_j,
                             fecha=_fecha_en_mes(
                                 anio, mes, random.randint(3, 28), fecha_tope=ref
@@ -553,7 +612,7 @@ class Command(BaseCommand):
                             num_cuotas = random.choice([1, 3, 6])
                         Movimiento.objects.create(
                             usuario=glori,
-                            familia=familia,
+                            espacio=espacio,
                             cuenta=cuenta_g,
                             fecha=_fecha_en_mes(
                                 anio, mes, random.randint(3, 28), fecha_tope=ref
@@ -570,7 +629,7 @@ class Command(BaseCommand):
 
                 for nombre, monto in PRESUPUESTO_MENSUAL_COMUN.items():
                     Presupuesto.objects.update_or_create(
-                        familia=familia,
+                        espacio=espacio,
                         usuario=None,
                         categoria=categorias[nombre],
                         mes=primer_dia,
@@ -578,7 +637,7 @@ class Command(BaseCommand):
                     )
                 for nombre, monto in PRESUPUESTO_MENSUAL_JAIME.items():
                     Presupuesto.objects.update_or_create(
-                        familia=familia,
+                        espacio=espacio,
                         usuario=jaime,
                         categoria=categorias[f'j_{nombre}'],
                         mes=primer_dia,
@@ -586,7 +645,7 @@ class Command(BaseCommand):
                     )
                 for nombre, monto in PRESUPUESTO_MENSUAL_GLORI.items():
                     Presupuesto.objects.update_or_create(
-                        familia=familia,
+                        espacio=espacio,
                         usuario=glori,
                         categoria=categorias[f'g_{nombre}'],
                         mes=primer_dia,
@@ -596,22 +655,18 @@ class Command(BaseCommand):
         # Fuera del atomic: el recálculo tarda mucho y mantenerlo en la misma TX bloquea la BD
         # (p. ej. GitHub Actions + Render usando el mismo Supabase → la tarea «se pega» esperando locks).
         mes_inicio = mes_cierre - relativedelta(months=meses_historia - 1)
-        fid = familia.id
+        espacio_id = espacio.id
         self.stdout.write('seed_demo: recalculando liquidaciones y saldos (puede tardar varios minutos)…')
-        services_recalculo.recalcular_familia_desde(fid, mes_inicio)
+        services_recalculo.recalcular_familia_desde(espacio_id, mes_inicio)
         self.stdout.write('seed_demo: backfill resumen histórico…')
-        services_recalculo.backfill_resumen_historico_snapshots(fid)
+        services_recalculo.backfill_resumen_historico_snapshots(espacio_id)
         Movimiento.objects.filter(
-            familia_id=fid, fecha__year=ref.year, fecha__month=ref.month
+            espacio_id=espacio_id, fecha__year=ref.year, fecha__month=ref.month
         ).delete()
-
-        # Transición multitenant Fase 3: asigna espacio a los datos recién sembrados.
-        from django.core.management import call_command
-        call_command('backfill_espacios', verbosity=0)
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Seed demo listo. Familia «{FAMILIA_DEMO_NOMBRE}» (id={familia.id}), '
+                f'Seed demo listo. Espacio «{FAMILIA_DEMO_NOMBRE}» (id={espacio_id}), '
                 f'{meses_historia} mes(es) de historia, referencia hoy={ref.isoformat()}.'
             )
         )

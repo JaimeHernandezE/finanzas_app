@@ -8,7 +8,6 @@ Datos completos (15 meses): `seed_demo` o Release Command `./release.sh` con DEM
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from applications.espacios.models import PertenenciaEspacio
 from applications.espacios.services import espacio_para_familia
 from applications.usuarios.demo_constants import (
     DEMO_EMAIL_GLORI,
@@ -17,33 +16,9 @@ from applications.usuarios.demo_constants import (
     DEMO_FIREBASE_UID_JAIME,
     FAMILIA_DEMO_NOMBRE,
 )
-from applications.usuarios.models import Familia, Usuario
+from applications.usuarios.models import Familia
 
-from .seed_demo import _asegurar_metodos, _wipe_familia_demo
-
-
-def _crear_usuario_demo(*, email, firebase_uid, rol, first_name, last_name, espacio_familiar):
-    usuario = Usuario.objects.create_user(
-        username=email,
-        email=email,
-        password='unused-demo',
-        firebase_uid=firebase_uid,
-        rol=rol,
-        first_name=first_name,
-        last_name=last_name,
-    )
-    PertenenciaEspacio.objects.get_or_create(
-        usuario=usuario,
-        espacio=espacio_familiar,
-        defaults={
-            'rol': (
-                PertenenciaEspacio.ROL_ADMIN
-                if rol == 'ADMIN'
-                else PertenenciaEspacio.ROL_MIEMBRO
-            ),
-        },
-    )
-    return usuario
+from .seed_demo import _asegurar_metodos, _crear_usuario_demo, _wipe_familia_demo
 
 
 class Command(BaseCommand):
