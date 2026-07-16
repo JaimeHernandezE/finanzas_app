@@ -1,0 +1,19 @@
+# Usar SOLO si el servicio tiene Root Directory = finanzas_app/frontend
+# (alternativa al railway.toml del padre).
+#
+# En Railway → Settings:
+#   Root Directory: finanzas_app/frontend
+#   Config file:    /finanzas_app/frontend/railway.toml
+#   Watch paths también pueden definirse en el panel (mismas rutas).
+
+[build]
+builder = "NIXPACKS"
+# Sin `cd frontend`: el root ya es el frontend.
+watchPatterns = [
+  "/finanzas_app/frontend/**",
+  "/finanzas_app/shared/**",
+  "/finanzas_app/frontend/railway.toml",
+]
+
+[deploy]
+# start = npm run start (package.json / nixpacks)
