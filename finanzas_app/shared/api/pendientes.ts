@@ -38,6 +38,24 @@ export interface ConfirmarPendienteBody {
   monto_cuota?: number | null
 }
 
+export interface CapturaCorreoConfig {
+  conectado: boolean
+  proveedor: 'GMAIL' | 'OUTLOOK'
+  email: string
+  remitentes_banco: string[]
+  intervalo_minutos: number
+  notificaciones_activas: boolean
+  ultimo_sync_at: string | null
+  ultimo_error: string
+  intervalo_minimo_permitido: number
+}
+
+export type CapturaCorreoPrefs = Partial<{
+  remitentes_banco: string[]
+  intervalo_minutos: number
+  notificaciones_activas: boolean
+}>
+
 export const pendientesApi = {
   listar: (estado = 'PENDIENTE') =>
     client.get<MovimientoPendienteApi[]>('/api/finanzas/pendientes/', {
@@ -65,4 +83,26 @@ export const pendientesApi = {
       errores: number
       mensaje: string
     }>('/api/finanzas/captura/correo/sincronizar/'),
+
+  generarVinculo: (canal: 'TELEGRAM' | 'WHATSAPP') =>
+    client.post<{ canal: string; codigo: string; expira_at: string; instruccion: string }>(
+      '/api/finanzas/captura/vinculo/',
+      { canal },
+    ),
+
+  estadoVinculo: () =>
+    client.get<{
+      telegram_vinculado: boolean
+      whatsapp_vinculado: boolean
+      whatsapp_phone: string
+      telegram_chat_id_presente: boolean
+    }>('/api/finanzas/captura/vinculo/estado/'),
+
+  getCorreo: () => client.get<CapturaCorreoConfig>('/api/finanzas/captura/correo/'),
+
+  updateCorreoPrefs: (body: CapturaCorreoPrefs) =>
+    client.put<CapturaCorreoConfig>('/api/finanzas/captura/correo/', body),
+
+  desconectarCorreo: () =>
+    client.post<CapturaCorreoConfig>('/api/finanzas/captura/correo/desconectar/'),
 }

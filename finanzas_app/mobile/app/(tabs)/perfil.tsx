@@ -457,7 +457,34 @@ export default function PerfilScreen() {
             <Text className="text-dark font-medium">Categorías</Text>
             <Text className="text-muted text-sm">›</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/configuracion/cuentas' as never)}
+            className="flex-row items-center justify-between py-3 border-b border-border"
+          >
+            <Text className="text-dark font-medium">Cuentas personales</Text>
+            <Text className="text-muted text-sm">›</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/configuracion/captura' as never)}
+            className="flex-row items-center justify-between py-3"
+          >
+            <Text className="text-dark font-medium">Captura (correo / bots)</Text>
+            <Text className="text-muted text-sm">›</Text>
+          </TouchableOpacity>
         </View>
+
+        {user.familia && (
+          <View className="bg-white border border-border rounded-xl p-4 mb-4">
+            <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Familia</Text>
+            <TouchableOpacity
+              onPress={() => router.push('/configuracion/miembros' as never)}
+              className="flex-row items-center justify-between py-3"
+            >
+              <Text className="text-dark font-medium">Miembros</Text>
+              <Text className="text-muted text-sm">›</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View className="bg-white border border-border rounded-xl p-4 mb-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-3">Interfaz</Text>
