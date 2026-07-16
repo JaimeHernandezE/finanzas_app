@@ -1,12 +1,19 @@
 # Frontend web — servicio Railway (monorepo con shared/)
-# En Railway → Settings:
+# En Railway → Settings del servicio frontend:
 #   - Root Directory: finanzas_app
 #   - Config file: /finanzas_app/railway.toml
-# Si Root Directory = finanzas_app/frontend, el build falla: ../shared no entra al contexto.
+#
+# Importante: watchPatterns son relativos a la RAÍZ DEL REPO (no al Root Directory).
+# Si usas solo "frontend/**", no matchea nada y Railway NO redeploya el front.
 
 [build]
+builder = "NIXPACKS"
 buildCommand = "cd frontend && npm ci && npm run build"
-watchPatterns = ["frontend/**", "shared/**"]
+watchPatterns = [
+  "finanzas_app/frontend/**",
+  "finanzas_app/shared/**",
+  "finanzas_app/railway.toml",
+]
 
 [deploy]
 startCommand = "cd frontend && npm run start"

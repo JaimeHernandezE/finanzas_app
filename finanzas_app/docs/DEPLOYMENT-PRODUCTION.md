@@ -70,19 +70,19 @@ Para demo, `FIREBASE_SERVICE_ACCOUNT_JSON` puede omitirse si no usarás Firebase
 
 ### Frontend web (Railway) — servicio `finanzas_app`
 
-El build importa `@finanzas/shared`. Railway suele usar **Root Directory = `finanzas_app/frontend`** (el `railway.toml` de la raíz del monorepo a veces no se aplica a ese servicio).
+Hay dos layouts válidos; el del repo (`finanzas_app/railway.toml`) asume el primero.
 
-**Solución en el repo:** copia de `shared/` en `frontend/shared/` (sincronizada con `npm run sync-shared` antes de commitear cambios en `shared/`). El `prebuild` la refresca si `../shared` existe.
+| Setting | Valor (recomendado / `railway.toml`) |
+|---------|--------------------------------------|
+| **Root Directory** | `finanzas_app` |
+| **Config file** | `/finanzas_app/railway.toml` |
+| **Build** | `cd frontend && npm ci && npm run build` |
+| **Start** | `cd frontend && npm run start` |
+| **Watch paths** | `finanzas_app/frontend/**`, `finanzas_app/shared/**` (desde la **raíz del repo**) |
 
-| Setting | Valor típico |
-|---------|----------------|
-| **Root Directory** | `finanzas_app/frontend` |
-| **Build** | (auto) `npm install && npm run build` — incluye `prebuild` → `sync-shared` |
-| **Start** | `npm run start` |
+Los `watchPatterns` de Railway son relativos a la **raíz del repositorio**, no al Root Directory. Si pones solo `frontend/**`, no coincide con `finanzas_app/frontend/**` y el auto-deploy del front **no se dispara**.
 
-Si cambias archivos en `finanzas_app/shared/`, ejecuta `cd frontend && npm run sync-shared` y commitea `frontend/shared/` antes del deploy.
-
-**Alternativa:** Root Directory = `finanzas_app` + Config file `/finanzas_app/railway.toml` (build `cd frontend && npm ci && npm run build`). Requiere `finanzas_app/package.json` en el repo para que Railpack instale Node.
+**Alternativa:** Root Directory = `finanzas_app/frontend` + copia `frontend/shared/` (vía `npm run sync-shared`). En ese caso **no** uses el `railway.toml` de `finanzas_app/` (o apunta el Config file vacío) y deja watch paths en `finanzas_app/frontend/**` (y `finanzas_app/shared/**` si quieres redeploy al cambiar shared sin sync).
 
 Variables de entorno:
 
