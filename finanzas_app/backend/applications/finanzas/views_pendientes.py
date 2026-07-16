@@ -431,8 +431,20 @@ def _oauth_callback_common(request, *, proveedor: str, oauth_mod):
         tokens = oauth_mod.intercambiar_codigo(code, redirect_uri)
         access = tokens.get('access_token', '')
         email = oauth_mod.obtener_email(access) if access else ''
-    except ValueError:
-        return django_redirect(f'{dest}?correo_oauth_error=token_exchange')
+    except ValueError as exc:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            'OAuth correo token_exchange (%s): %s', proveedor, exc,
+        )
+        msg = str(exc).lower()
+        if 'secret id' in msg or 'guid' in msg or '7000215' in msg or 'invalid_client' in msg:
+            err_code = 'invalid_client_secret'
+        elif 'redirect' in msg:
+            err_code = 'redirect_mismatch'
+        else:
+            err_code = 'token_exchange'
+        return django_redirect(f'{dest}?correo_oauth_error={err_code}')
 
     config, _ = ConfiguracionCapturaCorreo.objects.get_or_create(usuario=usuario)
     config.proveedor = proveedor

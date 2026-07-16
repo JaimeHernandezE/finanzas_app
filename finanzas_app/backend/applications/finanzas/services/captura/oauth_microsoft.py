@@ -72,6 +72,12 @@ def generar_auth_url(redirect_uri: str, state: str) -> str:
 
 def intercambiar_codigo(code: str, redirect_uri: str) -> dict:
     client_id, client_secret = _client_credentials()
+    # Azure muestra "Secret ID" (GUID) y "Value". Solo el Value sirve como client_secret.
+    if len(client_secret) == 36 and client_secret.count('-') == 4:
+        raise ValueError(
+            'MICROSOFT_OAUTH_CLIENT_SECRET parece un Secret ID (GUID). '
+            'En Azure → Certificates & secrets usa la columna Value (se muestra solo al crear el secreto).',
+        )
     resp = http_requests.post(
         f'{_auth_base()}/token',
         data={
@@ -85,7 +91,8 @@ def intercambiar_codigo(code: str, redirect_uri: str) -> dict:
         timeout=20,
     )
     if resp.status_code != 200:
-        raise ValueError(f'Error al intercambiar código Microsoft: {resp.text[:300]}')
+        detail = (resp.text or '')[:400]
+        raise ValueError(f'Error al intercambiar código Microsoft: {detail}')
     data = resp.json()
     if 'refresh_token' not in data:
         raise ValueError('Microsoft no devolvió refresh_token. Vuelve a autorizar la app.')

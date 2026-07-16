@@ -65,7 +65,21 @@ export default function CapturaConfigPage() {
       setSearchParams({}, { replace: true })
       void cargar()
     } else if (err) {
-      setError(`No se pudo conectar el correo (${err}).`)
+      const mensajes: Record<string, string> = {
+        invalid_client_secret:
+          'Secret de Microsoft inválido: en Azure → Certificates & secrets copia el Value '
+          + '(texto largo), no el Secret ID (GUID). Luego recrea el secreto si ya no ves el Value, '
+          + 'actualiza MICROSOFT_OAUTH_CLIENT_SECRET en .env y reinicia docker-compose up -d web.',
+        redirect_mismatch:
+          'El redirect URI no coincide. En Azure debe estar exactamente: '
+          + 'http://localhost:8000/api/finanzas/captura/correo/oauth/callback/microsoft/',
+        token_exchange:
+          'Falló el intercambio de token con Microsoft. Revisa Client ID, Secret (Value) '
+          + 'y el redirect URI en Azure.',
+        no_code: 'Microsoft no devolvió código de autorización.',
+        invalid_state: 'Sesión OAuth inválida o expirada. Intenta conectar de nuevo.',
+      }
+      setError(mensajes[err] ?? `No se pudo conectar el correo (${err}).`)
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, setSearchParams, cargar])
