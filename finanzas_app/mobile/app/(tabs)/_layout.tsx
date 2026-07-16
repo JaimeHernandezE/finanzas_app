@@ -65,6 +65,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="nuevo-movimiento"  options={{ href: null }} />
       <Tabs.Screen name="perfil"            options={{ href: null }} />
       <Tabs.Screen name="categorias"       options={{ href: null }} />
+      <Tabs.Screen name="pendientes"       options={{ href: null }} />
+      <Tabs.Screen name="asistente"        options={{ href: null }} />
       <Tabs.Screen name="cuenta/[id]"       options={{ href: null }} />
     </Tabs>
   )

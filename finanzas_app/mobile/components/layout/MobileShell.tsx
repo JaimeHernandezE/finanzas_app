@@ -25,6 +25,7 @@ type ItemNavegacion = {
 
 const PERSONAL_FIJOS: ItemNavegacion[] = [
   { icon: '◈', label: 'Dashboard', route: '/(tabs)', activeOn: ['/', '/index'] },
+  { icon: '⬡', label: 'Pendientes', route: '/(tabs)/pendientes', activeOn: ['/pendientes'] },
 ]
 
 const FAMILIA_FIJOS: ItemNavegacion[] = [
@@ -39,6 +40,7 @@ const ANALISIS_ITEMS: ItemNavegacion[] = [
 
 const MAS_ITEMS: ItemNavegacion[] = [
   { icon: '▭', label: 'Tarjetas', route: '/tarjetas', activeOn: ['/tarjetas'] },
+  { icon: '◇', label: 'Asistente', route: '/(tabs)/asistente', activeOn: ['/asistente'] },
   { icon: '△', label: 'Inversiones', activeOn: ['/inversiones'] },
   { icon: '◎', label: 'Viajes', activeOn: ['/viajes'] },
   { icon: '⚙', label: 'Configuración', route: '/perfil', activeOn: ['/perfil'] },
