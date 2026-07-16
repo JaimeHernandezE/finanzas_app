@@ -468,7 +468,7 @@ export default function PerfilScreen() {
             onPress={() => router.push('/configuracion/captura' as never)}
             className="flex-row items-center justify-between py-3"
           >
-            <Text className="text-dark font-medium">Captura (correo / bots)</Text>
+            <Text className="text-dark font-medium">Captura (correo bancario)</Text>
             <Text className="text-muted text-sm">›</Text>
           </TouchableOpacity>
         </View>

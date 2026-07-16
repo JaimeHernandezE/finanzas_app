@@ -33,7 +33,7 @@ const GRUPOS = [
     items: [
       { icon: '▤', label: 'Categorías', to: '/configuracion/categorias' as const },
       { icon: '◫', label: 'Cuentas personales', to: '/configuracion/cuentas' as const },
-      { icon: '◉', label: 'Captura (correo / WhatsApp / Telegram)', to: '/configuracion/captura' as const },
+      { icon: '◉', label: 'Captura (correo bancario)', to: '/configuracion/captura' as const },
       { icon: '⇪', label: 'Importar cuenta personal', to: '/configuracion/importar-cuenta-personal' as const },
       { icon: '⇪', label: 'Importar honorarios', to: '/configuracion/importar-honorarios' as const },
       { icon: '⇪', label: 'Importar sueldos', to: '/configuracion/importar-sueldos' as const },

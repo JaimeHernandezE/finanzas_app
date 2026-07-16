@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
-  Clipboard,
   ScrollView,
   Switch,
   Text,
@@ -26,21 +24,11 @@ interface CapturaCorreoConfig {
   intervalo_minimo_permitido: number
 }
 
-interface VinculoEstado {
-  telegram_vinculado: boolean
-  whatsapp_vinculado: boolean
-  whatsapp_phone: string
-  telegram_chat_id_presente: boolean
-}
-
 export default function CapturaConfigScreen() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
-  const [estado, setEstado] = useState<VinculoEstado | null>(null)
-  const [codigoTg, setCodigoTg] = useState<string | null>(null)
-  const [codigoWa, setCodigoWa] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const [correo, setCorreo] = useState<CapturaCorreoConfig | null>(null)
@@ -60,11 +48,7 @@ export default function CapturaConfigScreen() {
     setLoading(true)
     setError(null)
     try {
-      const [vinculo, correoRes] = await Promise.all([
-        pendientesApi.estadoVinculo(),
-        pendientesApi.getCorreo(),
-      ])
-      setEstado(vinculo.data)
+      const correoRes = await pendientesApi.getCorreo()
       aplicarCorreo(correoRes.data)
     } catch (e) {
       setError(apiErrorMessage(e, 'No se pudo cargar la configuración.'))
@@ -76,21 +60,6 @@ export default function CapturaConfigScreen() {
   useEffect(() => {
     void cargar()
   }, [cargar])
-
-  const generar = async (canal: 'TELEGRAM' | 'WHATSAPP') => {
-    setBusy(true)
-    setError(null)
-    setOkMsg(null)
-    try {
-      const { data } = await pendientesApi.generarVinculo(canal)
-      if (canal === 'TELEGRAM') setCodigoTg(data.codigo)
-      else setCodigoWa(data.codigo)
-    } catch (e) {
-      setError(apiErrorMessage(e, 'No se pudo generar el código.'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const agregarRemitente = () => {
     const s = remitenteNuevo.trim().toLowerCase()
@@ -141,11 +110,6 @@ export default function CapturaConfigScreen() {
     }
   }
 
-  const copiarCodigo = (codigo: string) => {
-    Clipboard.setString(`/vincular ${codigo}`)
-    Alert.alert('Copiado', `/vincular ${codigo} copiado al portapapeles.`)
-  }
-
   const INTERVALOS = [5, 10, 15, 30, 60]
   const minIntervalo = correo?.intervalo_minimo_permitido ?? 5
 
@@ -182,7 +146,6 @@ export default function CapturaConfigScreen() {
           </View>
         )}
 
-        {/* Correo bancario */}
         <View className="bg-white border border-border rounded-xl p-4 mb-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
             Correo bancario
@@ -226,7 +189,6 @@ export default function CapturaConfigScreen() {
           )}
         </View>
 
-        {/* Remitentes */}
         <View className="bg-white border border-border rounded-xl p-4 mb-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
             Remitentes de bancos
@@ -268,7 +230,6 @@ export default function CapturaConfigScreen() {
           )}
         </View>
 
-        {/* Intervalo y notificaciones */}
         <View className="bg-white border border-border rounded-xl p-4 mb-4">
           <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
             Preferencias
@@ -307,70 +268,6 @@ export default function CapturaConfigScreen() {
               <Text className="text-white font-semibold">Guardar preferencias</Text>
             )}
           </TouchableOpacity>
-        </View>
-
-        {/* Telegram */}
-        <View className="bg-white border border-border rounded-xl p-4 mb-4">
-          <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
-            Telegram
-          </Text>
-          <View className="flex-row items-center gap-2 mb-3">
-            <View className={`w-2 h-2 rounded-full ${estado?.telegram_vinculado ? 'bg-success' : 'bg-muted/40'}`} />
-            <Text className="text-dark text-sm">
-              {estado?.telegram_vinculado ? 'Vinculado' : 'No vinculado'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => void generar('TELEGRAM')}
-            disabled={busy}
-            className={`rounded-xl py-2.5 items-center ${busy ? 'bg-border' : 'bg-dark'}`}
-          >
-            <Text className="text-white font-semibold text-sm">Generar código</Text>
-          </TouchableOpacity>
-          {codigoTg && (
-            <TouchableOpacity
-              onPress={() => copiarCodigo(codigoTg)}
-              className="mt-3 p-3 bg-surface rounded-lg"
-            >
-              <Text className="text-dark text-sm font-mono">
-                /vincular {codigoTg}
-              </Text>
-              <Text className="text-muted text-xs mt-1">Toca para copiar</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* WhatsApp */}
-        <View className="bg-white border border-border rounded-xl p-4 mb-4">
-          <Text className="text-xs text-muted uppercase font-semibold tracking-wide mb-2">
-            WhatsApp
-          </Text>
-          <View className="flex-row items-center gap-2 mb-3">
-            <View className={`w-2 h-2 rounded-full ${estado?.whatsapp_vinculado ? 'bg-success' : 'bg-muted/40'}`} />
-            <Text className="text-dark text-sm">
-              {estado?.whatsapp_vinculado
-                ? `Vinculado${estado.whatsapp_phone ? ` (${estado.whatsapp_phone})` : ''}`
-                : 'No vinculado'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => void generar('WHATSAPP')}
-            disabled={busy}
-            className={`rounded-xl py-2.5 items-center ${busy ? 'bg-border' : 'bg-dark'}`}
-          >
-            <Text className="text-white font-semibold text-sm">Generar código</Text>
-          </TouchableOpacity>
-          {codigoWa && (
-            <TouchableOpacity
-              onPress={() => copiarCodigo(codigoWa)}
-              className="mt-3 p-3 bg-surface rounded-lg"
-            >
-              <Text className="text-dark text-sm font-mono">
-                /vincular {codigoWa}
-              </Text>
-              <Text className="text-muted text-xs mt-1">Toca para copiar</Text>
-            </TouchableOpacity>
-          )}
         </View>
       </ScrollView>
     </MobileShell>

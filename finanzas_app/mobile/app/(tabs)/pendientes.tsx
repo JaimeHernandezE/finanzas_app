@@ -27,8 +27,8 @@ type EditState = {
 }
 
 const ORIGEN_BADGE: Record<string, { label: string; bg: string; color: string }> = {
-  WHATSAPP:    { label: 'WhatsApp',  bg: '#dcfce7', color: '#15803d' },
-  TELEGRAM:    { label: 'Telegram',  bg: '#dbeafe', color: '#1d4ed8' },
+  WHATSAPP:    { label: 'Otro',      bg: '#e5e7eb', color: '#4b5563' },
+  TELEGRAM:    { label: 'Otro',      bg: '#e5e7eb', color: '#4b5563' },
   EMAIL_BANCO: { label: 'Correo',    bg: '#fef3c7', color: '#92400e' },
   MANUAL:      { label: 'Manual',    bg: '#f3f4f6', color: '#6b7280' },
 }
@@ -398,7 +398,7 @@ export default function PendientesScreen() {
 
       <View className="flex-row items-center justify-between px-4 pt-3 pb-2">
         <Text className="text-xs text-muted">
-          Borradores capturados por bot o correo.
+          Borradores capturados por correo.
         </Text>
         <TouchableOpacity
           onPress={() => void refrescarCorreo()}

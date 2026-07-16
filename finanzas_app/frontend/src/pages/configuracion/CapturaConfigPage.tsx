@@ -13,14 +13,6 @@ export default function CapturaConfigPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [okMsg, setOkMsg] = useState<string | null>(null)
-  const [estado, setEstado] = useState<{
-    telegram_vinculado: boolean
-    whatsapp_vinculado: boolean
-    whatsapp_phone: string
-    telegram_chat_id_presente: boolean
-  } | null>(null)
-  const [codigoTg, setCodigoTg] = useState<string | null>(null)
-  const [codigoWa, setCodigoWa] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const [correo, setCorreo] = useState<CapturaCorreoConfig | null>(null)
@@ -40,11 +32,7 @@ export default function CapturaConfigPage() {
     setLoading(true)
     setError(null)
     try {
-      const [vinculo, correoRes] = await Promise.all([
-        pendientesApi.estadoVinculo(),
-        pendientesApi.getCorreo(),
-      ])
-      setEstado(vinculo.data)
+      const correoRes = await pendientesApi.getCorreo()
       aplicarCorreo(correoRes.data)
     } catch (e) {
       setError(apiErrorMessage(e, 'No se pudo cargar la configuración de captura.'))
@@ -83,21 +71,6 @@ export default function CapturaConfigPage() {
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, setSearchParams, cargar])
-
-  const generar = async (canal: 'TELEGRAM' | 'WHATSAPP') => {
-    setBusy(true)
-    setError(null)
-    setOkMsg(null)
-    try {
-      const { data } = await pendientesApi.generarVinculo(canal)
-      if (canal === 'TELEGRAM') setCodigoTg(data.codigo)
-      else setCodigoWa(data.codigo)
-    } catch (e) {
-      setError(apiErrorMessage(e, 'No se pudo generar el código.'))
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const agregarRemitente = () => {
     const s = remitenteNuevo.trim().toLowerCase()
@@ -320,42 +293,6 @@ export default function CapturaConfigPage() {
           </button>
         </div>
       </section>
-
-      <section className={styles.block}>
-        <h2>Telegram</h2>
-        <p className={styles.status}>
-          {estado?.telegram_vinculado ? 'Vinculado' : 'No vinculado'}
-        </p>
-        <button type="button" disabled={busy} onClick={() => void generar('TELEGRAM')}>
-          Generar código
-        </button>
-        {codigoTg ? (
-          <p className={styles.codigo}>
-            Código: <strong>{codigoTg}</strong> — envía <code>/vincular {codigoTg}</code>
-          </p>
-        ) : null}
-      </section>
-
-      <section className={styles.block}>
-        <h2>WhatsApp</h2>
-        <p className={styles.status}>
-          {estado?.whatsapp_vinculado
-            ? `Vinculado (${estado.whatsapp_phone || 'ok'})`
-            : 'No vinculado'}
-        </p>
-        <button type="button" disabled={busy} onClick={() => void generar('WHATSAPP')}>
-          Generar código
-        </button>
-        {codigoWa ? (
-          <p className={styles.codigo}>
-            Código: <strong>{codigoWa}</strong> — envía <code>/vincular {codigoWa}</code>
-          </p>
-        ) : null}
-      </section>
-
-      <p className={styles.hint}>
-        En mensajería: genera un código y envía al bot <code>/vincular CODIGO</code>.
-      </p>
     </div>
   )
 }

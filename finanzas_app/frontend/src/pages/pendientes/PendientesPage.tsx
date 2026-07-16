@@ -24,6 +24,13 @@ function formatFechaHora(fecha: string, hora: string | null | undefined): string
   return `${fechaTxt} · ${hhmm}`
 }
 
+function etiquetaOrigen(origen: string): string {
+  if (origen === 'EMAIL_BANCO') return 'Correo'
+  if (origen === 'MANUAL') return 'Manual'
+  if (origen === 'WHATSAPP' || origen === 'TELEGRAM') return 'Otro'
+  return origen
+}
+
 function comentarioDesdeEdit(e: EditState, hora: string | null | undefined): string {
   const partes = [e.comercio.trim()]
   if (hora) partes.push(hora.slice(0, 5))
@@ -211,7 +218,7 @@ export default function PendientesPage() {
         <div>
           <h1 className={styles.title}>Pendientes</h1>
           <p className={styles.sub}>
-            Borradores capturados por bot o correo. Confirma para crear el movimiento.
+            Borradores capturados por correo. Confirma para crear el movimiento.
           </p>
         </div>
         <div className={styles.headerActions}>
@@ -224,7 +231,7 @@ export default function PendientesPage() {
             {syncing ? 'Buscando…' : 'Buscar en correo'}
           </button>
           <Link to="/configuracion/captura" className={styles.linkCaptura}>
-            Vincular WhatsApp / Telegram
+            Configurar correo
           </Link>
         </div>
       </header>
@@ -253,7 +260,7 @@ export default function PendientesPage() {
               <li key={p.id} className={styles.card}>
                 <div className={styles.cardTop}>
                   <strong className={styles.monto}>{formatMonto(Number(p.monto))}</strong>
-                  <span className={styles.origen}>{p.origen}</span>
+                  <span className={styles.origen}>{etiquetaOrigen(p.origen)}</span>
                 </div>
                 <div className={styles.meta}>
                   {formatFechaHora(p.fecha, p.hora)}
