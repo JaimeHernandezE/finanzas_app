@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
@@ -10,20 +10,31 @@ import {
   View,
 } from 'react-native'
 import { useFocusEffect } from 'expo-router'
+import { useQuery } from '@tanstack/react-query'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { useCategorias, useMetodosPago, useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
-import { pendientesApi, apiErrorMessage } from '@finanzas/shared/api'
+import { pendientesApi, apiErrorMessage, finanzasApi } from '@finanzas/shared/api'
+import type { CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import type { MovimientoPendienteApi, ConfirmarPendienteBody } from '@finanzas/shared/api/pendientes'
 
 type EditState = {
   ambito: 'PERSONAL' | 'COMUN'
+  cuenta: number | ''
   categoria: number | ''
   metodo_pago: number | ''
   tarjeta: number | ''
   comercio: string
   num_cuotas: string
+}
+
+type CategoriaOpt = {
+  id: number
+  nombre: string
+  tipo: string
+  es_padre?: boolean
+  cuenta_personal?: number | null
 }
 
 const ORIGEN_BADGE: Record<string, { label: string; bg: string; color: string }> = {
@@ -36,6 +47,29 @@ const ORIGEN_BADGE: Record<string, { label: string; bg: string; color: string }>
 function formatFechaHora(fecha: string, hora: string | null | undefined): string {
   if (!hora) return fecha || 'Sin fecha'
   return `${fecha} · ${hora.slice(0, 5)}`
+}
+
+function etiquetaBanco(banco: string | null | undefined): string {
+  const raw = (banco || '').trim()
+  if (!raw) return ''
+  const map: Record<string, string> = {
+    BCI: 'BCI',
+    SANTANDER: 'Santander',
+    BANCOESTADO: 'BancoEstado',
+    GENERICO: '',
+  }
+  const upper = raw.toUpperCase()
+  if (upper in map) return map[upper]
+  return raw
+}
+
+function metaTarjetaBanco(p: MovimientoPendienteApi): string {
+  const ultimos4 = p.ultimos_4 || p.tarjeta_sugerida_ultimos_4 || ''
+  const banco = etiquetaBanco(p.banco || p.tarjeta_sugerida_banco)
+  const partes: string[] = []
+  if (ultimos4) partes.push(`···${ultimos4}`)
+  if (banco) partes.push(banco)
+  return partes.length ? ` · ${partes.join(' · ')}` : ''
 }
 
 function comentarioDesdeEdit(e: EditState, hora: string | null | undefined): string {
@@ -51,6 +85,10 @@ export default function PendientesScreen() {
   const { data: catsFamiliar } = useCategorias({ ambito: 'FAMILIAR', tipo: 'EGRESO' })
   const { data: metodos } = useMetodosPago()
   const { data: tarjetas } = useTarjetas()
+  const qCuentas = useQuery<CuentaPersonalApi[]>({
+    queryKey: ['cuentasPersonales'],
+    queryFn: () => finanzasApi.getCuentasPersonales().then((r) => r.data),
+  })
 
   const [items, setItems] = useState<MovimientoPendienteApi[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,15 +98,43 @@ export default function PendientesScreen() {
   const [syncing, setSyncing] = useState(false)
   const [edits, setEdits] = useState<Record<number, EditState>>({})
 
+  const cuentas = qCuentas.data ?? []
+  const cuentaDefaultId = useMemo(() => {
+    const propia = cuentas.find((c) => c.es_propia)
+    return propia?.id ?? cuentas[0]?.id ?? ''
+  }, [cuentas])
+
+  const destinoValue = (ambito: 'PERSONAL' | 'COMUN', cuenta: number | '') => {
+    if (ambito === 'COMUN') return 'comun'
+    return cuenta ? `cuenta:${cuenta}` : ''
+  }
+
+  const destinoOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = []
+    for (const c of cuentas) {
+      opts.push({ value: `cuenta:${c.id}`, label: `Personal · ${c.nombre}` })
+    }
+    opts.push({ value: 'comun', label: 'Común · Gastos comunes' })
+    return opts
+  }, [cuentas])
+
   const metodoPorId = useMemo(() => {
     const map = new Map<number, { id: number; nombre: string; tipo: string }>()
     for (const m of metodos ?? []) map.set(m.id, m)
     return map
   }, [metodos])
 
-  const catsPara = (ambito: 'PERSONAL' | 'COMUN') => {
-    const list = (ambito === 'COMUN' ? catsFamiliar : catsPersonal) ?? []
-    return list.filter((c: { tipo: string; es_padre?: boolean }) => c.tipo === 'EGRESO' && !c.es_padre)
+  const catsPara = (ambito: 'PERSONAL' | 'COMUN', cuentaId: number | '') => {
+    if (ambito === 'COMUN') {
+      return ((catsFamiliar ?? []) as CategoriaOpt[]).filter(
+        (c) => c.tipo === 'EGRESO' && !c.es_padre,
+      )
+    }
+    const list = ((catsPersonal ?? []) as CategoriaOpt[]).filter(
+      (c) => c.tipo === 'EGRESO' && !c.es_padre,
+    )
+    if (!cuentaId) return list
+    return list.filter((c) => c.cuenta_personal === cuentaId)
   }
 
   const tarjetasParaMetodo = (metodoId: number | '') => {
@@ -85,24 +151,33 @@ export default function PendientesScreen() {
     try {
       const { data } = await pendientesApi.listar()
       setItems(data)
-      const next: Record<number, EditState> = {}
-      for (const p of data) {
-        next[p.id] = {
-          ambito: p.ambito_sugerido === 'COMUN' ? 'COMUN' : 'PERSONAL',
-          categoria: p.categoria_sugerida ?? '',
-          metodo_pago: p.metodo_pago_sugerido ?? '',
-          tarjeta: p.tarjeta_sugerida ?? '',
-          comercio: p.comercio || '',
-          num_cuotas: '1',
+      setEdits((prev) => {
+        const next: Record<number, EditState> = {}
+        for (const p of data) {
+          const ambito = p.ambito_sugerido === 'COMUN' ? 'COMUN' : 'PERSONAL'
+          const prevEdit = prev[p.id]
+          next[p.id] = {
+            ambito,
+            cuenta:
+              p.cuenta_sugerida
+              ?? (ambito === 'PERSONAL'
+                ? (prevEdit?.cuenta || cuentaDefaultId || '')
+                : ''),
+            categoria: p.categoria_sugerida ?? '',
+            metodo_pago: p.metodo_pago_sugerido ?? '',
+            tarjeta: p.tarjeta_sugerida ?? '',
+            comercio: p.comercio || '',
+            num_cuotas: prevEdit?.num_cuotas || '1',
+          }
         }
-      }
-      setEdits(next)
+        return next
+      })
     } catch (e) {
       setError(apiErrorMessage(e, 'No se pudieron cargar los pendientes.'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [cuentaDefaultId])
 
   useFocusEffect(
     useCallback(() => {
@@ -110,15 +185,37 @@ export default function PendientesScreen() {
     }, [cargar])
   )
 
+  useEffect(() => {
+    if (!cuentaDefaultId) return
+    setEdits((prev) => {
+      let changed = false
+      const next: Record<number, EditState> = { ...prev }
+      for (const [key, e] of Object.entries(next)) {
+        if (e.ambito === 'PERSONAL' && !e.cuenta) {
+          next[Number(key)] = { ...e, cuenta: Number(cuentaDefaultId) }
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [cuentaDefaultId])
+
   const patchEdit = (id: number, patch: Partial<EditState>) => {
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }))
   }
 
-  const onAmbitoChange = (id: number, ambito: 'PERSONAL' | 'COMUN') => {
-    const cats = catsPara(ambito)
+  const onDestinoChange = (id: number, value: string) => {
+    const ambito: 'PERSONAL' | 'COMUN' = value === 'comun' ? 'COMUN' : 'PERSONAL'
+    const cuenta =
+      ambito === 'COMUN'
+        ? ''
+        : value.startsWith('cuenta:')
+          ? Number(value.slice('cuenta:'.length))
+          : (cuentaDefaultId || '')
+    const cats = catsPara(ambito, cuenta)
     const actual = edits[id]?.categoria
-    const sigue = actual && cats.some((c: { id: number }) => c.id === actual)
-    patchEdit(id, { ambito, categoria: sigue ? actual : '' })
+    const sigue = actual && cats.some((c) => c.id === actual)
+    patchEdit(id, { ambito, cuenta, categoria: sigue ? actual : '' })
   }
 
   const onMetodoChange = (id: number, metodo_pago: number | '') => {
@@ -151,8 +248,16 @@ export default function PendientesScreen() {
 
   const confirmar = async (p: MovimientoPendienteApi) => {
     const e = edits[p.id]
-    if (!e?.ambito || !e.categoria || !e.metodo_pago) {
-      Alert.alert('Campos requeridos', 'Elige ámbito, categoría y método de pago antes de confirmar.')
+    if (!e?.categoria || !e.metodo_pago) {
+      Alert.alert('Campos requeridos', 'Elige cuenta, categoría y método de pago antes de confirmar.')
+      return
+    }
+    if (e.ambito === 'PERSONAL' && cuentas.length > 0 && !e.cuenta) {
+      Alert.alert('Cuenta requerida', 'Elige una cuenta personal.')
+      return
+    }
+    if (e.ambito !== 'PERSONAL' && e.ambito !== 'COMUN') {
+      Alert.alert('Cuenta requerida', 'Elige una cuenta o gastos comunes.')
       return
     }
     const tipoMetodo = metodoPorId.get(Number(e.metodo_pago))?.tipo
@@ -179,6 +284,8 @@ export default function PendientesScreen() {
         metodo_pago: Number(e.metodo_pago),
         comentario: comentarioDesdeEdit(e, p.hora) || undefined,
       }
+      if (e.ambito === 'PERSONAL' && e.cuenta) body.cuenta = Number(e.cuenta)
+      else if (e.ambito === 'COMUN') body.cuenta = null
       if (e.tarjeta) body.tarjeta = Number(e.tarjeta)
       if (tipoMetodo === 'CREDITO') body.num_cuotas = parseInt(e.num_cuotas || '1', 10)
       await pendientesApi.confirmar(p.id, body)
@@ -256,10 +363,10 @@ export default function PendientesScreen() {
     const e = edits[p.id]
     if (!e) return null
     const ambito = e.ambito
-    const cats = catsPara(ambito)
+    const cuenta = e.cuenta
+    const cats = catsPara(ambito, cuenta)
     const tipoMetodo = e.metodo_pago ? metodoPorId.get(Number(e.metodo_pago))?.tipo : undefined
     const tarjetasOpts = tarjetasParaMetodo(e.metodo_pago)
-    const ultimos4 = p.ultimos_4 || p.tarjeta_sugerida_ultimos_4 || ''
     const badge = ORIGEN_BADGE[p.origen] ?? ORIGEN_BADGE.MANUAL
     const busy = busyId === p.id
 
@@ -278,7 +385,7 @@ export default function PendientesScreen() {
 
         <Text className="text-xs text-muted mb-3">
           {formatFechaHora(p.fecha, p.hora)}
-          {ultimos4 ? ` · ···${ultimos4}` : ''}
+          {metaTarjetaBanco(p)}
         </Text>
 
         <View className="mb-2">
@@ -293,13 +400,10 @@ export default function PendientesScreen() {
         </View>
 
         <PickerRow
-          label="Ámbito"
-          value={ambito}
-          options={[
-            { value: 'PERSONAL', label: 'Personal' },
-            { value: 'COMUN', label: 'Común' },
-          ]}
-          onChange={(v) => onAmbitoChange(p.id, v as 'PERSONAL' | 'COMUN')}
+          label="Cuenta"
+          value={destinoValue(ambito, cuenta)}
+          options={destinoOptions}
+          onChange={(v) => onDestinoChange(p.id, v)}
         />
 
         <PickerRow
@@ -307,7 +411,7 @@ export default function PendientesScreen() {
           value={String(e.categoria)}
           options={[
             { value: '', label: 'Elegir…' },
-            ...cats.map((c: { id: number; nombre: string }) => ({
+            ...cats.map((c) => ({
               value: String(c.id),
               label: c.nombre,
             })),

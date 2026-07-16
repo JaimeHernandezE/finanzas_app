@@ -105,6 +105,49 @@ class TestCapturaServicio:
         assert '$8990.00' not in notif.mensaje
         assert '8990.00' not in notif.mensaje
 
+    def test_confirmar_marca_notificacion_leida(
+        self, usuario, espacio_familiar, categoria_egreso, metodo_efectivo,
+    ):
+        pendiente = crear_pendiente(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            origen=MovimientoPendiente.ORIGEN_EMAIL_BANCO,
+            monto='4500',
+            comercio='Bip',
+            categoria_sugerida=categoria_egreso,
+            ambito_sugerido='COMUN',
+            metodo_pago_sugerido=metodo_efectivo,
+            notificar=True,
+        )
+        notif = NotificacionUsuario.objects.get(
+            usuario=usuario,
+            tipo=NotificacionUsuario.TIPO_MOVIMIENTO_PENDIENTE,
+            payload__pendiente_id=pendiente.id,
+        )
+        assert notif.leida_at is None
+        confirmar_pendiente(pendiente)
+        notif.refresh_from_db()
+        assert notif.leida_at is not None
+
+    def test_descartar_marca_notificacion_leida(self, usuario, espacio_familiar):
+        pendiente = crear_pendiente(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            origen=MovimientoPendiente.ORIGEN_EMAIL_BANCO,
+            monto='1200',
+            comercio='Test',
+            notificar=True,
+        )
+        notif = NotificacionUsuario.objects.get(
+            usuario=usuario,
+            tipo=NotificacionUsuario.TIPO_MOVIMIENTO_PENDIENTE,
+            payload__pendiente_id=pendiente.id,
+        )
+        assert notif.leida_at is None
+        descartar_pendiente(pendiente)
+        notif.refresh_from_db()
+        assert notif.leida_at is not None
+
 
 @pytest.mark.django_db
 class TestCapturaAPI:

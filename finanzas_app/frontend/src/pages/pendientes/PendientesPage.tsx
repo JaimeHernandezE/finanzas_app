@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { pendientesApi, type MovimientoPendienteApi } from '@/api/pendientes'
 import { useCategorias, useMetodosPago, useTarjetas } from '@/hooks/useCatalogos'
+import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
 import { useConfig } from '@/context/ConfigContext'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { apiErrorMessage } from '@/utils/apiErrorMessage'
@@ -9,11 +10,20 @@ import styles from './PendientesPage.module.scss'
 
 type EditState = {
   ambito: 'PERSONAL' | 'COMUN'
+  cuenta: number | ''
   categoria: number | ''
   metodo_pago: number | ''
   tarjeta: number | ''
   comercio: string
   num_cuotas: string
+}
+
+type CategoriaOpt = {
+  id: number
+  nombre: string
+  tipo: string
+  es_padre?: boolean
+  cuenta_personal?: number | null
 }
 
 function formatFechaHora(fecha: string, hora: string | null | undefined): string {
@@ -31,6 +41,34 @@ function etiquetaOrigen(origen: string): string {
   return origen
 }
 
+function etiquetaBanco(banco: string | null | undefined): string {
+  const raw = (banco || '').trim()
+  if (!raw) return ''
+  const map: Record<string, string> = {
+    BCI: 'BCI',
+    SANTANDER: 'Santander',
+    BANCOESTADO: 'BancoEstado',
+    GENERICO: '',
+  }
+  const upper = raw.toUpperCase()
+  if (upper in map) return map[upper]
+  return raw
+}
+
+function metaTarjetaBanco(p: {
+  ultimos_4?: string | null
+  tarjeta_sugerida_ultimos_4?: string | null
+  banco?: string | null
+  tarjeta_sugerida_banco?: string | null
+}): string {
+  const ultimos4 = p.ultimos_4 || p.tarjeta_sugerida_ultimos_4 || ''
+  const banco = etiquetaBanco(p.banco || p.tarjeta_sugerida_banco)
+  const partes: string[] = []
+  if (ultimos4) partes.push(`Tarjeta ···${ultimos4}`)
+  if (banco) partes.push(banco)
+  return partes.length ? ` · ${partes.join(' · ')}` : ''
+}
+
 function comentarioDesdeEdit(e: EditState, hora: string | null | undefined): string {
   const partes = [e.comercio.trim()]
   if (hora) partes.push(hora.slice(0, 5))
@@ -43,6 +81,7 @@ export default function PendientesPage() {
   const { data: catsFamiliar } = useCategorias({ ambito: 'FAMILIAR', tipo: 'EGRESO' })
   const { data: metodos } = useMetodosPago()
   const { data: tarjetas } = useTarjetas()
+  const { data: cuentasData } = useCuentasPersonales()
   const [items, setItems] = useState<MovimientoPendienteApi[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -50,6 +89,35 @@ export default function PendientesPage() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [edits, setEdits] = useState<Record<number, EditState>>({})
+
+  const cuentas = cuentasData ?? []
+  const cuentaDefaultId = useMemo(() => {
+    const propia = cuentas.find((c) => c.es_propia)
+    return propia?.id ?? cuentas[0]?.id ?? ''
+  }, [cuentas])
+
+  const destinoValue = (ambito: 'PERSONAL' | 'COMUN', cuenta: number | '') => {
+    if (ambito === 'COMUN') return 'comun'
+    return cuenta ? `cuenta:${cuenta}` : ''
+  }
+
+  const onDestinoChange = (id: number, value: string) => {
+    const ambito: 'PERSONAL' | 'COMUN' = value === 'comun' ? 'COMUN' : 'PERSONAL'
+    const cuenta =
+      ambito === 'COMUN'
+        ? ''
+        : value.startsWith('cuenta:')
+          ? Number(value.slice('cuenta:'.length))
+          : (cuentaDefaultId || '')
+    const cats = catsPara(ambito, cuenta)
+    const actual = edits[id]?.categoria
+    const sigue = actual && cats.some((c) => c.id === actual)
+    patchEdit(id, {
+      ambito,
+      cuenta,
+      categoria: sigue ? actual : '',
+    })
+  }
 
   const metodoPorId = useMemo(() => {
     const map = new Map<number, { id: number; nombre: string; tipo: string }>()
@@ -59,9 +127,17 @@ export default function PendientesPage() {
     return map
   }, [metodos])
 
-  const catsPara = (ambito: 'PERSONAL' | 'COMUN') => {
-    const list = (ambito === 'COMUN' ? catsFamiliar : catsPersonal) ?? []
-    return list.filter((c) => c.tipo === 'EGRESO' && !c.es_padre)
+  const catsPara = (ambito: 'PERSONAL' | 'COMUN', cuentaId: number | '') => {
+    if (ambito === 'COMUN') {
+      return ((catsFamiliar ?? []) as CategoriaOpt[]).filter(
+        (c) => c.tipo === 'EGRESO' && !c.es_padre,
+      )
+    }
+    const list = ((catsPersonal ?? []) as CategoriaOpt[]).filter(
+      (c) => c.tipo === 'EGRESO' && !c.es_padre,
+    )
+    if (!cuentaId) return list
+    return list.filter((c) => c.cuenta_personal === cuentaId)
   }
 
   const tarjetasParaMetodo = (metodoId: number | '') => {
@@ -82,44 +158,58 @@ export default function PendientesPage() {
     try {
       const { data } = await pendientesApi.listar()
       setItems(data)
-      const next: Record<number, EditState> = {}
-      for (const p of data) {
-        next[p.id] = {
-          ambito: p.ambito_sugerido === 'COMUN' ? 'COMUN' : 'PERSONAL',
-          categoria: p.categoria_sugerida ?? '',
-          metodo_pago: p.metodo_pago_sugerido ?? '',
-          tarjeta: p.tarjeta_sugerida ?? '',
-          comercio: p.comercio || '',
-          num_cuotas: '1',
+      setEdits((prev) => {
+        const next: Record<number, EditState> = {}
+        for (const p of data) {
+          const ambito = p.ambito_sugerido === 'COMUN' ? 'COMUN' : 'PERSONAL'
+          const prevEdit = prev[p.id]
+          next[p.id] = {
+            ambito,
+            cuenta:
+              p.cuenta_sugerida
+              ?? (ambito === 'PERSONAL'
+                ? (prevEdit?.cuenta || cuentaDefaultId || '')
+                : ''),
+            categoria: p.categoria_sugerida ?? '',
+            metodo_pago: p.metodo_pago_sugerido ?? '',
+            tarjeta: p.tarjeta_sugerida ?? '',
+            comercio: p.comercio || '',
+            num_cuotas: prevEdit?.num_cuotas || '1',
+          }
         }
-      }
-      setEdits(next)
+        return next
+      })
     } catch (e) {
       setError(apiErrorMessage(e, 'No se pudieron cargar los pendientes.'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [cuentaDefaultId])
 
   useEffect(() => {
     void cargar()
   }, [cargar])
+
+  useEffect(() => {
+    if (!cuentaDefaultId) return
+    setEdits((prev) => {
+      let changed = false
+      const next: Record<number, EditState> = { ...prev }
+      for (const [key, e] of Object.entries(next)) {
+        if (e.ambito === 'PERSONAL' && !e.cuenta) {
+          next[Number(key)] = { ...e, cuenta: Number(cuentaDefaultId) }
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [cuentaDefaultId])
 
   const patchEdit = (id: number, patch: Partial<EditState>) => {
     setEdits((prev) => ({
       ...prev,
       [id]: { ...prev[id], ...patch },
     }))
-  }
-
-  const onAmbitoChange = (id: number, ambito: 'PERSONAL' | 'COMUN') => {
-    const cats = catsPara(ambito)
-    const actual = edits[id]?.categoria
-    const sigue = actual && cats.some((c) => c.id === actual)
-    patchEdit(id, {
-      ambito,
-      categoria: sigue ? actual : '',
-    })
   }
 
   const onMetodoChange = (id: number, metodo_pago: number | '') => {
@@ -155,8 +245,16 @@ export default function PendientesPage() {
 
   const confirmar = async (p: MovimientoPendienteApi) => {
     const e = edits[p.id]
-    if (!e?.ambito || !e.categoria || !e.metodo_pago) {
-      setError('Elige ámbito, categoría y método de pago antes de confirmar.')
+    if (!e?.categoria || !e.metodo_pago) {
+      setError('Elige cuenta/ámbito, categoría y método de pago antes de confirmar.')
+      return
+    }
+    if (e.ambito === 'PERSONAL' && cuentas.length > 0 && !e.cuenta) {
+      setError('Elige una cuenta personal.')
+      return
+    }
+    if (e.ambito !== 'PERSONAL' && e.ambito !== 'COMUN') {
+      setError('Elige una cuenta o gastos comunes.')
       return
     }
     const tipoMetodo = metodoPorId.get(Number(e.metodo_pago))?.tipo
@@ -182,6 +280,11 @@ export default function PendientesPage() {
         categoria: Number(e.categoria),
         metodo_pago: Number(e.metodo_pago),
         comentario: comentarioDesdeEdit(e, p.hora) || undefined,
+      }
+      if (e.ambito === 'PERSONAL' && e.cuenta) {
+        body.cuenta = Number(e.cuenta)
+      } else if (e.ambito === 'COMUN') {
+        body.cuenta = null
       }
       if (e.tarjeta) body.tarjeta = Number(e.tarjeta)
       if (tipoMetodo === 'CREDITO') {
@@ -246,15 +349,12 @@ export default function PendientesPage() {
           {items.map((p) => {
             const e = edits[p.id]
             const ambito = e?.ambito ?? 'PERSONAL'
-            const cats = catsPara(ambito)
+            const cuenta = e?.cuenta ?? ''
+            const cats = catsPara(ambito, cuenta)
             const tipoMetodo = e?.metodo_pago
               ? metodoPorId.get(Number(e.metodo_pago))?.tipo
               : undefined
             const tarjetasOpts = tarjetasParaMetodo(e?.metodo_pago ?? '')
-            const ultimos4 =
-              p.ultimos_4
-              || p.tarjeta_sugerida_ultimos_4
-              || ''
 
             return (
               <li key={p.id} className={styles.card}>
@@ -264,7 +364,7 @@ export default function PendientesPage() {
                 </div>
                 <div className={styles.meta}>
                   {formatFechaHora(p.fecha, p.hora)}
-                  {ultimos4 ? ` · Tarjeta ···${ultimos4}` : ''}
+                  {metaTarjetaBanco(p)}
                 </div>
 
                 <div className={styles.fields}>
@@ -278,15 +378,22 @@ export default function PendientesPage() {
                     />
                   </label>
                   <label>
-                    Ámbito
+                    Cuenta
                     <select
-                      value={ambito}
-                      onChange={(ev) =>
-                        onAmbitoChange(p.id, ev.target.value as 'PERSONAL' | 'COMUN')
-                      }
+                      value={destinoValue(ambito, cuenta)}
+                      onChange={(ev) => onDestinoChange(p.id, ev.target.value)}
                     >
-                      <option value="PERSONAL">Personal</option>
-                      <option value="COMUN">Común</option>
+                      <option value="">Elegir…</option>
+                      {cuentas.length > 0 ? (
+                        <optgroup label="Personal">
+                          {cuentas.map((c) => (
+                            <option key={c.id} value={`cuenta:${c.id}`}>{c.nombre}</option>
+                          ))}
+                        </optgroup>
+                      ) : null}
+                      <optgroup label="Común">
+                        <option value="comun">Gastos comunes</option>
+                      </optgroup>
                     </select>
                   </label>
                   <label>
@@ -365,7 +472,9 @@ export default function PendientesPage() {
                   <p className={styles.hint}>
                     No hay tarjetas de {tipoMetodo === 'DEBITO' ? 'débito' : 'crédito'}.{' '}
                     <Link to="/tarjetas">Regístralas en Tarjetas</Link>
-                    {ultimos4 ? ` (el correo indica ···${ultimos4}).` : '.'}
+                    {(p.ultimos_4 || p.tarjeta_sugerida_ultimos_4)
+                      ? ` (el correo indica ···${p.ultimos_4 || p.tarjeta_sugerida_ultimos_4}).`
+                      : '.'}
                   </p>
                 )}
 

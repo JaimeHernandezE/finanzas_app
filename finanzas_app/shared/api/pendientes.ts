@@ -9,6 +9,7 @@ export interface MovimientoPendienteApi {
   hora: string | null
   comercio: string
   ultimos_4: string
+  banco: string
   categoria_sugerida: number | null
   categoria_sugerida_nombre: string | null
   ambito_sugerido: 'PERSONAL' | 'COMUN' | null
@@ -18,6 +19,7 @@ export interface MovimientoPendienteApi {
   tarjeta_sugerida: number | null
   tarjeta_sugerida_nombre: string | null
   tarjeta_sugerida_ultimos_4: string | null
+  tarjeta_sugerida_banco: string | null
   cuenta_sugerida: number | null
   cuenta_sugerida_nombre: string | null
   confianza: number

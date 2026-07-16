@@ -108,6 +108,16 @@ def emitir_notificacion_pendiente(pendiente: MovimientoPendiente) -> Notificacio
     )
 
 
+def marcar_notificaciones_pendiente_leidas(pendiente: MovimientoPendiente) -> int:
+    """Marca como leídas las notificaciones in-app asociadas a este pendiente."""
+    return NotificacionUsuario.objects.filter(
+        usuario_id=pendiente.usuario_id,
+        tipo=NotificacionUsuario.TIPO_MOVIMIENTO_PENDIENTE,
+        leida_at__isnull=True,
+        payload__pendiente_id=pendiente.id,
+    ).update(leida_at=timezone.now())
+
+
 def crear_pendiente(
     *,
     usuario,
@@ -306,6 +316,7 @@ def confirmar_pendiente(
     pendiente.estado = MovimientoPendiente.ESTADO_CONFIRMADO
     pendiente.movimiento = movimiento
     pendiente.save(update_fields=['estado', 'movimiento', 'actualizado_at'])
+    marcar_notificaciones_pendiente_leidas(pendiente)
     return movimiento
 
 
@@ -317,6 +328,7 @@ def descartar_pendiente(pendiente: MovimientoPendiente) -> MovimientoPendiente:
         )
     pendiente.estado = MovimientoPendiente.ESTADO_DESCARTADO
     pendiente.save(update_fields=['estado', 'actualizado_at'])
+    marcar_notificaciones_pendiente_leidas(pendiente)
     return pendiente
 
 

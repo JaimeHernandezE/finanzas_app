@@ -468,22 +468,27 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
     tarjeta_sugerida_ultimos_4 = serializers.CharField(
         source='tarjeta_sugerida.ultimos_4_digitos', read_only=True, allow_null=True,
     )
+    tarjeta_sugerida_banco = serializers.CharField(
+        source='tarjeta_sugerida.banco', read_only=True, allow_null=True,
+    )
     cuenta_sugerida_nombre = serializers.CharField(
         source='cuenta_sugerida.nombre', read_only=True, allow_null=True,
     )
     hora = serializers.SerializerMethodField()
     ultimos_4 = serializers.SerializerMethodField()
+    banco = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoPendiente
         fields = [
             'id', 'origen', 'tipo', 'monto', 'fecha', 'hora', 'comercio',
-            'ultimos_4',
+            'ultimos_4', 'banco',
             'categoria_sugerida', 'categoria_sugerida_nombre',
             'ambito_sugerido',
             'metodo_pago_sugerido', 'metodo_pago_sugerido_tipo',
             'metodo_pago_sugerido_nombre',
-            'tarjeta_sugerida', 'tarjeta_sugerida_nombre', 'tarjeta_sugerida_ultimos_4',
+            'tarjeta_sugerida', 'tarjeta_sugerida_nombre',
+            'tarjeta_sugerida_ultimos_4', 'tarjeta_sugerida_banco',
             'cuenta_sugerida', 'cuenta_sugerida_nombre',
             'confianza', 'estado', 'movimiento',
             'creado_at', 'actualizado_at',
@@ -502,4 +507,13 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
             return from_payload
         if obj.tarjeta_sugerida_id and obj.tarjeta_sugerida.ultimos_4_digitos:
             return obj.tarjeta_sugerida.ultimos_4_digitos
+        return ''
+
+    def get_banco(self, obj):
+        payload = obj.payload_original or {}
+        from_payload = (payload.get('banco') or '').strip()
+        if from_payload and from_payload.upper() not in ('GENERICO',):
+            return from_payload
+        if obj.tarjeta_sugerida_id and (obj.tarjeta_sugerida.banco or '').strip():
+            return obj.tarjeta_sugerida.banco.strip()
         return ''
