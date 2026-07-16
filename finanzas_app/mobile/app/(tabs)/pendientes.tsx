@@ -67,6 +67,7 @@ function metaTarjetaBanco(p: MovimientoPendienteApi): string {
   const ultimos4 = p.ultimos_4 || p.tarjeta_sugerida_ultimos_4 || ''
   const banco = etiquetaBanco(p.banco || p.tarjeta_sugerida_banco)
   const partes: string[] = []
+  if (p.es_transferencia) partes.push('Transferencia')
   if (ultimos4) partes.push(`···${ultimos4}`)
   if (banco) partes.push(banco)
   return partes.length ? ` · ${partes.join(' · ')}` : ''

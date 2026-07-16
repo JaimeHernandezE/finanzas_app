@@ -288,6 +288,119 @@ class TestCapturaBot:
         assert 'nacional' not in (p.comercio or '').lower()
         assert 'unimarc' in (p.comercio or '').lower()
 
+    def test_parser_transferencia_destinatario_y_mensaje(self):
+        body = (
+            'Transferencia realizada\n'
+            'Monto: $25.000\n'
+            'Fecha: 16/07/2026\n'
+            'Destinatario: Juan Pérez\n'
+            'Mensaje: Arriendo julio\n'
+            'Cuenta de origen: 12.345.678-9\n'
+        )
+        p = parse_email(
+            subject='Aviso de transferencia',
+            body=body,
+            from_addr='alertas@banco.cl',
+        )
+        assert p is not None
+        assert p.es_transferencia is True
+        assert p.monto == Decimal('25000.00')
+        assert p.tipo_tarjeta == 'DEBITO'
+        assert p.comercio == 'Juan Pérez - Arriendo julio'
+        assert p.numero_cuenta == '123456789'
+
+    def test_parser_transferencia_solo_destinatario(self):
+        body = (
+            'Has transferido $10.500\n'
+            'Beneficiario: María López\n'
+            'Fecha 15/07/2026\n'
+            'Cuenta: 9876543210\n'
+        )
+        p = parse_email(
+            subject='Transferencia TEF',
+            body=body,
+            from_addr='noreply@banco.cl',
+        )
+        assert p is not None
+        assert p.es_transferencia is True
+        assert p.comercio == 'María López'
+        assert p.numero_cuenta == '9876543210'
+
+    def test_parser_compra_no_se_trata_como_transferencia(self):
+        body = (
+            'Te informamos de una compra en comercio nacional con tu tarjeta de débito.\n'
+            'Número tarjeta débito ****9803\n'
+            'Monto $5.990\n'
+            'Comercio ALINER LTDA\n'
+        )
+        p = parse_email(
+            subject='Notificación de uso de tu tarjeta de débito',
+            body=body,
+            from_addr='contacto@bci.cl',
+        )
+        assert p is not None
+        assert p.es_transferencia is False
+
+    def test_resolver_tarjeta_por_cuenta(self, usuario):
+        from applications.finanzas.models import Tarjeta
+        from applications.finanzas.services.captura import resolver_tarjeta_por_cuenta
+
+        Tarjeta.objects.create(
+            usuario=usuario, nombre='Débito otra', banco='BCI',
+            tipo='DEBITO', numero_cuenta='111122223333',
+        )
+        match = Tarjeta.objects.create(
+            usuario=usuario, nombre='Cuenta corriente', banco='BCI',
+            tipo='DEBITO', numero_cuenta='12.345.678-90',
+        )
+        assert resolver_tarjeta_por_cuenta(
+            usuario=usuario, numero_cuenta='1234567890',
+        ).pk == match.pk
+        assert resolver_tarjeta_por_cuenta(
+            usuario=usuario, numero_cuenta='xxxx7890',
+        ).pk == match.pk
+        assert resolver_tarjeta_por_cuenta(
+            usuario=usuario, numero_cuenta='00009999',
+        ) is None
+
+    def test_ingest_transferencia_sugiere_debito(self, usuario, espacio_familiar, monkeypatch):
+        from applications.finanzas.models import MetodoPago, MovimientoPendiente, Tarjeta
+        from applications.finanzas.services.captura.mail_ingest import _procesar_mensajes
+
+        MetodoPago.objects.get_or_create(tipo='DEBITO', defaults={'nombre': 'Débito'})
+        tarjeta = Tarjeta.objects.create(
+            usuario=usuario, nombre='Cuenta RUT', banco='BCI',
+            tipo='DEBITO', numero_cuenta='123456789',
+        )
+        body = (
+            'Transferencia realizada\n'
+            'Monto $7.500\n'
+            'Fecha 16/07/2026\n'
+            'Destinatario: Pedro Soto\n'
+            'Mensaje: Café\n'
+            'Cuenta de origen: 123456789\n'
+        )
+        stats = _procesar_mensajes(
+            usuario=usuario,
+            messages=[{
+                'id': 'msg-tef-1',
+                'from_addr': 'alertas@bci.cl',
+                'subject': 'Aviso de transferencia',
+                'body': body,
+            }],
+            remitentes=['@bci.cl'],
+            notificar=False,
+            dry_run=False,
+            mark_read=None,
+            espacio=espacio_familiar,
+        )
+        assert stats.creados == 1
+        pendiente = MovimientoPendiente.objects.get(comercio='Pedro Soto - Café')
+        assert pendiente.metodo_pago_sugerido is not None
+        assert pendiente.metodo_pago_sugerido.tipo == 'DEBITO'
+        assert pendiente.tarjeta_sugerida_id == tarjeta.id
+        assert (pendiente.payload_original or {}).get('es_transferencia') is True
+
     def test_flujo_telegram_sin_vinculo(self):
         reply = manejar_texto(canal='TELEGRAM', chat_id='999', texto='2 lucas café')
         assert 'vincul' in reply.text.lower()
@@ -421,8 +534,9 @@ class TestCapturaCorreoConfig:
 
         called = {}
 
-        def fake_ingerir(config, *, dry_run=False, limit=50, force=False):
+        def fake_ingerir(config, *, dry_run=False, limit=50, force=False, espacio=None):
             called['force'] = force
+            called['espacio'] = espacio
             return IngestStats(creados=2, skip_remitente=3)
 
         monkeypatch.setattr(
@@ -440,6 +554,88 @@ class TestCapturaCorreoConfig:
         assert body['ok'] is True
         assert body['creados'] == 2
         assert called.get('force') is True
+        assert called.get('espacio') is not None
+
+    def test_ingest_usa_espacio_activo_no_familiar_por_defecto(
+        self, usuario, espacio_familiar,
+    ):
+        """Pendientes deben crearse en el espacio pasado (activo UI), no forzar familiar."""
+        from applications.espacios.services import crear_espacio_personal
+        from applications.finanzas.models import MetodoPago, MovimientoPendiente
+        from applications.finanzas.services.captura.mail_ingest import _procesar_mensajes
+
+        MetodoPago.objects.get_or_create(tipo='DEBITO', defaults={'nombre': 'Débito'})
+        personal = crear_espacio_personal(usuario)
+        assert personal.pk != espacio_familiar.pk
+
+        body = (
+            'Compra por $1.000 en Cafe Test con tarjeta terminada en 1111 '
+            'el 16/07/2026 a las 10:00 hrs.'
+        )
+        stats = _procesar_mensajes(
+            usuario=usuario,
+            messages=[{
+                'id': 'msg-espacio-1',
+                'from_addr': 'alertas@bci.cl',
+                'subject': 'Alerta BCI',
+                'body': body,
+            }],
+            remitentes=['@bci.cl'],
+            notificar=False,
+            dry_run=False,
+            mark_read=None,
+            espacio=personal,
+        )
+        assert stats.creados == 1
+        pendiente = MovimientoPendiente.objects.get(comercio__icontains='Cafe')
+        assert pendiente.espacio_id == personal.id
+        assert not MovimientoPendiente.objects.filter(
+            comercio__icontains='Cafe', espacio=espacio_familiar,
+        ).exists()
+
+    def test_ingest_duplicado_no_cuenta_como_creado(
+        self, usuario, espacio_familiar, categoria_egreso, metodo_efectivo,
+    ):
+        from django.utils import timezone
+
+        from applications.finanzas.models import Movimiento, MovimientoPendiente
+        from applications.finanzas.services.captura.mail_ingest import _procesar_mensajes
+
+        Movimiento.objects.create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            tipo='EGRESO',
+            monto='1500.00',
+            fecha=timezone.localdate(),
+            comentario='Cafe',
+            categoria=categoria_egreso,
+            metodo_pago=metodo_efectivo,
+            ambito='PERSONAL',
+        )
+        body = (
+            'Compra por $1.500 en Cafe Dup con tarjeta terminada en 2222 '
+            f'el {timezone.localdate().strftime("%d/%m/%Y")} a las 11:00 hrs.'
+        )
+        stats = _procesar_mensajes(
+            usuario=usuario,
+            messages=[{
+                'id': 'msg-dup-1',
+                'from_addr': 'alertas@bci.cl',
+                'subject': 'Alerta BCI',
+                'body': body,
+            }],
+            remitentes=['@bci.cl'],
+            notificar=False,
+            dry_run=False,
+            mark_read=None,
+            espacio=espacio_familiar,
+        )
+        assert stats.creados == 0
+        assert stats.duplicados == 1
+        assert MovimientoPendiente.objects.filter(
+            estado=MovimientoPendiente.ESTADO_DUPLICADO,
+            comercio__icontains='Cafe Dup',
+        ).exists()
 
 
 @pytest.mark.django_db

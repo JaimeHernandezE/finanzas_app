@@ -141,7 +141,8 @@ class Tarjeta(models.Model):
 
     tipo=CREDITO: usa dia_facturacion / dia_vencimiento para el ciclo de cuotas.
     tipo=DEBITO: se asocia al movimiento para trazabilidad (últimos 4, alertas bancarias);
-                 es_por_defecto preselecciona al registrar gastos con débito.
+                 numero_cuenta permite matchear transferencias TEF; es_por_defecto
+                 preselecciona al registrar gastos con débito.
     """
     TIPO_DEBITO = 'DEBITO'
     TIPO_CREDITO = 'CREDITO'
@@ -170,6 +171,12 @@ class Tarjeta(models.Model):
         blank=True,
         default='',
         help_text="Últimos 4 dígitos (matching de alertas bancarias y etiqueta en UI).",
+    )
+    numero_cuenta = models.CharField(
+        max_length=34,
+        blank=True,
+        default='',
+        help_text="Número de cuenta bancaria (débito). Matching de transferencias TEF.",
     )
     es_por_defecto = models.BooleanField(
         default=False,

@@ -41,6 +41,10 @@ def _ser_tarjeta(t):
         'usuario_email': t.usuario.email,
         'nombre': t.nombre,
         'banco': t.banco,
+        'tipo': t.tipo,
+        'ultimos_4_digitos': t.ultimos_4_digitos,
+        'numero_cuenta': t.numero_cuenta,
+        'es_por_defecto': t.es_por_defecto,
         'dia_facturacion': t.dia_facturacion,
         'dia_vencimiento': t.dia_vencimiento,
     }

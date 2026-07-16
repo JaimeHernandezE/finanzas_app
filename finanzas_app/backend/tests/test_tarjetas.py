@@ -40,6 +40,22 @@ class TestTarjetasCreacion:
         assert res.status_code == 201
         assert res.json()['nombre'] == 'Mastercard Santander'
 
+    def test_crear_tarjeta_debito_con_numero_cuenta(self, client, auth_header):
+        res = client.post(
+            '/api/finanzas/tarjetas/',
+            data={
+                'nombre': 'Cuenta corriente',
+                'banco': 'BCI',
+                'tipo': 'DEBITO',
+                'numero_cuenta': '12.345.678-9',
+            },
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 201
+        assert res.json()['numero_cuenta'] == '12.345.678-9'
+        assert res.json()['tipo'] == 'DEBITO'
+
     def test_crear_tarjeta_sin_nombre_falla(self, client, auth_header):
         res = client.post(
             '/api/finanzas/tarjetas/',

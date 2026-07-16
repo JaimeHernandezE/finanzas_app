@@ -10,6 +10,7 @@ export interface MovimientoPendienteApi {
   comercio: string
   ultimos_4: string
   banco: string
+  es_transferencia?: boolean
   categoria_sugerida: number | null
   categoria_sugerida_nombre: string | null
   ambito_sugerido: 'PERSONAL' | 'COMUN' | null

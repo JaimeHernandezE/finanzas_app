@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
+import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -141,6 +142,53 @@ def crear_pendiente(
     Crea un MovimientoPendiente. Si hay hash_externo duplicado o match
     con movimiento/pendiente existente, marca DUPLICADO o reutiliza.
     """
+    pendiente, _outcome = crear_pendiente_con_outcome(
+        usuario=usuario,
+        espacio=espacio,
+        origen=origen,
+        monto=monto,
+        fecha=fecha,
+        comercio=comercio,
+        tipo=tipo,
+        categoria_sugerida=categoria_sugerida,
+        ambito_sugerido=ambito_sugerido,
+        metodo_pago_sugerido=metodo_pago_sugerido,
+        tarjeta_sugerida=tarjeta_sugerida,
+        cuenta_sugerida=cuenta_sugerida,
+        confianza=confianza,
+        payload_original=payload_original,
+        hash_externo=hash_externo,
+        notificar=notificar,
+    )
+    return pendiente
+
+
+OUTCOME_CREADO = 'creado'
+OUTCOME_DUPLICADO = 'duplicado'
+OUTCOME_REUTILIZADO = 'reutilizado'
+OUTCOME_FUSIONADO = 'fusionado'
+
+
+def crear_pendiente_con_outcome(
+    *,
+    usuario,
+    espacio,
+    origen: str,
+    monto,
+    fecha: date | str | None = None,
+    comercio: str = '',
+    tipo: str = 'EGRESO',
+    categoria_sugerida=None,
+    ambito_sugerido: str | None = None,
+    metodo_pago_sugerido=None,
+    tarjeta_sugerida=None,
+    cuenta_sugerida=None,
+    confianza: float = 0.0,
+    payload_original: dict | None = None,
+    hash_externo: str = '',
+    notificar: bool = False,
+) -> tuple[MovimientoPendiente, str]:
+    """Igual que crear_pendiente, pero indica el resultado para estadísticas de ingest."""
     if isinstance(fecha, str) and fecha.strip():
         from datetime import date as date_cls
         fecha_f = date_cls.fromisoformat(fecha[:10])
@@ -156,7 +204,7 @@ def crear_pendiente(
             hash_externo=hash_externo,
         ).first()
         if existente:
-            return existente
+            return existente, OUTCOME_REUTILIZADO
 
     movimiento_dup = buscar_duplicado_movimiento(
         usuario=usuario, espacio=espacio, monto=monto_d, fecha=fecha_f,
@@ -181,13 +229,12 @@ def crear_pendiente(
             movimiento=movimiento_dup,
             hash_externo=hash_externo or '',
         )
-        return pendiente
+        return pendiente, OUTCOME_DUPLICADO
 
     otro = buscar_duplicado_pendiente(
         usuario=usuario, espacio=espacio, monto=monto_d, fecha=fecha_f,
     )
     if otro:
-        # Fusionar: subir confianza / completar sugerencias vacías
         if confianza > (otro.confianza or 0):
             otro.confianza = confianza
         if comercio and not otro.comercio:
@@ -209,7 +256,7 @@ def crear_pendiente(
         if hash_externo and not otro.hash_externo:
             otro.hash_externo = hash_externo
         otro.save()
-        return otro
+        return otro, OUTCOME_FUSIONADO
 
     pendiente = MovimientoPendiente.objects.create(
         usuario=usuario,
@@ -231,7 +278,7 @@ def crear_pendiente(
     )
     if notificar:
         emitir_notificacion_pendiente(pendiente)
-    return pendiente
+    return pendiente, OUTCOME_CREADO
 
 
 def _payload_confirmacion(
@@ -348,3 +395,39 @@ def resolver_tarjeta_por_ultimos_4(
         if match_tipo:
             return match_tipo
     return qs.order_by('-es_por_defecto', 'id').first()
+
+
+def _solo_digitos_cuenta(valor: str) -> str:
+    return re.sub(r'\D', '', valor or '')
+
+
+def resolver_tarjeta_por_cuenta(
+    *,
+    usuario,
+    numero_cuenta: str,
+) -> Tarjeta | None:
+    """Match débito: número completo → últimos 4 de numero_cuenta → None."""
+    digits = _solo_digitos_cuenta(numero_cuenta)
+    if not digits:
+        return None
+    candidatas = list(
+        Tarjeta.objects.filter(
+            usuario=usuario,
+            tipo=Tarjeta.TIPO_DEBITO,
+        ).exclude(numero_cuenta='').order_by('-es_por_defecto', 'id')
+    )
+    if not candidatas:
+        return None
+    for t in candidatas:
+        if _solo_digitos_cuenta(t.numero_cuenta) == digits:
+            return t
+    if len(digits) < 4:
+        return None
+    suffix = digits[-4:]
+    por_sufijo = [
+        t for t in candidatas
+        if _solo_digitos_cuenta(t.numero_cuenta).endswith(suffix)
+    ]
+    if not por_sufijo:
+        return None
+    return por_sufijo[0]

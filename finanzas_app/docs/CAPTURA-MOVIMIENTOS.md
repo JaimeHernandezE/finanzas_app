@@ -158,12 +158,14 @@ Ese prototipo IMAP vía `.env` quedó **retirado**. El producto usa **OAuth por 
 - Conectar con un clic: Gmail API o Microsoft Graph (sin contraseña de aplicación ni IMAP).
 - API: `GET/PUT /api/finanzas/captura/correo/` (preferencias), `POST …/oauth/connect/`, callbacks google/microsoft, `probar/`, `desconectar/`.
 - UI Configuración → Captura: botones Conectar Gmail / Outlook + remitentes + refresco + notificaciones.
-- UI Pendientes: botón **Buscar en correo** (`POST …/sincronizar/`, fuerza ingestión ignorando intervalo).
-- `ingestar_correos_bancarios` solo sobre cuentas OAuth conectadas. Cron cada 5 min.
+- UI Pendientes: botón **Buscar en correo** (`POST …/sincronizar/`, fuerza ingestión ignorando intervalo). Los pendientes se crean en el **espacio activo** del request (`X-Espacio-Id`), no en un espacio fijo.
+- `ingestar_correos_bancarios` solo sobre cuentas OAuth conectadas. Cron cada 5 min (sin header → familiar activo o personal).
 
 **Privacidad / ley 21.719:** acceso al buzón es dato sensible; consentimiento OAuth claro, cifrado en reposo, poder desconectar.
 
 **Qué se extrae:** monto, comercio (si el mail solo dice “comercio nacional”, se intenta el asunto), fecha/hora, últimos 4 dígitos → tarjeta sugerida. Categoría y ámbito: elección del usuario (categorías filtradas por ámbito).
+
+**Transferencias (TEF):** parser genérico (keywords `transferencia` / `TEF` / `transferiste`, etc.) antes que los parsers de compra. Destinatario (+ mensaje/glosa unidos con ` - `) va a `comercio` del pendiente → `comentario` al confirmar. Método sugerido siempre **Débito**. Match de instrumento: `Tarjeta.numero_cuenta` completo → últimos 4 dígitos de esa cuenta → sin sugerencia. En UI de tarjetas de débito se puede registrar el número de cuenta.
 
 **Decisión — aviso proactivo vía app (etapa 3b):** el ping principal tras un correo será el **push del sistema** en el móvil (ver sección «Decisión: push de la app…»).
 

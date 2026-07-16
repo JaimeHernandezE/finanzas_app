@@ -60,10 +60,12 @@ function metaTarjetaBanco(p: {
   tarjeta_sugerida_ultimos_4?: string | null
   banco?: string | null
   tarjeta_sugerida_banco?: string | null
+  es_transferencia?: boolean
 }): string {
   const ultimos4 = p.ultimos_4 || p.tarjeta_sugerida_ultimos_4 || ''
   const banco = etiquetaBanco(p.banco || p.tarjeta_sugerida_banco)
   const partes: string[] = []
+  if (p.es_transferencia) partes.push('Transferencia')
   if (ultimos4) partes.push(`Tarjeta ···${ultimos4}`)
   if (banco) partes.push(banco)
   return partes.length ? ` · ${partes.join(' · ')}` : ''

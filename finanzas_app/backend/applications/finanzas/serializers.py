@@ -99,7 +99,8 @@ class TarjetaSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Tarjeta
         fields = [
-            'id', 'nombre', 'banco', 'tipo', 'ultimos_4_digitos', 'es_por_defecto',
+            'id', 'nombre', 'banco', 'tipo', 'ultimos_4_digitos', 'numero_cuenta',
+            'es_por_defecto',
             'dia_facturacion', 'dia_vencimiento',
             'usuario',
         ]
@@ -110,6 +111,21 @@ class TarjetaSerializer(serializers.ModelSerializer):
         if value and (len(value) != 4 or not value.isdigit()):
             raise serializers.ValidationError(
                 'Debe ser exactamente 4 dígitos numéricos.'
+            )
+        return value
+
+    def validate_numero_cuenta(self, value):
+        value = (value or '').strip()
+        if not value:
+            return ''
+        digits = ''.join(c for c in value if c.isdigit())
+        if len(digits) < 4:
+            raise serializers.ValidationError(
+                'El número de cuenta debe tener al menos 4 dígitos.'
+            )
+        if len(value) > 34:
+            raise serializers.ValidationError(
+                'El número de cuenta no puede superar 34 caracteres.'
             )
         return value
 
@@ -477,12 +493,13 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
     hora = serializers.SerializerMethodField()
     ultimos_4 = serializers.SerializerMethodField()
     banco = serializers.SerializerMethodField()
+    es_transferencia = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoPendiente
         fields = [
             'id', 'origen', 'tipo', 'monto', 'fecha', 'hora', 'comercio',
-            'ultimos_4', 'banco',
+            'ultimos_4', 'banco', 'es_transferencia',
             'categoria_sugerida', 'categoria_sugerida_nombre',
             'ambito_sugerido',
             'metodo_pago_sugerido', 'metodo_pago_sugerido_tipo',
@@ -517,3 +534,7 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
         if obj.tarjeta_sugerida_id and (obj.tarjeta_sugerida.banco or '').strip():
             return obj.tarjeta_sugerida.banco.strip()
         return ''
+
+    def get_es_transferencia(self, obj):
+        payload = obj.payload_original or {}
+        return bool(payload.get('es_transferencia'))

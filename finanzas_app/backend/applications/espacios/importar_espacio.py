@@ -196,6 +196,10 @@ def _importar_tarjetas(rows, espacio, usuario, usuario_cache):
             usuario=u,
             nombre=row['nombre'],
             banco=row.get('banco', ''),
+            tipo=row.get('tipo') or Tarjeta.TIPO_CREDITO,
+            ultimos_4_digitos=row.get('ultimos_4_digitos') or '',
+            numero_cuenta=row.get('numero_cuenta') or '',
+            es_por_defecto=bool(row.get('es_por_defecto')),
             dia_facturacion=row.get('dia_facturacion'),
             dia_vencimiento=row.get('dia_vencimiento'),
         )

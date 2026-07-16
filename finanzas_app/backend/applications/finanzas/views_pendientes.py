@@ -542,7 +542,7 @@ def captura_correo_sincronizar(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
     try:
-        stats = ingerir_config(config, force=True)
+        stats = ingerir_config(config, force=True, espacio=espacio)
     except ValueError as exc:
         return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as exc:
@@ -555,7 +555,16 @@ def captura_correo_sincronizar(request):
         )
 
     creados = int(stats.creados)
-    if creados == 0:
+    duplicados = int(getattr(stats, 'duplicados', 0) or 0)
+    reutilizados = int(getattr(stats, 'reutilizados', 0) or 0)
+    if creados == 0 and duplicados > 0 and reutilizados == 0:
+        mensaje = (
+            'Se encontró un correo ya registrado como movimiento '
+            '(marcado duplicado; no aparece en pendientes).'
+        )
+    elif creados == 0 and reutilizados > 0:
+        mensaje = 'Sin nuevos pendientes (correo ya procesado).'
+    elif creados == 0:
         mensaje = 'Sin nuevos pendientes desde el correo.'
     elif creados == 1:
         mensaje = 'Se creó 1 pendiente desde el correo.'
@@ -565,6 +574,8 @@ def captura_correo_sincronizar(request):
     return Response({
         'ok': True,
         'creados': creados,
+        'duplicados': duplicados,
+        'reutilizados': reutilizados,
         'skip_remitente': int(stats.skip_remitente),
         'skip_parseo': int(stats.skip_parseo),
         'errores': int(stats.errores),

@@ -22,7 +22,12 @@ from applications.finanzas.models import (
     MovimientoPendiente,
 )
 from applications.finanzas.services.captura import (
-    crear_pendiente,
+    OUTCOME_CREADO,
+    OUTCOME_DUPLICADO,
+    OUTCOME_FUSIONADO,
+    OUTCOME_REUTILIZADO,
+    crear_pendiente_con_outcome,
+    resolver_tarjeta_por_cuenta,
     resolver_tarjeta_por_ultimos_4,
 )
 from applications.finanzas.services.captura.parsers import parse_email
@@ -31,6 +36,8 @@ from applications.finanzas.services.captura.parsers import parse_email
 @dataclass
 class IngestStats:
     creados: int = 0
+    reutilizados: int = 0
+    duplicados: int = 0
     skip_remitente: int = 0
     skip_parseo: int = 0
     errores: int = 0
@@ -124,10 +131,14 @@ def ingerir_config(
     dry_run: bool = False,
     limit: int = 50,
     force: bool = False,
+    espacio=None,
 ) -> IngestStats | None:
     """
     Ingiere no leídos del buzón OAuth.
     Retorna None si se omite por intervalo.
+
+    Si `espacio` se pasa (p. ej. el activo del request en «Buscar en correo»),
+    los pendientes se crean ahí. Si no, se usa familiar activo o personal.
     """
     if not config.conectado or not config.refresh_token_enc:
         return None
@@ -155,6 +166,7 @@ def ingerir_config(
             notificar=bool(config.notificaciones_activas),
             dry_run=dry_run,
             mark_read=None if dry_run else (lambda mid: provider.marcar_leido(access, mid)),
+            espacio=espacio,
         )
         if not dry_run:
             config.ultimo_sync_at = timezone.now()
@@ -175,9 +187,10 @@ def _procesar_mensajes(
     notificar: bool,
     dry_run: bool,
     mark_read,
+    espacio=None,
 ) -> IngestStats:
     stats = IngestStats()
-    espacio = _espacio_para(usuario)
+    espacio = espacio or _espacio_para(usuario)
     metodo_default = (
         MetodoPago.objects.filter(tipo='CREDITO').first()
         or MetodoPago.objects.filter(tipo='DEBITO').first()
@@ -207,24 +220,49 @@ def _procesar_mensajes(
             f'{mid}|{from_addr}|{subject}|{parsed.monto}'.encode(),
         ).hexdigest()
         tipo_tarjeta = (parsed.tipo_tarjeta or '').upper()
-        tarjeta = resolver_tarjeta_por_ultimos_4(
-            usuario=usuario,
-            ultimos_4=parsed.ultimos_4,
-            tipo=tipo_tarjeta or None,
-        )
-        if tarjeta and tarjeta.tipo in ('DEBITO', 'CREDITO'):
-            tipo_metodo = tarjeta.tipo
-        elif tipo_tarjeta in ('DEBITO', 'CREDITO'):
-            tipo_metodo = tipo_tarjeta
+        es_transferencia = bool(getattr(parsed, 'es_transferencia', False))
+        if es_transferencia:
+            tarjeta = resolver_tarjeta_por_cuenta(
+                usuario=usuario,
+                numero_cuenta=getattr(parsed, 'numero_cuenta', '') or '',
+            )
+            metodo = (
+                MetodoPago.objects.filter(tipo='DEBITO').first()
+                or metodo_default
+            )
         else:
-            tipo_metodo = ''
-        metodo = (
-            MetodoPago.objects.filter(tipo=tipo_metodo).first()
-            if tipo_metodo
-            else metodo_default
-        )
+            tarjeta = resolver_tarjeta_por_ultimos_4(
+                usuario=usuario,
+                ultimos_4=parsed.ultimos_4,
+                tipo=tipo_tarjeta or None,
+            )
+            if tarjeta and tarjeta.tipo in ('DEBITO', 'CREDITO'):
+                tipo_metodo = tarjeta.tipo
+            elif tipo_tarjeta in ('DEBITO', 'CREDITO'):
+                tipo_metodo = tipo_tarjeta
+            else:
+                tipo_metodo = ''
+            metodo = (
+                MetodoPago.objects.filter(tipo=tipo_metodo).first()
+                if tipo_metodo
+                else metodo_default
+            )
         hora_str = parsed.hora.strftime('%H:%M') if parsed.hora else ''
-        crear_pendiente(
+        payload = {
+            'subject': subject,
+            'from': from_addr,
+            'banco': parsed.banco,
+            'ultimos_4': parsed.ultimos_4,
+            'tipo_tarjeta': tipo_tarjeta,
+            'hora': hora_str,
+            'provider_message_id': mid,
+            'es_transferencia': es_transferencia,
+        }
+        numero_cuenta = getattr(parsed, 'numero_cuenta', '') or ''
+        if numero_cuenta:
+            payload['numero_cuenta'] = numero_cuenta
+
+        _, outcome = crear_pendiente_con_outcome(
             usuario=usuario,
             espacio=espacio,
             origen=MovimientoPendiente.ORIGEN_EMAIL_BANCO,
@@ -234,23 +272,23 @@ def _procesar_mensajes(
             metodo_pago_sugerido=metodo,
             tarjeta_sugerida=tarjeta,
             confianza=parsed.confianza,
-            payload_original={
-                'subject': subject,
-                'from': from_addr,
-                'banco': parsed.banco,
-                'ultimos_4': parsed.ultimos_4,
-                'tipo_tarjeta': tipo_tarjeta,
-                'hora': hora_str,
-                'provider_message_id': mid,
-            },
+            payload_original=payload,
             hash_externo=hash_ext,
             notificar=notificar,
         )
+        if outcome == OUTCOME_CREADO:
+            stats.creados += 1
+        elif outcome == OUTCOME_DUPLICADO:
+            stats.duplicados += 1
+        elif outcome in (OUTCOME_REUTILIZADO, OUTCOME_FUSIONADO):
+            stats.reutilizados += 1
+        else:
+            stats.reutilizados += 1
+
         if mark_read and mid:
             try:
                 mark_read(mid)
             except Exception:
                 stats.errores += 1
-        stats.creados += 1
 
     return stats

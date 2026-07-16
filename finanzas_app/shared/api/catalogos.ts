@@ -38,10 +38,28 @@ export const catalogosApi = {
   getTarjetas: () =>
     client.get('/api/finanzas/tarjetas/'),
 
-  createTarjeta: (data: { nombre: string; banco: string; dia_facturacion?: number | null; dia_vencimiento?: number | null }) =>
+  createTarjeta: (data: {
+    nombre: string
+    banco: string
+    tipo?: 'DEBITO' | 'CREDITO'
+    ultimos_4_digitos?: string
+    numero_cuenta?: string
+    es_por_defecto?: boolean
+    dia_facturacion?: number | null
+    dia_vencimiento?: number | null
+  }) =>
     client.post('/api/finanzas/tarjetas/', data),
 
-  updateTarjeta: (id: number, data: Partial<{ nombre: string; banco: string; dia_facturacion: number | null; dia_vencimiento: number | null }>) =>
+  updateTarjeta: (id: number, data: Partial<{
+    nombre: string
+    banco: string
+    tipo: 'DEBITO' | 'CREDITO'
+    ultimos_4_digitos: string
+    numero_cuenta: string
+    es_por_defecto: boolean
+    dia_facturacion: number | null
+    dia_vencimiento: number | null
+  }>) =>
     client.put(`/api/finanzas/tarjetas/${id}/`, data),
 
   deleteTarjeta: (id: number) =>

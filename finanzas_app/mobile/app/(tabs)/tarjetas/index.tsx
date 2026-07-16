@@ -14,6 +14,7 @@ interface Tarjeta {
   banco: string
   tipo?: 'DEBITO' | 'CREDITO'
   ultimos_4_digitos?: string
+  numero_cuenta?: string
   es_por_defecto?: boolean
   dia_facturacion: number | null
   dia_vencimiento: number | null
@@ -42,6 +43,7 @@ const FORM_VACIO = {
   banco: '',
   tipo: 'CREDITO' as 'DEBITO' | 'CREDITO',
   ultimos4: '',
+  numeroCuenta: '',
   esPorDefecto: false,
   diaFac: '',
   diaVen: '',
@@ -106,6 +108,21 @@ function FormTarjeta(props: {
         maxLength={4}
         className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
       />
+      {form.tipo === 'DEBITO' ? (
+        <TextInput
+          value={form.numeroCuenta}
+          onChangeText={(v) =>
+            setForm((f) => ({
+              ...f,
+              numeroCuenta: v.replace(/[^\d\s.\-]/g, '').slice(0, 34),
+            }))
+          }
+          placeholder="Número de cuenta (opcional)"
+          placeholderTextColor="#888884"
+          keyboardType="numeric"
+          className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-2"
+        />
+      ) : null}
       {form.tipo === 'CREDITO' ? (
         <View className="flex-row gap-2 mb-2">
           <View className="flex-1">
@@ -269,6 +286,7 @@ export default function TarjetasScreen() {
       banco: t.banco ?? '',
       tipo: t.tipo === 'DEBITO' ? 'DEBITO' : 'CREDITO',
       ultimos4: t.ultimos_4_digitos ?? '',
+      numeroCuenta: t.numero_cuenta ?? '',
       esPorDefecto: Boolean(t.es_por_defecto),
       diaFac: t.dia_facturacion != null ? String(t.dia_facturacion) : '',
       diaVen: t.dia_vencimiento != null ? String(t.dia_vencimiento) : '',
@@ -292,6 +310,7 @@ export default function TarjetasScreen() {
         banco: form.banco.trim(),
         tipo: form.tipo,
         ultimos_4_digitos: form.ultimos4,
+        numero_cuenta: form.tipo === 'DEBITO' ? form.numeroCuenta.trim() : '',
         es_por_defecto: form.esPorDefecto,
         dia_facturacion: form.tipo === 'CREDITO' && form.diaFac ? parseDia(form.diaFac) : null,
         dia_vencimiento: form.tipo === 'CREDITO' && form.diaVen ? parseDia(form.diaVen) : null,
@@ -323,6 +342,7 @@ export default function TarjetasScreen() {
         banco: form.banco.trim(),
         tipo: form.tipo,
         ultimos_4_digitos: form.ultimos4,
+        numero_cuenta: form.tipo === 'DEBITO' ? form.numeroCuenta.trim() : '',
         es_por_defecto: form.esPorDefecto,
         dia_facturacion: form.tipo === 'CREDITO' && form.diaFac ? parseDia(form.diaFac) : null,
         dia_vencimiento: form.tipo === 'CREDITO' && form.diaVen ? parseDia(form.diaVen) : null,

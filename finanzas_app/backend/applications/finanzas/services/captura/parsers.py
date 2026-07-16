@@ -34,6 +34,8 @@ class GastoParseado:
     tipo_tarjeta: TipoTarjeta = ''
     raw_subject: str = ''
     confianza: float = 0.7
+    numero_cuenta: str = ''
+    es_transferencia: bool = False
 
 
 def _monto_desde_texto(texto: str) -> Decimal | None:
@@ -252,6 +254,143 @@ def _campos_comunes(subject: str, body: str) -> tuple[str, date | None, time | N
     )
 
 
+def _solo_digitos(valor: str) -> str:
+    return re.sub(r'\D', '', valor or '')
+
+
+def _parece_compra_tarjeta(texto: str) -> bool:
+    return bool(
+        re.search(
+            r'tarjeta\s+de\s+(?:d[eé]bito|cr[eé]dito)|'
+            r'compra\s+con\s+tarjeta|'
+            r'consumo\s+con\s+tarjeta|'
+            r'uso\s+de\s+tu\s+tarjeta|'
+            r'notificaci[oó]n\s+de\s+uso\s+de\s+tu\s+tarjeta',
+            texto,
+            re.I,
+        )
+    )
+
+
+def _parece_transferencia(subject: str, body: str) -> bool:
+    texto = f'{subject}\n{body}'
+    es_tef = bool(
+        re.search(
+            r'\btransferencia\b|\btransferiste\b|\bTEF\b|\benviaste\b|'
+            r'\bhas\s+transferido\b|\btransferido\s+a\b|\btransferencia\s+a\b',
+            texto,
+            re.I,
+        )
+    )
+    if not es_tef:
+        return False
+    if _parece_compra_tarjeta(texto) and not re.search(
+        r'\btransferencia\b|\btransferiste\b|\bTEF\b|\bhas\s+transferido\b',
+        texto,
+        re.I,
+    ):
+        return False
+    return True
+
+
+def _valor_etiquetado(texto: str, etiquetas: tuple[str, ...]) -> str:
+    for etiqueta in etiquetas:
+        pat = (
+            rf'(?:^|\n|\r)\s*{etiqueta}\s*:?\s*'
+            rf'([^\n\r]{{2,120}}?)(?=\s*(?:\n|\r|$))'
+        )
+        m = re.search(pat, texto, re.IGNORECASE | re.MULTILINE)
+        if not m:
+            continue
+        valor = re.sub(r'\s+', ' ', (m.group(1) or '').strip())
+        valor = re.sub(r'^[\s:;,\-–—]+|[\s:;,\-–—]+$', '', valor)
+        if valor:
+            return valor[:255]
+    return ''
+
+
+def _destinatario_desde_texto(texto: str) -> str:
+    return _valor_etiquetado(
+        texto,
+        (
+            r'nombre\s+del\s+destinatario',
+            r'destinatario',
+            r'beneficiario',
+            r'transferencia\s+a',
+            r'transferido\s+a',
+            r'a\s+nombre\s+de',
+        ),
+    )
+
+
+def _mensaje_transferencia_desde_texto(texto: str) -> str:
+    return _valor_etiquetado(
+        texto,
+        (
+            r'mensaje',
+            r'glosa',
+            r'comentario',
+            r'motivo',
+        ),
+    )
+
+
+def _numero_cuenta_desde_texto(texto: str) -> str:
+    patterns = [
+        r'(?:cuenta\s+de\s+origen|desde\s+(?:la\s+)?cuenta|n[uú]mero\s+de\s+cuenta|'
+        r'n[°º]?\s*de\s*cuenta|cuenta\s+origen|n[uú]mero\s+cuenta|'
+        r'cuenta\s+cargada|cuenta)\s*:?\s*([\d\s.\-]{4,40})',
+    ]
+    for pat in patterns:
+        m = re.search(pat, texto, re.IGNORECASE | re.MULTILINE)
+        if not m:
+            continue
+        digits = _solo_digitos(m.group(1))
+        if len(digits) >= 4:
+            return digits
+    return ''
+
+
+def _comercio_transferencia(destinatario: str, mensaje: str) -> str:
+    dest = (destinatario or '').strip()
+    msg = (mensaje or '').strip()
+    if dest and msg:
+        return f'{dest} - {msg}'[:255]
+    return (dest or msg)[:255]
+
+
+def parse_transferencia_generico(subject: str, body: str) -> GastoParseado | None:
+    texto = f'{subject}\n{body}'
+    monto = _monto_desde_texto(texto)
+    if monto is None:
+        return None
+    destinatario = _destinatario_desde_texto(texto)
+    mensaje = _mensaje_transferencia_desde_texto(texto)
+    comercio = _comercio_transferencia(destinatario, mensaje)
+    if not comercio:
+        # Fallback suave: primera línea útil del subject si no es genérica.
+        sub = re.sub(
+            r'^(?:alerta|aviso|notificaci[oó]n|transferencia)\s*[:\-]?\s*',
+            '',
+            (subject or '').strip(),
+            flags=re.I,
+        )
+        comercio = _limpiar_comercio(sub) if sub and len(sub) >= 3 else ''
+    return GastoParseado(
+        monto=monto,
+        comercio=comercio,
+        fecha=_fecha_desde_texto(texto),
+        hora=_hora_desde_texto(texto),
+        ultimos_4='',
+        banco='GENERICO',
+        tipo_tarjeta='DEBITO',
+        raw_subject=subject,
+        confianza=0.6,
+        numero_cuenta=_numero_cuenta_desde_texto(texto),
+        es_transferencia=True,
+    )
+
+
 def parse_generico(subject: str, body: str) -> GastoParseado | None:
     texto = f'{subject}\n{body}'
     monto = _monto_desde_texto(texto)
@@ -354,6 +493,10 @@ _PARSERS_POR_REMITENTE: list[tuple[re.Pattern, Callable[[str, str], GastoParsead
 
 
 def parse_email(*, subject: str, body: str, from_addr: str = '') -> GastoParseado | None:
+    if _parece_transferencia(subject, body):
+        parsed_tef = parse_transferencia_generico(subject, body)
+        if parsed_tef:
+            return parsed_tef
     blob = f'{from_addr} {subject}'
     for pattern, parser in _PARSERS_POR_REMITENTE:
         if pattern.search(blob):

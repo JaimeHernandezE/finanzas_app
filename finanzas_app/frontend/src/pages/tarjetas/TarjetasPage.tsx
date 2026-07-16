@@ -14,6 +14,7 @@ interface TarjetaRow {
   banco: string
   tipo?: 'DEBITO' | 'CREDITO'
   ultimos_4_digitos?: string
+  numero_cuenta?: string
   es_por_defecto?: boolean
   dia_facturacion: number | null
   dia_vencimiento: number | null
@@ -71,6 +72,7 @@ export default function TarjetasPage() {
   const [banco, setBanco] = useState('')
   const [tipoNueva, setTipoNueva] = useState<'DEBITO' | 'CREDITO'>('CREDITO')
   const [ultimos4, setUltimos4] = useState('')
+  const [numeroCuenta, setNumeroCuenta] = useState('')
   const [esPorDefecto, setEsPorDefecto] = useState(false)
   const [diaFacturacion, setDiaFacturacion] = useState('')
   const [diaVencimiento, setDiaVencimiento] = useState('')
@@ -81,6 +83,7 @@ export default function TarjetasPage() {
   const [editBanco, setEditBanco] = useState('')
   const [editTipo, setEditTipo] = useState<'DEBITO' | 'CREDITO'>('CREDITO')
   const [editUltimos4, setEditUltimos4] = useState('')
+  const [editNumeroCuenta, setEditNumeroCuenta] = useState('')
   const [editEsPorDefecto, setEditEsPorDefecto] = useState(false)
   const [editDiaFacturacion, setEditDiaFacturacion] = useState('')
   const [editDiaVencimiento, setEditDiaVencimiento] = useState('')
@@ -129,6 +132,7 @@ export default function TarjetasPage() {
         banco: b,
         tipo: tipoNueva,
         ultimos_4_digitos: u4,
+        numero_cuenta: tipoNueva === 'DEBITO' ? numeroCuenta.trim() : '',
         es_por_defecto: esPorDefecto,
         dia_facturacion: tipoNueva === 'CREDITO' && diaFacturacion ? Number(diaFacturacion) : null,
         dia_vencimiento: tipoNueva === 'CREDITO' && diaVencimiento ? Number(diaVencimiento) : null,
@@ -137,6 +141,7 @@ export default function TarjetasPage() {
       setBanco('')
       setTipoNueva('CREDITO')
       setUltimos4('')
+      setNumeroCuenta('')
       setEsPorDefecto(false)
       setDiaFacturacion('')
       setDiaVencimiento('')
@@ -163,6 +168,7 @@ export default function TarjetasPage() {
     setEditBanco(tarjeta.banco ?? '')
     setEditTipo(tarjeta.tipo === 'DEBITO' ? 'DEBITO' : 'CREDITO')
     setEditUltimos4(tarjeta.ultimos_4_digitos ?? '')
+    setEditNumeroCuenta(tarjeta.numero_cuenta ?? '')
     setEditEsPorDefecto(Boolean(tarjeta.es_por_defecto))
     setEditDiaFacturacion(tarjeta.dia_facturacion != null ? String(tarjeta.dia_facturacion) : '')
     setEditDiaVencimiento(tarjeta.dia_vencimiento != null ? String(tarjeta.dia_vencimiento) : '')
@@ -175,6 +181,7 @@ export default function TarjetasPage() {
     setEditBanco('')
     setEditTipo('CREDITO')
     setEditUltimos4('')
+    setEditNumeroCuenta('')
     setEditEsPorDefecto(false)
     setEditDiaFacturacion('')
     setEditDiaVencimiento('')
@@ -202,6 +209,7 @@ export default function TarjetasPage() {
         banco: b,
         tipo: editTipo,
         ultimos_4_digitos: u4,
+        numero_cuenta: editTipo === 'DEBITO' ? editNumeroCuenta.trim() : '',
         es_por_defecto: editEsPorDefecto,
         dia_facturacion: editTipo === 'CREDITO' && editDiaFacturacion ? Number(editDiaFacturacion) : null,
         dia_vencimiento: editTipo === 'CREDITO' && editDiaVencimiento ? Number(editDiaVencimiento) : null,
@@ -316,6 +324,18 @@ export default function TarjetasPage() {
                               }
                             />
                           </div>
+                          {editTipo === 'DEBITO' ? (
+                            <div className={styles.formRow}>
+                              <Input
+                                label="Número de cuenta (opcional)"
+                                placeholder="Para matchear transferencias"
+                                value={editNumeroCuenta}
+                                onChange={e =>
+                                  setEditNumeroCuenta(e.target.value.replace(/[^\d\s.\-]/g, '').slice(0, 34))
+                                }
+                              />
+                            </div>
+                          ) : null}
                           {editTipo === 'CREDITO' ? (
                             <div className={styles.formRow}>
                               <Input
@@ -376,6 +396,9 @@ export default function TarjetasPage() {
                             <span className={styles.tarjetaBanco}>
                               {t.banco}
                               {t.es_por_defecto ? ' · Por defecto' : ''}
+                              {t.tipo === 'DEBITO' && t.numero_cuenta
+                                ? ` · Cta ${t.numero_cuenta}`
+                                : ''}
                             </span>
                             {t.tipo !== 'DEBITO' && t.dia_facturacion && (
                               <span className={styles.tarjetaCiclo}>
@@ -469,6 +492,18 @@ export default function TarjetasPage() {
             onChange={e => setUltimos4(e.target.value.replace(/\D/g, '').slice(0, 4))}
           />
         </div>
+        {tipoNueva === 'DEBITO' ? (
+          <div className={styles.formRow}>
+            <Input
+              label="Número de cuenta (opcional)"
+              placeholder="Para matchear transferencias"
+              value={numeroCuenta}
+              onChange={e =>
+                setNumeroCuenta(e.target.value.replace(/[^\d\s.\-]/g, '').slice(0, 34))
+              }
+            />
+          </div>
+        ) : null}
         {tipoNueva === 'CREDITO' ? (
           <div className={styles.formRow}>
             <Input
