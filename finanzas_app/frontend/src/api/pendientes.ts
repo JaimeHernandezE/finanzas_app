@@ -6,7 +6,9 @@ export interface MovimientoPendienteApi {
   tipo: 'INGRESO' | 'EGRESO'
   monto: string
   fecha: string
+  hora: string | null
   comercio: string
+  ultimos_4: string
   categoria_sugerida: number | null
   categoria_sugerida_nombre: string | null
   ambito_sugerido: 'PERSONAL' | 'COMUN' | null
@@ -15,6 +17,7 @@ export interface MovimientoPendienteApi {
   metodo_pago_sugerido_nombre: string | null
   tarjeta_sugerida: number | null
   tarjeta_sugerida_nombre: string | null
+  tarjeta_sugerida_ultimos_4: string | null
   cuenta_sugerida: number | null
   cuenta_sugerida_nombre: string | null
   confianza: number
@@ -31,7 +34,27 @@ export interface ConfirmarPendienteBody {
   cuenta?: number | null
   tarjeta?: number | null
   comentario?: string
+  num_cuotas?: number
+  monto_cuota?: number | null
 }
+
+export interface CapturaCorreoConfig {
+  conectado: boolean
+  proveedor: 'GMAIL' | 'OUTLOOK'
+  email: string
+  remitentes_banco: string[]
+  intervalo_minutos: number
+  notificaciones_activas: boolean
+  ultimo_sync_at: string | null
+  ultimo_error: string
+  intervalo_minimo_permitido: number
+}
+
+export type CapturaCorreoPrefs = Partial<{
+  remitentes_banco: string[]
+  intervalo_minutos: number
+  notificaciones_activas: boolean
+}>
 
 export const pendientesApi = {
   listar: (estado = 'PENDIENTE') =>
@@ -64,4 +87,32 @@ export const pendientesApi = {
       whatsapp_phone: string
       telegram_chat_id_presente: boolean
     }>('/api/finanzas/captura/vinculo/estado/'),
+
+  getCorreo: () => client.get<CapturaCorreoConfig>('/api/finanzas/captura/correo/'),
+
+  updateCorreoPrefs: (body: CapturaCorreoPrefs) =>
+    client.put<CapturaCorreoConfig>('/api/finanzas/captura/correo/', body),
+
+  oauthConnect: (proveedor: 'GMAIL' | 'OUTLOOK') =>
+    client.post<{ auth_url: string; proveedor: string }>(
+      '/api/finanzas/captura/correo/oauth/connect/',
+      { proveedor },
+    ),
+
+  probarCorreo: () =>
+    client.post<{ ok: boolean; mensaje: string }>('/api/finanzas/captura/correo/probar/'),
+
+  sincronizarCorreo: () =>
+    client.post<{
+      ok: boolean
+      creados: number
+      skip_remitente: number
+      skip_parseo: number
+      errores: number
+      mensaje: string
+      config: CapturaCorreoConfig
+    }>('/api/finanzas/captura/correo/sincronizar/'),
+
+  desconectarCorreo: () =>
+    client.post<CapturaCorreoConfig>('/api/finanzas/captura/correo/desconectar/'),
 }

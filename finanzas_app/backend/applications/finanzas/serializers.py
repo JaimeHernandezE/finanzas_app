@@ -465,21 +465,41 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
     tarjeta_sugerida_nombre = serializers.CharField(
         source='tarjeta_sugerida.nombre', read_only=True, allow_null=True,
     )
+    tarjeta_sugerida_ultimos_4 = serializers.CharField(
+        source='tarjeta_sugerida.ultimos_4_digitos', read_only=True, allow_null=True,
+    )
     cuenta_sugerida_nombre = serializers.CharField(
         source='cuenta_sugerida.nombre', read_only=True, allow_null=True,
     )
+    hora = serializers.SerializerMethodField()
+    ultimos_4 = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoPendiente
         fields = [
-            'id', 'origen', 'tipo', 'monto', 'fecha', 'comercio',
+            'id', 'origen', 'tipo', 'monto', 'fecha', 'hora', 'comercio',
+            'ultimos_4',
             'categoria_sugerida', 'categoria_sugerida_nombre',
             'ambito_sugerido',
             'metodo_pago_sugerido', 'metodo_pago_sugerido_tipo',
             'metodo_pago_sugerido_nombre',
-            'tarjeta_sugerida', 'tarjeta_sugerida_nombre',
+            'tarjeta_sugerida', 'tarjeta_sugerida_nombre', 'tarjeta_sugerida_ultimos_4',
             'cuenta_sugerida', 'cuenta_sugerida_nombre',
             'confianza', 'estado', 'movimiento',
             'creado_at', 'actualizado_at',
         ]
         read_only_fields = fields
+
+    def get_hora(self, obj):
+        payload = obj.payload_original or {}
+        hora = (payload.get('hora') or '').strip()
+        return hora or None
+
+    def get_ultimos_4(self, obj):
+        payload = obj.payload_original or {}
+        from_payload = (payload.get('ultimos_4') or '').strip()
+        if from_payload:
+            return from_payload
+        if obj.tarjeta_sugerida_id and obj.tarjeta_sugerida.ultimos_4_digitos:
+            return obj.tarjeta_sugerida.ultimos_4_digitos
+        return ''

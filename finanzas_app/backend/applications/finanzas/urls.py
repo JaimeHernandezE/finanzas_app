@@ -58,6 +58,41 @@ urlpatterns = [
         name='captura-estado-vinculo',
     ),
     path(
+        'captura/correo/',
+        views_pendientes.captura_correo,
+        name='captura-correo',
+    ),
+    path(
+        'captura/correo/oauth/connect/',
+        views_pendientes.captura_correo_oauth_connect,
+        name='captura-correo-oauth-connect',
+    ),
+    path(
+        'captura/correo/oauth/callback/google/',
+        views_pendientes.captura_correo_oauth_callback_google,
+        name='captura-correo-oauth-callback-google',
+    ),
+    path(
+        'captura/correo/oauth/callback/microsoft/',
+        views_pendientes.captura_correo_oauth_callback_microsoft,
+        name='captura-correo-oauth-callback-microsoft',
+    ),
+    path(
+        'captura/correo/probar/',
+        views_pendientes.captura_correo_probar,
+        name='captura-correo-probar',
+    ),
+    path(
+        'captura/correo/sincronizar/',
+        views_pendientes.captura_correo_sincronizar,
+        name='captura-correo-sincronizar',
+    ),
+    path(
+        'captura/correo/desconectar/',
+        views_pendientes.captura_correo_desconectar,
+        name='captura-correo-desconectar',
+    ),
+    path(
         'captura/webhooks/telegram/',
         views_webhooks.webhook_telegram,
         name='captura-webhook-telegram',

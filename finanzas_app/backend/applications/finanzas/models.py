@@ -978,3 +978,50 @@ class CodigoVinculoCaptura(models.Model):
         return f'{self.canal} {self.codigo} u={self.usuario_id}'
 
 
+class ConfiguracionCapturaCorreo(models.Model):
+    """
+    OAuth de correo (Gmail / Outlook) + preferencias de ingestión de alertas bancarias.
+    refresh_token_enc usa Fernet (mismo patrón que Drive).
+    """
+
+    PROVEEDOR_GMAIL = 'GMAIL'
+    PROVEEDOR_OUTLOOK = 'OUTLOOK'
+    PROVEEDOR_CHOICES = [
+        (PROVEEDOR_GMAIL, 'Gmail'),
+        (PROVEEDOR_OUTLOOK, 'Outlook / Hotmail'),
+    ]
+
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='config_captura_correo',
+    )
+    proveedor = models.CharField(
+        max_length=20,
+        choices=PROVEEDOR_CHOICES,
+        default=PROVEEDOR_GMAIL,
+    )
+    email = models.EmailField(blank=True, default='')
+    refresh_token_enc = models.TextField(blank=True, default='')
+    conectado = models.BooleanField(default=False)
+    remitentes_banco = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Emails o dominios (@banco.cl) de los que se aceptan alertas.',
+    )
+    intervalo_minutos = models.PositiveSmallIntegerField(default=15)
+    notificaciones_activas = models.BooleanField(default=True)
+    ultimo_sync_at = models.DateTimeField(null=True, blank=True)
+    ultimo_error = models.CharField(max_length=500, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'configuración de captura por correo'
+        verbose_name_plural = 'configuraciones de captura por correo'
+
+    def __str__(self):
+        estado = 'conectado' if self.conectado else 'desconectado'
+        return f'Captura correo {self.email or self.usuario_id} ({estado})'
+
+

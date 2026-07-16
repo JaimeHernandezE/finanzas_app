@@ -225,19 +225,23 @@ Reducir registro manual vía **bandeja de pendientes** + confirmación en **What
 
 Detalle y estado: [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 
-**Implementado:** `MovimientoPendiente`, API `/api/finanzas/pendientes/`, UI `/pendientes`, bots (`captura_bot` + webhooks), vínculo chat, `ingestar_correos_bancarios`, tipo `MOVIMIENTO_PENDIENTE`. Activar con env `CAPTURA_*`.
+**Implementado:** `MovimientoPendiente`, API pendientes, UI `/pendientes`, bots, vínculo chat, **correo OAuth (Gmail API / Microsoft Graph)** + remitentes/intervalo/notif, `ingestar_correos_bancarios` multi-usuario OAuth, tipo `MOVIMIENTO_PENDIENTE`. IMAP+password retirado.
 
-**Fuera del producto UX:** import CSV/Excel. `importar_movimientos_csv` sigue como herramienta admin/demo.
+**Fuera del producto UX:** import CSV/Excel.
 
-**Pendiente:** puente proactivo **correo → WhatsApp**; reglas aprendidas; OCR boletas.
+**Próximo foco:** **3b** — push nativo + deep link.
+
+**Pendiente (después de 3b):** puente proactivo correo → chat; reglas aprendidas; OCR boletas.
 
 ### Contexto: enfoques posibles
 
 | Enfoque | Descripción | Viabilidad / rol aquí |
 |---------|-------------|------------------------|
-| **Mensajería (WhatsApp y Telegram)** | Captura y confirmación; el usuario **abre** el chat. Ambos contemplados. | **Alta** — canal principal. |
-| **Parsing de correo** | Alertas → `MovimientoPendiente` → resolver en app o con «pendientes» en el bot. | **Media** — red de seguridad; sin push WA en el MVP. |
-| **Correo → ping WhatsApp** | Aviso proactivo al llegar el mail. | **Pendiente** — útil, coste de plantillas Meta. |
+| **Mensajería (WhatsApp y Telegram)** | Captura y confirmación; el usuario **abre** el chat. Ambos contemplados. | **Alta** — captura cotidiana; no es el primer ping tras correo. |
+| **Parsing de correo** | Alertas → `MovimientoPendiente` → resolver en app o con «pendientes» en el bot. | **Media** — red de seguridad. |
+| **Correo por usuario (3a/3a.2)** | OAuth Gmail + Outlook; lectura vía API. | **Hecho**. |
+| **Correo → push de la app (3b)** | Aviso del SO + abrir pendiente / sugerencias rápidas. | **Priorizado** — reemplaza el ping proactivo sin plantillas Meta. |
+| **Correo → ping WhatsApp** | Aviso proactivo al llegar el mail. | **Después de 3b** — útil, coste de plantillas Meta. |
 | **Agregador bancario** | Fintoc / Belvo / Plaid → misma bandeja. | Largo plazo. |
 | **Scraping de home banking** | Login automatizado al banco. | **No recomendado.** |
 
@@ -245,9 +249,11 @@ Detalle y estado: [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 
 1. **Bandeja de pendientes** — `MovimientoPendiente` + endpoints + vista en la app.
 2. **Bots WhatsApp y Telegram** — misma UX; captura/confirmación iniciada por el usuario (abrir el chat no se considera fricción).
-3. **Correo → pendiente** — parsers + dedup; sin mensaje proactivo al chat.
+3. **Correo → pendiente (prototipo)** — parsers + dedup; un buzón `.env`; notificación in-app.
+3a. **Correo por usuario OAuth** — Gmail API + Graph; **hecho.** IMAP password retirado.
+3b. **Correo → push nativo** — token dispositivo, push, deep link / acciones.
 4. **Reglas aprendidas** — `ReglaClasificacion`.
-5. **Pendiente — correo → WhatsApp/Telegram proactivo** — cuando se presupueste.
+5. **Correo → WhatsApp/Telegram proactivo** — cuando se presupueste; **después de 3a/3b**.
 6. **Largo plazo — agregador open finance** — misma cola de confirmación.
 
 ### Principios de producto
@@ -256,7 +262,8 @@ Detalle y estado: [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 - **WhatsApp y Telegram:** ambos de primera clase; no un canal “provisional” y otro “final”.
 - **Usuario inicia el chat:** captura y vaciado de pendientes desde mensajería parten de un mensaje del usuario (aceptable en producto; en WA evita plantillas).
 - **Una bandeja, varias superficies:** app y bots equivalentes.
-- **Correo en MVP:** crea pendiente visible; **no** exige ping a WhatsApp (eso queda pendiente).
+- **Correo de producto:** cada usuario conecta **su** casilla (3a); el `.env` IMAP no escala a multi-usuario.
+- **Ping primario tras correo:** push de app (3b), no WhatsApp.
 - **Trazabilidad / multitenancy / privacidad / separación de dominios:** como en [CAPTURA-MOVIMIENTOS.md](../CAPTURA-MOVIMIENTOS.md).
 
 ### Relación con otras fases

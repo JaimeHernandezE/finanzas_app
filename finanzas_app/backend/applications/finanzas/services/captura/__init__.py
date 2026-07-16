@@ -83,13 +83,22 @@ def buscar_duplicado_pendiente(
 
 
 def emitir_notificacion_pendiente(pendiente: MovimientoPendiente) -> NotificacionUsuario:
+    from applications.usuarios.formato_moneda import (
+        codigo_moneda_usuario,
+        formatear_monto_codigo,
+    )
+
     comercio = pendiente.comercio or 'sin comercio'
+    monto_txt = formatear_monto_codigo(
+        pendiente.monto,
+        codigo_moneda_usuario(pendiente.usuario),
+    )
     return NotificacionUsuario.objects.create(
         usuario=pendiente.usuario,
         espacio=pendiente.espacio,
         tipo=NotificacionUsuario.TIPO_MOVIMIENTO_PENDIENTE,
         titulo='Movimiento pendiente de confirmar',
-        mensaje=f'${pendiente.monto} — {comercio}. Confírmalo en Pendientes o en el bot.',
+        mensaje=f'{monto_txt} — {comercio}. Confírmalo en Pendientes o en el bot.',
         payload={
             'pendiente_id': pendiente.id,
             'origen': pendiente.origen,
@@ -311,8 +320,19 @@ def descartar_pendiente(pendiente: MovimientoPendiente) -> MovimientoPendiente:
     return pendiente
 
 
-def resolver_tarjeta_por_ultimos_4(*, usuario, ultimos_4: str) -> Tarjeta | None:
+def resolver_tarjeta_por_ultimos_4(
+    *,
+    usuario,
+    ultimos_4: str,
+    tipo: str | None = None,
+) -> Tarjeta | None:
     digits = (ultimos_4 or '').strip()
     if len(digits) != 4 or not digits.isdigit():
         return None
-    return Tarjeta.objects.filter(usuario=usuario, ultimos_4_digitos=digits).first()
+    qs = Tarjeta.objects.filter(usuario=usuario, ultimos_4_digitos=digits)
+    tipo_norm = (tipo or '').strip().upper()
+    if tipo_norm in ('DEBITO', 'CREDITO'):
+        match_tipo = qs.filter(tipo=tipo_norm).first()
+        if match_tipo:
+            return match_tipo
+    return qs.order_by('-es_por_defecto', 'id').first()

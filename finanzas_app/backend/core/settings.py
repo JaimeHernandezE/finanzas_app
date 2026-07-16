@@ -287,11 +287,23 @@ CAPTURA_WHATSAPP_HABILITADO = _env_flag('CAPTURA_WHATSAPP_HABILITADO', 'false')
 CAPTURA_WHATSAPP_TOKEN = os.environ.get('CAPTURA_WHATSAPP_TOKEN', '').strip()
 CAPTURA_WHATSAPP_PHONE_NUMBER_ID = os.environ.get('CAPTURA_WHATSAPP_PHONE_NUMBER_ID', '').strip()
 CAPTURA_WHATSAPP_VERIFY_TOKEN = os.environ.get('CAPTURA_WHATSAPP_VERIFY_TOKEN', '').strip()
-CAPTURA_EMAIL_IMAP_HOST = os.environ.get('CAPTURA_EMAIL_IMAP_HOST', '').strip()
-CAPTURA_EMAIL_IMAP_USER = os.environ.get('CAPTURA_EMAIL_IMAP_USER', '').strip()
-CAPTURA_EMAIL_IMAP_PASSWORD = os.environ.get('CAPTURA_EMAIL_IMAP_PASSWORD', '').strip()
-CAPTURA_EMAIL_IMAP_FOLDER = os.environ.get('CAPTURA_EMAIL_IMAP_FOLDER', 'INBOX').strip() or 'INBOX'
-CAPTURA_EMAIL_USUARIO_ID = os.environ.get('CAPTURA_EMAIL_USUARIO_ID', '').strip()
+# Intervalo mínimo entre syncs OAuth por usuario (cron global <= este valor).
+CAPTURA_EMAIL_INTERVALO_MIN_MINUTOS = max(
+    1,
+    int(os.environ.get('CAPTURA_EMAIL_INTERVALO_MIN_MINUTOS', '5') or '5'),
+)
+# OAuth captura correo (Gmail API / Microsoft Graph). IMAP password retirado.
+GOOGLE_MAIL_OAUTH_CLIENT_ID = (
+    os.environ.get('GOOGLE_MAIL_OAUTH_CLIENT_ID')
+    or os.environ.get('GOOGLE_DRIVE_OAUTH_CLIENT_ID', '')
+).strip()
+GOOGLE_MAIL_OAUTH_CLIENT_SECRET = (
+    os.environ.get('GOOGLE_MAIL_OAUTH_CLIENT_SECRET')
+    or os.environ.get('GOOGLE_DRIVE_OAUTH_CLIENT_SECRET', '')
+).strip()
+MICROSOFT_OAUTH_CLIENT_ID = os.environ.get('MICROSOFT_OAUTH_CLIENT_ID', '').strip()
+MICROSOFT_OAUTH_CLIENT_SECRET = os.environ.get('MICROSOFT_OAUTH_CLIENT_SECRET', '').strip()
+MICROSOFT_OAUTH_TENANT = os.environ.get('MICROSOFT_OAUTH_TENANT', 'consumers').strip() or 'consumers'
 
 # Inicializar Firebase Admin SDK (clave de servicio desde env o archivo local)
 from firebase_admin_init import init_firebase

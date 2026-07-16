@@ -13,6 +13,7 @@ from applications.espacios.contexto import usuario_y_espacio
 from applications.finanzas.models import (
     Categoria,
     CodigoVinculoCaptura,
+    ConfiguracionCapturaCorreo,
     CuentaPersonal,
     MetodoPago,
     MovimientoPendiente,
@@ -243,3 +244,342 @@ def captura_estado_vinculo(request):
         # No exponer telegram_chat_id completo en clientes no confiables: basura segura
         'telegram_chat_id_presente': bool(usuario.telegram_chat_id),
     })
+
+
+def _correo_efectivamente_conectado(config: ConfiguracionCapturaCorreo | None) -> bool:
+    return bool(config and config.conectado and (config.refresh_token_enc or '').strip())
+
+
+def _sanear_conexion_correo(config: ConfiguracionCapturaCorreo | None) -> ConfiguracionCapturaCorreo | None:
+    """Si quedó conectado=True sin refresh OAuth (p. ej. resto de IMAP), corrige el estado."""
+    if config is None:
+        return None
+    if config.conectado and not (config.refresh_token_enc or '').strip():
+        config.conectado = False
+        config.ultimo_error = (
+            'Debes volver a conectar con Gmail u Outlook (OAuth). '
+            'La conexión anterior (IMAP) ya no es válida.'
+        )
+        config.save(update_fields=['conectado', 'ultimo_error', 'updated_at'])
+    return config
+
+
+def _serializar_config_correo(config: ConfiguracionCapturaCorreo | None) -> dict:
+    from applications.finanzas.services.captura.mail_ingest import intervalo_minimo_permitido
+
+    config = _sanear_conexion_correo(config)
+    if config is None:
+        return {
+            'conectado': False,
+            'proveedor': ConfiguracionCapturaCorreo.PROVEEDOR_GMAIL,
+            'email': '',
+            'remitentes_banco': [],
+            'intervalo_minutos': 15,
+            'notificaciones_activas': True,
+            'ultimo_sync_at': None,
+            'ultimo_error': '',
+            'intervalo_minimo_permitido': intervalo_minimo_permitido(),
+        }
+    return {
+        'conectado': _correo_efectivamente_conectado(config),
+        'proveedor': config.proveedor,
+        'email': config.email or '',
+        'remitentes_banco': list(config.remitentes_banco or []),
+        'intervalo_minutos': int(config.intervalo_minutos or 15),
+        'notificaciones_activas': bool(config.notificaciones_activas),
+        'ultimo_sync_at': config.ultimo_sync_at.isoformat() if config.ultimo_sync_at else None,
+        'ultimo_error': config.ultimo_error or '',
+        'intervalo_minimo_permitido': intervalo_minimo_permitido(),
+    }
+
+
+def _correo_redirect_uri(request, proveedor: str) -> str:
+    scheme = 'https' if request.is_secure() else 'http'
+    host = request.get_host()
+    slug = 'google' if proveedor == ConfiguracionCapturaCorreo.PROVEEDOR_GMAIL else 'microsoft'
+    return f'{scheme}://{host}/api/finanzas/captura/correo/oauth/callback/{slug}/'
+
+
+@api_view(['GET', 'PUT'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo(request):
+    """GET estado / PUT preferencias (remitentes, intervalo, notificaciones)."""
+    usuario, espacio, error = _contexto(request)
+    if error:
+        return error
+
+    config = ConfiguracionCapturaCorreo.objects.filter(usuario=usuario).first()
+    config = _sanear_conexion_correo(config)
+
+    if request.method == 'GET':
+        return Response(_serializar_config_correo(config))
+
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
+    from applications.finanzas.services.captura.mail_ingest import (
+        intervalo_minimo_permitido,
+        normalizar_remitentes,
+    )
+
+    data = request.data if isinstance(request.data, dict) else {}
+    if config is None:
+        config = ConfiguracionCapturaCorreo(usuario=usuario)
+
+    if 'remitentes_banco' in data:
+        remitentes = normalizar_remitentes(data.get('remitentes_banco'))
+        if _correo_efectivamente_conectado(config) and not remitentes:
+            return Response(
+                {'error': 'Registra al menos un remitente de banco (email o @dominio).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        config.remitentes_banco = remitentes
+
+    minimo = intervalo_minimo_permitido()
+    if 'intervalo_minutos' in data:
+        try:
+            intervalo = int(data.get('intervalo_minutos'))
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'intervalo_minutos debe ser un entero.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if intervalo < minimo:
+            return Response(
+                {'error': f'intervalo_minutos mínimo permitido: {minimo}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        config.intervalo_minutos = intervalo
+
+    if 'notificaciones_activas' in data:
+        config.notificaciones_activas = bool(data.get('notificaciones_activas'))
+
+    config.save()
+    return Response(_serializar_config_correo(config))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_oauth_connect(request):
+    """Inicia OAuth Gmail u Outlook. Body: { proveedor: GMAIL|OUTLOOK }."""
+    usuario, espacio, error = _contexto(request)
+    if error:
+        return error
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
+    data = request.data if isinstance(request.data, dict) else {}
+    proveedor = (data.get('proveedor') or '').strip().upper()
+    if proveedor not in (
+        ConfiguracionCapturaCorreo.PROVEEDOR_GMAIL,
+        ConfiguracionCapturaCorreo.PROVEEDOR_OUTLOOK,
+    ):
+        return Response(
+            {'error': 'proveedor debe ser GMAIL u OUTLOOK.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    redirect_uri = _correo_redirect_uri(request, proveedor)
+    try:
+        if proveedor == ConfiguracionCapturaCorreo.PROVEEDOR_GMAIL:
+            from applications.finanzas.services.captura import oauth_google_mail as oauth
+
+            state = oauth.generar_state(usuario.id)
+            url = oauth.generar_auth_url(redirect_uri, state)
+        else:
+            from applications.finanzas.services.captura import oauth_microsoft as oauth
+
+            state = oauth.generar_state(usuario.id)
+            url = oauth.generar_auth_url(redirect_uri, state)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({'auth_url': url, 'proveedor': proveedor})
+
+
+def _oauth_callback_common(request, *, proveedor: str, oauth_mod):
+    from django.shortcuts import redirect as django_redirect
+
+    from applications.espacios.drive_usuario import encrypt_token
+    from applications.usuarios.models import Usuario
+
+    frontend_base = getattr(settings, 'FRONTEND_URL', '') or 'http://localhost:5173'
+    dest = f'{frontend_base}/configuracion/captura'
+
+    err = request.GET.get('error')
+    if err:
+        return django_redirect(f'{dest}?correo_oauth_error={err}')
+
+    code = request.GET.get('code')
+    state = request.GET.get('state', '')
+    if not code:
+        return django_redirect(f'{dest}?correo_oauth_error=no_code')
+
+    usuario_id = oauth_mod.validar_state(state)
+    if usuario_id is None:
+        return django_redirect(f'{dest}?correo_oauth_error=invalid_state')
+
+    try:
+        usuario = Usuario.objects.get(pk=usuario_id)
+    except Usuario.DoesNotExist:
+        return django_redirect(f'{dest}?correo_oauth_error=user_not_found')
+
+    redirect_uri = _correo_redirect_uri(request, proveedor)
+    try:
+        tokens = oauth_mod.intercambiar_codigo(code, redirect_uri)
+        access = tokens.get('access_token', '')
+        email = oauth_mod.obtener_email(access) if access else ''
+    except ValueError:
+        return django_redirect(f'{dest}?correo_oauth_error=token_exchange')
+
+    config, _ = ConfiguracionCapturaCorreo.objects.get_or_create(usuario=usuario)
+    config.proveedor = proveedor
+    config.email = email or config.email
+    config.refresh_token_enc = encrypt_token(tokens['refresh_token'])
+    config.conectado = True
+    config.ultimo_error = ''
+    config.save(update_fields=[
+        'proveedor', 'email', 'refresh_token_enc', 'conectado', 'ultimo_error', 'updated_at',
+    ])
+    return django_redirect(f'{dest}?correo_oauth=1')
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_oauth_callback_google(request):
+    from applications.finanzas.services.captura import oauth_google_mail as oauth
+
+    return _oauth_callback_common(
+        request,
+        proveedor=ConfiguracionCapturaCorreo.PROVEEDOR_GMAIL,
+        oauth_mod=oauth,
+    )
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_oauth_callback_microsoft(request):
+    from applications.finanzas.services.captura import oauth_microsoft as oauth
+
+    return _oauth_callback_common(
+        request,
+        proveedor=ConfiguracionCapturaCorreo.PROVEEDOR_OUTLOOK,
+        oauth_mod=oauth,
+    )
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_probar(request):
+    """Valida el token OAuth contra Gmail API / Graph."""
+    usuario, espacio, error = _contexto(request)
+    if error:
+        return error
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
+    from applications.finanzas.services.captura.mail_ingest import probar_conexion_oauth
+
+    config = ConfiguracionCapturaCorreo.objects.filter(usuario=usuario).first()
+    config = _sanear_conexion_correo(config)
+    if not _correo_efectivamente_conectado(config):
+        return Response(
+            {
+                'error': (
+                    'Conecta Gmail u Outlook con el botón OAuth antes de probar. '
+                    'Si ya aparecía “conectado”, era una sesión antigua (IMAP): vuelve a conectar.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        probar_conexion_oauth(config)
+    except Exception as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({'ok': True, 'mensaje': 'Conexión OAuth correcta.'})
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_sincronizar(request):
+    """Fuerza ingestión OAuth del correo conectado (ignora intervalo)."""
+    usuario, espacio, error = _contexto(request)
+    if error:
+        return error
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
+    from applications.finanzas.services.captura.mail_ingest import ingerir_config
+
+    config = ConfiguracionCapturaCorreo.objects.filter(usuario=usuario).first()
+    config = _sanear_conexion_correo(config)
+    if not _correo_efectivamente_conectado(config):
+        return Response(
+            {
+                'error': (
+                    'Conecta Gmail u Outlook en Configuración → Captura '
+                    'antes de buscar correos.'
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        stats = ingerir_config(config, force=True)
+    except ValueError as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as exc:
+        return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if stats is None:
+        return Response(
+            {'error': 'No se pudo sincronizar el correo.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    creados = int(stats.creados)
+    if creados == 0:
+        mensaje = 'Sin nuevos pendientes desde el correo.'
+    elif creados == 1:
+        mensaje = 'Se creó 1 pendiente desde el correo.'
+    else:
+        mensaje = f'Se crearon {creados} pendientes desde el correo.'
+
+    return Response({
+        'ok': True,
+        'creados': creados,
+        'skip_remitente': int(stats.skip_remitente),
+        'skip_parseo': int(stats.skip_parseo),
+        'errores': int(stats.errores),
+        'mensaje': mensaje,
+        'config': _serializar_config_correo(config),
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def captura_correo_desconectar(request):
+    usuario, espacio, error = _contexto(request)
+    if error:
+        return error
+    if settings.DEMO:
+        return respuesta_demo_no_disponible()
+
+    config = ConfiguracionCapturaCorreo.objects.filter(usuario=usuario).first()
+    if config is None:
+        return Response(_serializar_config_correo(None))
+
+    config.refresh_token_enc = ''
+    config.conectado = False
+    config.email = ''
+    config.ultimo_error = ''
+    config.save(update_fields=[
+        'refresh_token_enc', 'conectado', 'email', 'ultimo_error', 'updated_at',
+    ])
+    return Response(_serializar_config_correo(config))

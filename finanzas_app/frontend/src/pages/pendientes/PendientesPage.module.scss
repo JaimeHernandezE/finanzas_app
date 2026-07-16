@@ -11,6 +11,13 @@
   margin-bottom: 24px;
 }
 
+.headerActions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .title {
   margin: 0 0 6px;
   font-size: 1.5rem;
@@ -24,10 +31,35 @@
   color: #666;
 }
 
+.btnSync {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 1px solid #0f0f0f;
+  background: #0f0f0f;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.btnSync:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .linkCaptura {
   font-size: 0.85rem;
   color: #1a5fb4;
   white-space: nowrap;
+}
+
+.info {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f0f7f0;
+  color: #1a5c1a;
+  font-size: 0.9rem;
 }
 
 .empty {
@@ -82,6 +114,10 @@
   margin-top: 14px;
 }
 
+.fieldWide {
+  grid-column: 1 / -1;
+}
+
 .fields label {
   display: flex;
   flex-direction: column;
@@ -90,12 +126,23 @@
   color: #666;
 }
 
-.fields select {
+.fields select,
+.fields input {
   font-size: 0.85rem;
   padding: 6px 8px;
   border-radius: 6px;
   border: 1px solid #ccc;
   background: #fafafa;
+}
+
+.hint {
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.hint a {
+  color: #1a5fb4;
 }
 
 .actions {
@@ -137,5 +184,9 @@
 
   .header {
     flex-direction: column;
+  }
+
+  .headerActions {
+    align-items: flex-start;
   }
 }

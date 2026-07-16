@@ -23,6 +23,10 @@ from applications.finanzas.services.captura import (
     descartar_pendiente,
 )
 from applications.finanzas.services.captura.vinculo import canjear_codigo_vinculo
+from applications.usuarios.formato_moneda import (
+    codigo_moneda_usuario,
+    formatear_monto_codigo,
+)
 from applications.usuarios.models import Usuario
 
 
@@ -32,6 +36,9 @@ class BotReply:
     buttons: list[dict[str, str]] = field(default_factory=list)
     # buttons: [{id, label}]
 
+
+def _fmt_monto(usuario: Usuario, monto) -> str:
+    return formatear_monto_codigo(monto, codigo_moneda_usuario(usuario))
 
 def resolver_usuario(canal: str, chat_id: str, phone: str = '') -> Usuario | None:
     if canal == 'TELEGRAM':
@@ -92,8 +99,9 @@ def listar_pendientes_reply(usuario: Usuario, espacio: Espacio) -> BotReply:
     lines = ['Pendientes:']
     buttons: list[dict[str, str]] = []
     for p in qs:
-        lines.append(f'• #{p.id} ${p.monto} {p.comercio or "(sin comercio)"}')
-        buttons.append({'id': f'abrir:{p.id}', 'label': f'#{p.id} ${p.monto}'})
+        monto_txt = _fmt_monto(usuario, p.monto)
+        lines.append(f'• #{p.id} {monto_txt} {p.comercio or "(sin comercio)"}')
+        buttons.append({'id': f'abrir:{p.id}', 'label': f'#{p.id} {monto_txt}'})
     lines.append('Toca uno para confirmar o escribe confirmar #<id>')
     return BotReply(text='\n'.join(lines), buttons=buttons)
 
@@ -133,7 +141,7 @@ def manejar_callback(
                 mov = confirmar_pendiente(pendiente)
             except CapturaError as exc:
                 return BotReply(text=f'No pude confirmar: {exc.mensaje}')
-            return BotReply(text=f'Listo. Movimiento #{mov.id} registrado (${mov.monto}).')
+            return BotReply(text=f'Listo. Movimiento #{mov.id} registrado ({_fmt_monto(usuario, mov.monto)}).')
         return BotReply(
             text=(
                 f'Ámbito {ambito} guardado. '
@@ -150,7 +158,7 @@ def manejar_callback(
                 estado=MovimientoPendiente.ESTADO_PENDIENTE,
             )
             mov = confirmar_pendiente(pendiente)
-            return BotReply(text=f'Confirmado: movimiento #{mov.id} (${mov.monto}).')
+            return BotReply(text=f'Confirmado: movimiento #{mov.id} ({_fmt_monto(usuario, mov.monto)}).')
         except MovimientoPendiente.DoesNotExist:
             return BotReply(text='Pendiente no encontrado.')
         except CapturaError as exc:
@@ -180,7 +188,8 @@ def manejar_callback(
         except MovimientoPendiente.DoesNotExist:
             return BotReply(text='Pendiente no encontrado.')
         text = (
-            f'#{pendiente.id} ${pendiente.monto} — {pendiente.comercio or "sin comercio"}\n'
+            f'#{pendiente.id} {_fmt_monto(usuario, pendiente.monto)} — '
+            f'{pendiente.comercio or "sin comercio"}\n'
             f'Ámbito sugerido: {pendiente.ambito_sugerido or "—"}\n'
             'Elige ámbito:'
         )
@@ -286,7 +295,7 @@ def manejar_texto(
     )
     return BotReply(
         text=(
-            f'Registrado borrador #{pendiente.id}: ${pendiente.monto}'
+            f'Registrado borrador #{pendiente.id}: {_fmt_monto(usuario, pendiente.monto)}'
             f'{" — " + pendiente.comercio if pendiente.comercio else ""}.\n'
             '¿Ámbito?'
         ),
