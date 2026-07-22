@@ -33,15 +33,14 @@ def metricas_producto():
 
 
 def distribucion_gasto_por_categoria():
+    base = Movimiento.objects.filter(tipo='EGRESO', oculto=False, categoria__es_inversion=False)
+    total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
+    if total_usuarios < UMBRAL_K:
+        return []
     qs = (
-        Movimiento.objects
-        .filter(tipo='EGRESO', oculto=False, categoria__es_inversion=False)
+        base
         .values('categoria__nombre')
-        .annotate(
-            total=Sum('monto'),
-            n_usuarios=Count('usuario', distinct=True),
-        )
-        .filter(n_usuarios__gte=UMBRAL_K)
+        .annotate(total=Sum('monto'))
         .order_by('-total')
     )
     gran_total = sum(row['total'] for row in qs)
@@ -57,16 +56,11 @@ def distribucion_gasto_por_categoria():
 
 
 def uso_metodo_pago():
-    qs = (
-        Movimiento.objects
-        .filter(tipo='EGRESO', oculto=False)
-        .values('metodo_pago__tipo')
-        .annotate(
-            total=Sum('monto'),
-            n_usuarios=Count('usuario', distinct=True),
-        )
-        .filter(n_usuarios__gte=UMBRAL_K)
-    )
+    base = Movimiento.objects.filter(tipo='EGRESO', oculto=False)
+    total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
+    if total_usuarios < UMBRAL_K:
+        return {'efectivo': 0, 'debito': 0, 'credito': 0}
+    qs = base.values('metodo_pago__tipo').annotate(total=Sum('monto'))
     gran_total = sum(row['total'] for row in qs)
     if not gran_total:
         return {'efectivo': 0, 'debito': 0, 'credito': 0}
@@ -81,16 +75,15 @@ def uso_metodo_pago():
 
 def estacionalidad_gasto():
     hace_12 = date.today().replace(day=1) - relativedelta(months=11)
+    base = Movimiento.objects.filter(tipo='EGRESO', oculto=False, fecha__gte=hace_12)
+    total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
+    if total_usuarios < UMBRAL_K:
+        return []
     qs = list(
-        Movimiento.objects
-        .filter(tipo='EGRESO', oculto=False, fecha__gte=hace_12)
+        base
         .annotate(periodo=TruncMonth('fecha'))
         .values('periodo')
-        .annotate(
-            total=Sum('monto'),
-            n_usuarios=Count('usuario', distinct=True),
-        )
-        .filter(n_usuarios__gte=UMBRAL_K)
+        .annotate(total=Sum('monto'))
         .order_by('periodo')
     )
     if not qs:
@@ -110,23 +103,23 @@ def estacionalidad_gasto():
 def presupuesto_vs_real():
     hoy = date.today()
     mes_actual = hoy.replace(day=1)
-    categorias_con_presupuesto = list(
-        Presupuesto.objects
-        .filter(mes=mes_actual)
-        .values('categoria')
-        .annotate(n_usuarios=Count('usuario', distinct=True))
-        .filter(n_usuarios__gte=UMBRAL_K)
+    base_presupuesto = Presupuesto.objects.filter(mes=mes_actual)
+    total_usuarios = base_presupuesto.aggregate(n=Count('usuario', distinct=True))['n'] or 0
+    if total_usuarios < UMBRAL_K:
+        return None
+
+    cat_ids = list(
+        base_presupuesto.values_list('categoria', flat=True).distinct()
     )
-    if not categorias_con_presupuesto:
+    if not cat_ids:
         return None
 
     total_cats = 0
     excedidas = 0
-    for row in categorias_con_presupuesto:
-        cat_id = row['categoria']
+    for cat_id in cat_ids:
         presupuestado = (
-            Presupuesto.objects
-            .filter(mes=mes_actual, categoria_id=cat_id)
+            base_presupuesto
+            .filter(categoria_id=cat_id)
             .aggregate(total=Sum('monto'))['total']
         ) or 0
         gastado = (
