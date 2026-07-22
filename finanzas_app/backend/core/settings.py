@@ -51,6 +51,10 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 DEMO = _env_flag('DEMO', 'false')
 
 METRICAS_PUBLICAS_HABILITADAS = _env_flag('METRICAS_PUBLICAS_HABILITADAS', 'false')
+try:
+    METRICAS_PUBLICAS_UMBRAL_K = max(1, int(os.environ.get('METRICAS_PUBLICAS_UMBRAL_K', '10')))
+except ValueError:
+    METRICAS_PUBLICAS_UMBRAL_K = 10
 
 _allowed_hosts_raw = os.environ.get('ALLOWED_HOSTS', '').strip()
 if _allowed_hosts_raw:

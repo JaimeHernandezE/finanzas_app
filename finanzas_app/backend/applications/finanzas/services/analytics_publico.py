@@ -9,7 +9,11 @@ from applications.finanzas.models import Movimiento, Presupuesto
 
 Usuario = get_user_model()
 
-UMBRAL_K = 10
+
+def _umbral_k() -> int:
+    """Mínimo de usuarios distintos para publicar desagregaciones (anonimización)."""
+    from django.conf import settings
+    return int(getattr(settings, 'METRICAS_PUBLICAS_UMBRAL_K', 10))
 
 
 def metricas_producto():
@@ -35,7 +39,7 @@ def metricas_producto():
 def distribucion_gasto_por_categoria():
     base = Movimiento.objects.filter(tipo='EGRESO', oculto=False, categoria__es_inversion=False)
     total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
-    if total_usuarios < UMBRAL_K:
+    if total_usuarios < _umbral_k():
         return []
     qs = (
         base
@@ -58,18 +62,20 @@ def distribucion_gasto_por_categoria():
 def uso_metodo_pago():
     base = Movimiento.objects.filter(tipo='EGRESO', oculto=False)
     total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
-    if total_usuarios < UMBRAL_K:
-        return {'efectivo': 0, 'debito': 0, 'credito': 0}
+    if total_usuarios < _umbral_k():
+        return None
     qs = base.values('metodo_pago__tipo').annotate(total=Sum('monto'))
-    gran_total = sum(row['total'] for row in qs)
+    gran_total = sum(row['total'] for row in qs if row['metodo_pago__tipo'])
     if not gran_total:
-        return {'efectivo': 0, 'debito': 0, 'credito': 0}
-    resultado = {}
+        return None
+    resultado = {'efectivo': 0, 'debito': 0, 'credito': 0}
     for row in qs:
-        key = row['metodo_pago__tipo'].lower()
-        resultado[key] = round(float(row['total']) / float(gran_total) * 100, 0)
-    for k in ('efectivo', 'debito', 'credito'):
-        resultado.setdefault(k, 0)
+        tipo = row['metodo_pago__tipo']
+        if not tipo:
+            continue
+        key = tipo.lower()
+        if key in resultado:
+            resultado[key] = round(float(row['total']) / float(gran_total) * 100, 0)
     return resultado
 
 
@@ -77,7 +83,7 @@ def estacionalidad_gasto():
     hace_12 = date.today().replace(day=1) - relativedelta(months=11)
     base = Movimiento.objects.filter(tipo='EGRESO', oculto=False, fecha__gte=hace_12)
     total_usuarios = base.aggregate(n=Count('usuario', distinct=True))['n'] or 0
-    if total_usuarios < UMBRAL_K:
+    if total_usuarios < _umbral_k():
         return []
     qs = list(
         base
@@ -105,7 +111,7 @@ def presupuesto_vs_real():
     mes_actual = hoy.replace(day=1)
     base_presupuesto = Presupuesto.objects.filter(mes=mes_actual)
     total_usuarios = base_presupuesto.aggregate(n=Count('usuario', distinct=True))['n'] or 0
-    if total_usuarios < UMBRAL_K:
+    if total_usuarios < _umbral_k():
         return None
 
     cat_ids = list(

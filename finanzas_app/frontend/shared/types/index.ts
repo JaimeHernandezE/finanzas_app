@@ -51,6 +51,7 @@ export interface Tarjeta {
   banco:           string
   tipo?:           'DEBITO' | 'CREDITO'
   ultimos_4_digitos?: string
+  numero_cuenta?:  string
   es_por_defecto?: boolean
   dia_facturacion: number | null
   dia_vencimiento: number | null

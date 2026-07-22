@@ -30,6 +30,7 @@ interface Movimiento {
   comentario:       string
   categoria:        number | null
   categoria_nombre: string
+  categoria_es_inversion?: boolean
   metodo_pago_tipo: 'EFECTIVO' | 'DEBITO' | 'CREDITO'
   usuario?:         number | string
   ingreso_comun?:   number | null
@@ -69,6 +70,23 @@ function toPesos(n: unknown): number {
 
 function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
+}
+
+/** Misma regla que el resumen mensual del backend (sin crédito / ingreso_comun / inversión). */
+function ingresosEgresosDesdeMovimientos(movs: Movimiento[]): { ingresos: number; egresos: number } {
+  let ingresos = 0
+  let egresos = 0
+  for (const m of movs) {
+    if (m.metodo_pago_tipo === 'CREDITO') continue
+    if (m.tipo === 'INGRESO') {
+      if (m.ingreso_comun != null) continue
+      ingresos += toPesos(m.monto)
+    } else {
+      if (m.categoria_es_inversion) continue
+      egresos += montoAbs(m.monto)
+    }
+  }
+  return { ingresos, egresos }
 }
 
 function fechaCorta(iso: string): string {
@@ -327,9 +345,8 @@ export default function DashboardScreen() {
 
   const metricas = useMemo(() => {
     const meses = qResumenMensual.data?.meses ?? []
-    const actual = meses.find((m) => m.mes === mes + 1 && m.anio === anio)
-    const ingresos = Math.round(Number(actual?.ingresos) || 0)
-    const egresos = Math.abs(Math.round(Number(actual?.egresos) || 0))
+    // cuenta-resumen-mensual no incluye el mes en curso; se calcula desde movimientos.
+    const { ingresos, egresos } = ingresosEgresosDesdeMovimientos(movimientosCuenta)
 
     const tasaAhorro = ingresos > 0 ? Math.round(((ingresos - egresos) / ingresos) * 100) : null
 
@@ -339,10 +356,17 @@ export default function DashboardScreen() {
       let tMes = mes + 1 - i
       let tAnio = anio
       while (tMes <= 0) { tMes += 12; tAnio-- }
-      const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
-      if (!item) continue
-      const inc = Math.round(Number(item.ingresos) || 0)
-      const eg = Math.abs(Math.round(Number(item.egresos) || 0))
+      let inc: number
+      let eg: number
+      if (tMes === mes + 1 && tAnio === anio) {
+        inc = ingresos
+        eg = egresos
+      } else {
+        const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
+        if (!item) continue
+        inc = Math.round(Number(item.ingresos) || 0)
+        eg = Math.abs(Math.round(Number(item.egresos) || 0))
+      }
       if (inc <= 0) continue
       tendencia.push({
         label: MESES[tMes - 1].slice(0, 3),
@@ -359,11 +383,13 @@ export default function DashboardScreen() {
     let deltaGastoPct: number | null = null
     if (egresosAnt > 0 && egresos > 0) {
       deltaGastoPct = Math.round(((egresos - egresosAnt) / egresosAnt) * 100)
+    } else if (egresosAnt > 0 && egresos === 0) {
+      deltaGastoPct = -100
     }
     const mesAnteriorNombre = MESES[mesAntMes - 1]
 
     return { tasaAhorro, tendencia, deltaGastoPct, mesAnteriorNombre, ingresos, egresos, egresosAnt }
-  }, [qResumenMensual.data, mes, anio])
+  }, [qResumenMensual.data, movimientosCuenta, mes, anio])
 
   const metodoPago = useMemo(() => {
     const egr = movimientosCuenta.filter((m) => m.tipo === 'EGRESO')

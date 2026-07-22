@@ -1624,7 +1624,9 @@ def cuenta_resumen_mensual(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    if not _requiere_espacio_familiar(espacio):
+    # Resumen por cuenta personal: aplica en espacio familiar y personal.
+    espacio_id = _espacio_id(usuario, espacio)
+    if not espacio_id:
         return Response(
             {
                 'cuenta': {'id': cuenta.pk, 'nombre': cuenta.nombre},
@@ -1633,7 +1635,6 @@ def cuenta_resumen_mensual(request):
             }
         )
 
-    espacio_id = _espacio_id(usuario, espacio)
     meses = services_recalculo.resumen_cuenta_personal_mensual(
         espacio_id, cuenta_id
     )
@@ -3346,7 +3347,8 @@ def metricas_publicas(request):
     if not settings.METRICAS_PUBLICAS_HABILITADAS:
         return Response(status=status.HTTP_404_NOT_FOUND)
 
-    CACHE_KEY = 'metricas_publicas'
+    # v2: metodo_pago puede ser null bajo umbral k (antes devolvía ceros).
+    CACHE_KEY = 'metricas_publicas_v2'
     CACHE_TTL = 4 * 60 * 60
 
     datos = cache.get(CACHE_KEY)

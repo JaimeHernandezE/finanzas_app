@@ -158,7 +158,7 @@ export interface MetricasPublicasApi {
     meses_de_datos: number
   }
   gasto_por_categoria: { categoria: string; porcentaje: number }[]
-  metodo_pago: { efectivo: number; debito: number; credito: number }
+  metodo_pago: { efectivo: number; debito: number; credito: number } | null
   estacionalidad: { periodo: string; indice: number }[]
   presupuesto_vs_real: {
     categorias_con_presupuesto: number

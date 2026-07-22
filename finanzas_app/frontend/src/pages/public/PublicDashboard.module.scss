@@ -43,6 +43,14 @@ $border: rgba(247, 247, 245, 0.1);
   margin: 0;
 }
 
+.privacyNote {
+  font-size: 13px;
+  color: $muted;
+  margin: 8px 0 0;
+  line-height: 1.45;
+  text-align: center;
+}
+
 /* ── Product stats ────────────────────────────── */
 
 .statsRow {
