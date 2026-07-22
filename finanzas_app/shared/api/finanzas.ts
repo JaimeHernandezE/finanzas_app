@@ -150,6 +150,23 @@ export interface CuentaResumenMensualResp {
   recalculo: { pendiente: boolean; dirty_from: string | null }
 }
 
+export interface MetricasPublicasApi {
+  generado_at: string
+  producto: {
+    usuarios_activos: number
+    movimientos_totales: number
+    meses_de_datos: number
+  }
+  gasto_por_categoria: { categoria: string; porcentaje: number }[]
+  metodo_pago: { efectivo: number; debito: number; credito: number }
+  estacionalidad: { periodo: string; indice: number }[]
+  presupuesto_vs_real: {
+    categorias_con_presupuesto: number
+    categorias_excedidas: number
+    porcentaje_cumplimiento: number
+  } | null
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),

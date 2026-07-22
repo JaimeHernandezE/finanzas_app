@@ -205,4 +205,7 @@ urlpatterns = [
         views.importar_gastos_comunes_planilla,
         name='importar-gastos-comunes-planilla',
     ),
+
+    # Métricas públicas (sin autenticación)
+    path('metricas-publicas/', views.metricas_publicas, name='metricas-publicas'),
 ]
