@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { PantallaCarga } from '@/components/ui/PantallaCarga'
 import { esViteDemo } from '@/firebase'
+import PublicDashboard from './PublicDashboard'
 import styles from './LandingPage.module.scss'
 
 const ES_DEMO = esViteDemo()
@@ -118,6 +119,8 @@ export default function LandingPage() {
             </Link>
           )}
         </div>
+
+        <PublicDashboard />
 
         <div className={styles.features}>
           {FEATURES.map((f) => (

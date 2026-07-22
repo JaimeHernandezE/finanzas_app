@@ -16,7 +16,7 @@ import axios from 'axios'
 import { useMovimientos } from '../../hooks/useMovimientos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { apiErrorMessage, finanzasApi, movimientosApi } from '@finanzas/shared/api'
-import type { DashboardResumenApi, PresupuestoMesFila, PresupuestoMesResponse } from '@finanzas/shared/api/finanzas'
+import type { CuentaResumenMensualMes, DashboardResumenApi, PresupuestoMesFila, PresupuestoMesResponse } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../components/layout/MobileShell'
 import { useAuth } from '../../context/AuthContext'
 
@@ -163,6 +163,7 @@ export default function DashboardScreen() {
       queryClient.refetchQueries({ queryKey: ['cuentasPersonales'] }),
       queryClient.refetchQueries({ queryKey: ['presupuestoMes'] }),
       queryClient.refetchQueries({ queryKey: ['dashboardResumen'] }),
+      queryClient.refetchQueries({ queryKey: ['cuentaResumenMensual'] }),
     ])
   }, [queryClient])
 
@@ -207,6 +208,13 @@ export default function DashboardScreen() {
         cuenta: cuentaTab ?? undefined,
       }).then((r: { data: PresupuestoMesResponse }) => r.data),
     enabled: presupuestoQueryEnabled,
+  })
+
+  const qResumenMensual = useQuery({
+    queryKey: ['cuentaResumenMensual', cuentaTab],
+    queryFn: () =>
+      finanzasApi.getCuentaResumenMensual(cuentaTab!).then((r) => r.data),
+    enabled: cuentaTab != null,
   })
 
   // Auto-seleccionar primera cuenta
@@ -314,6 +322,66 @@ export default function DashboardScreen() {
     if (cuentaTab === null) return movimientos
     return movimientos.filter(m => m.cuenta === cuentaTab)
   }, [movimientos, cuentaTab])
+
+  // ── Métricas: tasa de ahorro, método de pago, comparativa mes anterior ──
+
+  const metricas = useMemo(() => {
+    const meses = qResumenMensual.data?.meses ?? []
+    const actual = meses.find((m) => m.mes === mes + 1 && m.anio === anio)
+    const ingresos = Math.round(Number(actual?.ingresos) || 0)
+    const egresos = Math.abs(Math.round(Number(actual?.egresos) || 0))
+
+    const tasaAhorro = ingresos > 0 ? Math.round(((ingresos - egresos) / ingresos) * 100) : null
+
+    // Mini-tendencia: últimos 6 meses de tasa de ahorro
+    const tendencia: { label: string; valor: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      let tMes = mes + 1 - i
+      let tAnio = anio
+      while (tMes <= 0) { tMes += 12; tAnio-- }
+      const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
+      if (!item) continue
+      const inc = Math.round(Number(item.ingresos) || 0)
+      const eg = Math.abs(Math.round(Number(item.egresos) || 0))
+      if (inc <= 0) continue
+      tendencia.push({
+        label: MESES[tMes - 1].slice(0, 3),
+        valor: Math.round(((inc - eg) / inc) * 100),
+      })
+    }
+
+    // Comparativa mes anterior
+    let mesAntMes = mes // mes is 0-indexed, so mes+1 is current; mes is previous
+    let mesAntAnio = anio
+    if (mes === 0) { mesAntMes = 12; mesAntAnio = anio - 1 }
+    const anterior = meses.find((m) => m.mes === mesAntMes && m.anio === mesAntAnio)
+    const egresosAnt = Math.abs(Math.round(Number(anterior?.egresos) || 0))
+    let deltaGastoPct: number | null = null
+    if (egresosAnt > 0 && egresos > 0) {
+      deltaGastoPct = Math.round(((egresos - egresosAnt) / egresosAnt) * 100)
+    }
+    const mesAnteriorNombre = MESES[mesAntMes - 1]
+
+    return { tasaAhorro, tendencia, deltaGastoPct, mesAnteriorNombre, ingresos, egresos, egresosAnt }
+  }, [qResumenMensual.data, mes, anio])
+
+  const metodoPago = useMemo(() => {
+    const egr = movimientosCuenta.filter((m) => m.tipo === 'EGRESO')
+    if (egr.length === 0) return null
+    const totales = { EFECTIVO: 0, DEBITO: 0, CREDITO: 0 }
+    for (const m of egr) {
+      const tipo = m.metodo_pago_tipo ?? 'EFECTIVO'
+      totales[tipo] = (totales[tipo] || 0) + montoAbs(m.monto)
+    }
+    const total = totales.EFECTIVO + totales.DEBITO + totales.CREDITO
+    if (total === 0) return null
+    return {
+      efectivo: Math.round((totales.EFECTIVO / total) * 100),
+      debito: Math.round((totales.DEBITO / total) * 100),
+      credito: Math.round((totales.CREDITO / total) * 100),
+      total,
+    }
+  }, [movimientosCuenta])
 
   const { ultimos } = useMemo(() => {
     const ultimos = [...movimientosCuenta]
@@ -607,6 +675,93 @@ export default function DashboardScreen() {
                 )}
               </View>
             </View>
+
+            {/* Métricas: ahorro, método de pago, comparativa */}
+            {(metricas.tasaAhorro != null || metodoPago || metricas.deltaGastoPct != null) && (
+              <View className="gap-3 mb-6">
+                <Text className="text-xs text-muted uppercase font-semibold">Indicadores del mes</Text>
+                <View className="flex-row gap-3">
+                  {/* Tasa de ahorro */}
+                  {metricas.tasaAhorro != null && (
+                    <View className="flex-1 bg-white rounded-2xl p-4">
+                      <Text className="text-[11px] text-muted mb-1">Tasa de ahorro</Text>
+                      <Text className={`text-2xl font-bold ${metricas.tasaAhorro >= 0 ? 'text-success' : 'text-danger'}`}>
+                        {metricas.tasaAhorro}%
+                      </Text>
+                      {metricas.tendencia.length >= 2 && (
+                        <View className="flex-row items-end gap-1 mt-2 h-[28px]">
+                          {metricas.tendencia.map((t, i) => {
+                            const maxVal = Math.max(...metricas.tendencia.map((x) => Math.abs(x.valor)), 1)
+                            const h = Math.max(Math.round((Math.abs(t.valor) / maxVal) * 24), 3)
+                            const esActualBarra = i === metricas.tendencia.length - 1
+                            return (
+                              <View key={`${t.label}-${i}`} className="items-center flex-1">
+                                <View
+                                  className={`w-full rounded-sm ${t.valor >= 0 ? (esActualBarra ? 'bg-success' : 'bg-success/40') : 'bg-danger/40'}`}
+                                  style={{ height: h }}
+                                />
+                                <Text className="text-[8px] text-muted mt-0.5">{t.label}</Text>
+                              </View>
+                            )
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
+                  {/* Comparativa mes anterior */}
+                  {metricas.deltaGastoPct != null && (
+                    <View className="flex-1 bg-white rounded-2xl p-4">
+                      <Text className="text-[11px] text-muted mb-1">vs {metricas.mesAnteriorNombre}</Text>
+                      <View className="flex-row items-baseline gap-1">
+                        <Text className={`text-2xl font-bold ${metricas.deltaGastoPct > 0 ? 'text-danger' : 'text-success'}`}>
+                          {metricas.deltaGastoPct > 0 ? '+' : ''}{metricas.deltaGastoPct}%
+                        </Text>
+                      </View>
+                      <Text className="text-[10px] text-muted mt-1 leading-snug">
+                        {metricas.deltaGastoPct > 0
+                          ? `Gastaste más que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                          : metricas.deltaGastoPct < 0
+                            ? `Gastaste menos que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                            : 'Mismo gasto que el mes pasado'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* Método de pago */}
+                {metodoPago && (
+                  <View className="bg-white rounded-2xl p-4">
+                    <Text className="text-[11px] text-muted mb-2">Método de pago</Text>
+                    <View className="flex-row h-3 rounded-full overflow-hidden mb-2">
+                      {metodoPago.efectivo > 0 && (
+                        <View className="bg-[#9ca3af] h-full" style={{ width: `${metodoPago.efectivo}%` }} />
+                      )}
+                      {metodoPago.debito > 0 && (
+                        <View className="bg-[#3b82f6] h-full" style={{ width: `${metodoPago.debito}%` }} />
+                      )}
+                      {metodoPago.credito > 0 && (
+                        <View className="bg-[#ef4444] h-full" style={{ width: `${metodoPago.credito}%` }} />
+                      )}
+                    </View>
+                    <View className="flex-row justify-between">
+                      <View className="flex-row items-center gap-1">
+                        <View className="w-2 h-2 rounded-full bg-[#9ca3af]" />
+                        <Text className="text-[10px] text-muted">EF {metodoPago.efectivo}%</Text>
+                      </View>
+                      <View className="flex-row items-center gap-1">
+                        <View className="w-2 h-2 rounded-full bg-[#3b82f6]" />
+                        <Text className="text-[10px] text-muted">TD {metodoPago.debito}%</Text>
+                      </View>
+                      <View className="flex-row items-center gap-1">
+                        <View className="w-2 h-2 rounded-full bg-[#ef4444]" />
+                        <Text className="text-[10px] text-muted">TC {metodoPago.credito}%</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
 
             {/* Tabs por cuenta personal */}
             {cuentasPersonales.length > 0 && (

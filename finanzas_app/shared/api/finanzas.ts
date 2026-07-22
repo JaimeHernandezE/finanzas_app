@@ -136,6 +136,37 @@ export interface AsistenteConsultaResp {
   sugerencias_seguimiento: string[]
 }
 
+export interface CuentaResumenMensualMes {
+  mes: number
+  anio: number
+  ingresos: string
+  egresos: string
+  efectivo_neto: string
+}
+
+export interface CuentaResumenMensualResp {
+  cuenta: { id: number; nombre: string }
+  meses: CuentaResumenMensualMes[]
+  recalculo: { pendiente: boolean; dirty_from: string | null }
+}
+
+export interface MetricasPublicasApi {
+  generado_at: string
+  producto: {
+    usuarios_activos: number
+    movimientos_totales: number
+    meses_de_datos: number
+  }
+  gasto_por_categoria: { categoria: string; porcentaje: number }[]
+  metodo_pago: { efectivo: number; debito: number; credito: number }
+  estacionalidad: { periodo: string; indice: number }[]
+  presupuesto_vs_real: {
+    categorias_con_presupuesto: number
+    categorias_excedidas: number
+    porcentaje_cumplimiento: number
+  } | null
+}
+
 export const finanzasApi = {
   getCuentasPersonales: () =>
     client.get<CuentaPersonalApi[]>('/api/finanzas/cuentas-personales/'),
@@ -232,6 +263,11 @@ export const finanzasApi = {
 
   marcarTodasNotificacionesLeidas: () =>
     client.post<{ marcadas: number }>('/api/finanzas/notificaciones/marcar-todas-leidas/'),
+
+  getCuentaResumenMensual: (cuenta: number) =>
+    client.get<CuentaResumenMensualResp>('/api/finanzas/cuenta-resumen-mensual/', {
+      params: { cuenta },
+    }),
 
   consultarAsistente: (mensaje: string, historial?: AsistenteHistorialItem[]) =>
     client.post<AsistenteConsultaResp>(

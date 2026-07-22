@@ -50,6 +50,8 @@ DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 # Modo demo: sin Firebase Admin en runtime; login vía JWT (demo-login) y datos ficticios.
 DEMO = _env_flag('DEMO', 'false')
 
+METRICAS_PUBLICAS_HABILITADAS = _env_flag('METRICAS_PUBLICAS_HABILITADAS', 'false')
+
 _allowed_hosts_raw = os.environ.get('ALLOWED_HOSTS', '').strip()
 if _allowed_hosts_raw:
     ALLOWED_HOSTS = [h.strip() for h in _allowed_hosts_raw.split(',') if h.strip()]

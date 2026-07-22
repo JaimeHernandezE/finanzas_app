@@ -3335,3 +3335,37 @@ def _reparar_fila_colapsada_sueldos(fila):
         'Descripción': descripcion_v,
         'ID entrada': id_entrada_v,
     }
+
+
+# ── Métricas públicas (sin autenticación) ──────────────────────────────────
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def metricas_publicas(request):
+    if not settings.METRICAS_PUBLICAS_HABILITADAS:
+        return Response(status=status.HTTP_404_NOT_FOUND)
+
+    CACHE_KEY = 'metricas_publicas'
+    CACHE_TTL = 4 * 60 * 60
+
+    datos = cache.get(CACHE_KEY)
+    if datos is None:
+        from .services.analytics_publico import (
+            metricas_producto,
+            distribucion_gasto_por_categoria,
+            uso_metodo_pago,
+            estacionalidad_gasto,
+            presupuesto_vs_real,
+        )
+        datos = {
+            'generado_at': timezone.now().isoformat(),
+            'producto': metricas_producto(),
+            'gasto_por_categoria': distribucion_gasto_por_categoria(),
+            'metodo_pago': uso_metodo_pago(),
+            'estacionalidad': estacionalidad_gasto(),
+            'presupuesto_vs_real': presupuesto_vs_real(),
+        }
+        cache.set(CACHE_KEY, datos, CACHE_TTL)
+
+    return Response(datos)

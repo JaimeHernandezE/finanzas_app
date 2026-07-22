@@ -1,0 +1,270 @@
+$dark: #0f0f0f;
+$accent: #c8f060;
+$text: #f7f7f5;
+$muted: rgba(247, 247, 245, 0.5);
+$border: rgba(247, 247, 245, 0.1);
+
+.root {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 40px 60px;
+}
+
+.heading {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.label {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: $accent;
+  background: rgba(200, 240, 96, 0.1);
+  border: 1px solid rgba(200, 240, 96, 0.2);
+  padding: 4px 14px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
+  margin-bottom: 12px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 800;
+  color: $text;
+  margin: 0 0 6px;
+  letter-spacing: -0.5px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: $muted;
+  margin: 0;
+}
+
+/* ── Product stats ────────────────────────────── */
+
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+
+  @media (max-width: 480px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.statCard {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $border;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.statValue {
+  font-size: 32px;
+  font-weight: 800;
+  color: $accent;
+  letter-spacing: -1px;
+  margin: 0 0 4px;
+}
+
+.statLabel {
+  font-size: 13px;
+  color: $muted;
+  margin: 0;
+}
+
+/* ── Charts grid ──────────────────────────────── */
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid $border;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: $text;
+  margin: 0 0 16px;
+}
+
+/* ── Horizontal bars (gasto por categoria) ───── */
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.barLabel {
+  font-size: 12px;
+  color: $muted;
+  width: 110px;
+  flex-shrink: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  flex: 1;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  background: $accent;
+  border-radius: 4px;
+  transition: width 0.6s ease;
+}
+
+.barPct {
+  font-size: 12px;
+  font-weight: 600;
+  color: $text;
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Stacked bar (metodo de pago) ────────────── */
+
+.stackedBarWrap {
+  margin-bottom: 14px;
+}
+
+.stackedBar {
+  display: flex;
+  height: 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  gap: 2px;
+}
+
+.stackedSeg {
+  height: 100%;
+  transition: width 0.6s ease;
+}
+
+.legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: $muted;
+}
+
+.legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Vertical bars (estacionalidad) ──────────── */
+
+.vertBars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 100px;
+}
+
+.vertCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vertBar {
+  width: 100%;
+  max-width: 28px;
+  background: $accent;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.6s ease;
+}
+
+.vertLabel {
+  font-size: 9px;
+  color: $muted;
+  white-space: nowrap;
+}
+
+/* ── Ring gauge (presupuesto) ────────────────── */
+
+.ringWrap {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.ring {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ringInner {
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #181818;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ringPct {
+  font-size: 18px;
+  font-weight: 800;
+  color: $accent;
+}
+
+.ringMeta {
+  font-size: 13px;
+  color: $muted;
+  line-height: 1.6;
+}
+
+.ringMetaNum {
+  color: $text;
+  font-weight: 600;
+}
