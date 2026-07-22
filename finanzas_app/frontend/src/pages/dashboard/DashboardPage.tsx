@@ -656,6 +656,15 @@ export default function DashboardPage() {
       setCuentaTab(cuentasPropias[0].id)
     }
   }, [cuentasPropias, cuentaTab])
+  const { data: resumenMensualData } = useApi<{
+    cuenta: { id: number; nombre: string }
+    meses: { mes: number; anio: number; ingresos: string; egresos: string; efectivo_neto: string }[]
+    recalculo: { pendiente: boolean; dirty_from: string | null }
+  }>(
+    () => finanzasApi.getCuentaResumenMensual(cuentaTab!),
+    [cuentaTab, mes, anio],
+  )
+
   const { data: presupuestoMesApi, loading: loadingPresupuesto, error: errorPresupuesto } = useApi<PresupuestoMesResponse>(
     () =>
       finanzasApi.getPresupuestoMes({
@@ -913,6 +922,61 @@ export default function DashboardPage() {
     return movimientos.filter(m => m.cuenta === cuentaTab)
   }, [movimientos, cuentaTab])
 
+  const metricas = useMemo(() => {
+    const meses = resumenMensualData?.meses ?? []
+    const actual = meses.find((m) => m.mes === mes + 1 && m.anio === anio)
+    const ingresos = Math.round(Number(actual?.ingresos) || 0)
+    const egresos = Math.abs(Math.round(Number(actual?.egresos) || 0))
+
+    const tasaAhorro = ingresos > 0 ? Math.round(((ingresos - egresos) / ingresos) * 100) : null
+
+    const tendencia: { label: string; valor: number }[] = []
+    for (let i = 5; i >= 0; i--) {
+      let tMes = mes + 1 - i
+      let tAnio = anio
+      while (tMes <= 0) { tMes += 12; tAnio-- }
+      const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
+      if (!item) continue
+      const inc = Math.round(Number(item.ingresos) || 0)
+      const eg = Math.abs(Math.round(Number(item.egresos) || 0))
+      if (inc <= 0) continue
+      tendencia.push({
+        label: MESES[tMes - 1].slice(0, 3),
+        valor: Math.round(((inc - eg) / inc) * 100),
+      })
+    }
+
+    let mesAntMes = mes
+    let mesAntAnio = anio
+    if (mes === 0) { mesAntMes = 12; mesAntAnio = anio - 1 }
+    const anterior = meses.find((m) => m.mes === mesAntMes && m.anio === mesAntAnio)
+    const egresosAnt = Math.abs(Math.round(Number(anterior?.egresos) || 0))
+    let deltaGastoPct: number | null = null
+    if (egresosAnt > 0 && egresos > 0) {
+      deltaGastoPct = Math.round(((egresos - egresosAnt) / egresosAnt) * 100)
+    }
+    const mesAnteriorNombre = MESES[mesAntMes - 1]
+
+    return { tasaAhorro, tendencia, deltaGastoPct, mesAnteriorNombre }
+  }, [resumenMensualData, mes, anio])
+
+  const metodoPago = useMemo(() => {
+    const egr = movimientosCuentaSeleccionada.filter((m) => m.tipo === 'EGRESO')
+    if (egr.length === 0) return null
+    const totales = { EFECTIVO: 0, DEBITO: 0, CREDITO: 0 }
+    for (const m of egr) {
+      const tipo = m.metodo_pago_tipo ?? 'EFECTIVO'
+      totales[tipo] = (totales[tipo] || 0) + montoAbs(m.monto)
+    }
+    const total = totales.EFECTIVO + totales.DEBITO + totales.CREDITO
+    if (total === 0) return null
+    return {
+      efectivo: Math.round((totales.EFECTIVO / total) * 100),
+      debito: Math.round((totales.DEBITO / total) * 100),
+      credito: Math.round((totales.CREDITO / total) * 100),
+    }
+  }, [movimientosCuentaSeleccionada])
+
   const categoriasComparadas = useMemo(() => {
     const data = presupuestoData ?? []
     const nombrePorId = new Map(data.map(f => [f.categoria_id, f.categoria_nombre || '']))
@@ -1062,6 +1126,100 @@ export default function DashboardPage() {
               {c.nombre}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* ── Indicadores del mes ── */}
+      {(metricas.tasaAhorro != null || metodoPago || metricas.deltaGastoPct != null) && (
+        <div className={styles.indicadores}>
+          <span className={styles.indicadoresLabel}>Indicadores del mes</span>
+          <div className={styles.indicadoresRow}>
+            {metricas.tasaAhorro != null && (
+              <div className={styles.indicadorCard}>
+                <span className={styles.indicadorTitulo}>Tasa de ahorro</span>
+                <span
+                  className={styles.indicadorValor}
+                  style={{ color: metricas.tasaAhorro >= 0 ? '#16a34a' : '#dc2626' }}
+                >
+                  {metricas.tasaAhorro}%
+                </span>
+                {metricas.tendencia.length >= 2 && (
+                  <div className={styles.sparkRow}>
+                    {metricas.tendencia.map((t, i) => {
+                      const maxVal = Math.max(...metricas.tendencia.map((x) => Math.abs(x.valor)), 1)
+                      const h = Math.max(Math.round((Math.abs(t.valor) / maxVal) * 24), 3)
+                      const esUltima = i === metricas.tendencia.length - 1
+                      return (
+                        <div key={`${t.label}-${i}`} className={styles.sparkCol}>
+                          <div
+                            className={styles.sparkBar}
+                            style={{
+                              height: h,
+                              background:
+                                t.valor >= 0
+                                  ? esUltima ? '#16a34a' : 'rgba(22,163,74,0.35)'
+                                  : 'rgba(220,38,38,0.35)',
+                            }}
+                          />
+                          <span className={styles.sparkLabel}>{t.label}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {metricas.deltaGastoPct != null && (
+              <div className={styles.indicadorCard}>
+                <span className={styles.indicadorTitulo}>vs {metricas.mesAnteriorNombre}</span>
+                <span
+                  className={styles.indicadorValor}
+                  style={{ color: metricas.deltaGastoPct > 0 ? '#dc2626' : '#16a34a' }}
+                >
+                  {metricas.deltaGastoPct > 0 ? '+' : ''}{metricas.deltaGastoPct}%
+                </span>
+                <span className={styles.indicadorHint}>
+                  {metricas.deltaGastoPct > 0
+                    ? `Gastaste más que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                    : metricas.deltaGastoPct < 0
+                      ? `Gastaste menos que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                      : 'Mismo gasto que el mes pasado'}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {metodoPago && (
+            <div className={styles.indicadorCard}>
+              <span className={styles.indicadorTitulo}>Método de pago</span>
+              <div className={styles.stackedBar}>
+                {metodoPago.efectivo > 0 && (
+                  <div className={styles.stackedSeg} style={{ width: `${metodoPago.efectivo}%`, background: '#9ca3af' }} />
+                )}
+                {metodoPago.debito > 0 && (
+                  <div className={styles.stackedSeg} style={{ width: `${metodoPago.debito}%`, background: '#3b82f6' }} />
+                )}
+                {metodoPago.credito > 0 && (
+                  <div className={styles.stackedSeg} style={{ width: `${metodoPago.credito}%`, background: '#ef4444' }} />
+                )}
+              </div>
+              <div className={styles.mpLegend}>
+                <span className={styles.mpLegendItem}>
+                  <span className={styles.mpDot} style={{ background: '#9ca3af' }} />
+                  EF {metodoPago.efectivo}%
+                </span>
+                <span className={styles.mpLegendItem}>
+                  <span className={styles.mpDot} style={{ background: '#3b82f6' }} />
+                  TD {metodoPago.debito}%
+                </span>
+                <span className={styles.mpLegendItem}>
+                  <span className={styles.mpDot} style={{ background: '#ef4444' }} />
+                  TC {metodoPago.credito}%
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
