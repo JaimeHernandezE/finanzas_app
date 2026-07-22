@@ -660,8 +660,10 @@ export default function DashboardPage() {
     cuenta: { id: number; nombre: string }
     meses: { mes: number; anio: number; ingresos: string; egresos: string; efectivo_neto: string }[]
     recalculo: { pendiente: boolean; dirty_from: string | null }
-  }>(
-    () => finanzasApi.getCuentaResumenMensual(cuentaTab!),
+  } | null>(
+    () => cuentaTab != null
+      ? finanzasApi.getCuentaResumenMensual(cuentaTab)
+      : Promise.resolve({ data: null }),
     [cuentaTab, mes, anio],
   )
 
