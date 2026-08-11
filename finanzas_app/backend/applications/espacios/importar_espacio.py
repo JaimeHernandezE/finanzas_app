@@ -2,10 +2,12 @@
 Fase 5 V1 — Import lógico por espacio.
 
 Restaura datos desde un dict (generado por exportar_espacio) a un espacio
-destino. Crea nuevas filas con IDs nuevos, remapeando FKs internas.
+destino. Vacía primero los datos del espacio (como promete la UI) y crea
+filas nuevas remapeando FKs internas.
 
-MetodoPago se resuelve por nombre (catálogo global). Tarjetas y cuentas
-personales se crean nuevas para el usuario importador.
+MetodoPago se resuelve por nombre (catálogo global). Categorías globales se
+resuelven por nombre+tipo (no se duplican). Tarjetas y cuentas se reutilizan
+por (usuario, nombre) cuando ya existen.
 """
 
 from __future__ import annotations
@@ -17,13 +19,18 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from applications.finanzas.models import (
+    CambioCompensacionMensual,
     Categoria,
     CuentaPersonal,
     Cuota,
     IngresoComun,
+    LiquidacionComunMensualSnapshot,
     MetodoPago,
     Movimiento,
+    MovimientoPendiente,
     Presupuesto,
+    ResumenHistoricoMesSnapshot,
+    SaldoMensualSnapshot,
     Tarjeta,
 )
 from applications.inversiones.models import Aporte, Fondo, RegistroValor
@@ -89,6 +96,37 @@ def validar_formato(data: dict):
         raise ImportError('El archivo no contiene la sección "datos".')
 
 
+def vaciar_datos_espacio(espacio) -> None:
+    """Elimina datos lógicos del espacio antes de restaurar un respaldo."""
+    mov_ids = list(
+        Movimiento.objects.filter(espacio=espacio).values_list('pk', flat=True)
+    )
+    if mov_ids:
+        Cuota.objects.filter(movimiento_id__in=mov_ids).delete()
+    Movimiento.objects.filter(espacio=espacio).delete()
+    IngresoComun.objects.filter(espacio=espacio).delete()
+    Presupuesto.objects.filter(espacio=espacio).delete()
+
+    viaje_ids = list(Viaje.objects.filter(espacio=espacio).values_list('pk', flat=True))
+    if viaje_ids:
+        PresupuestoViaje.objects.filter(viaje_id__in=viaje_ids).delete()
+    Viaje.objects.filter(espacio=espacio).delete()
+
+    fondo_ids = list(Fondo.objects.filter(espacio=espacio).values_list('pk', flat=True))
+    if fondo_ids:
+        Aporte.objects.filter(fondo_id__in=fondo_ids).delete()
+        RegistroValor.objects.filter(fondo_id__in=fondo_ids).delete()
+    Fondo.objects.filter(espacio=espacio).delete()
+
+    SaldoMensualSnapshot.objects.filter(espacio=espacio).delete()
+    LiquidacionComunMensualSnapshot.objects.filter(espacio=espacio).delete()
+    ResumenHistoricoMesSnapshot.objects.filter(espacio=espacio).delete()
+    CambioCompensacionMensual.objects.filter(espacio=espacio).delete()
+    MovimientoPendiente.objects.filter(espacio=espacio).delete()
+
+    Categoria.objects.filter(espacio=espacio).delete()
+
+
 @transaction.atomic
 def importar_espacio(data: dict, espacio, usuario) -> dict:
     """
@@ -104,6 +142,8 @@ def importar_espacio(data: dict, espacio, usuario) -> dict:
     """
     validar_formato(data)
     datos = data['datos']
+
+    vaciar_datos_espacio(espacio)
 
     usuario_cache = {}
     conteos = {}
@@ -192,17 +232,34 @@ def _importar_tarjetas(rows, espacio, usuario, usuario_cache):
     for row in rows:
         old_id = row['_id']
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
-        tarjeta = Tarjeta.objects.create(
-            usuario=u,
-            nombre=row['nombre'],
-            banco=row.get('banco', ''),
-            tipo=row.get('tipo') or Tarjeta.TIPO_CREDITO,
-            ultimos_4_digitos=row.get('ultimos_4_digitos') or '',
-            numero_cuenta=row.get('numero_cuenta') or '',
-            es_por_defecto=bool(row.get('es_por_defecto')),
-            dia_facturacion=row.get('dia_facturacion'),
-            dia_vencimiento=row.get('dia_vencimiento'),
-        )
+        tarjeta = Tarjeta.objects.filter(usuario=u, nombre=row['nombre']).first()
+        if tarjeta is None:
+            tarjeta = Tarjeta.objects.create(
+                usuario=u,
+                nombre=row['nombre'],
+                banco=row.get('banco', ''),
+                tipo=row.get('tipo') or Tarjeta.TIPO_CREDITO,
+                ultimos_4_digitos=row.get('ultimos_4_digitos') or '',
+                numero_cuenta=row.get('numero_cuenta') or '',
+                es_por_defecto=bool(row.get('es_por_defecto')),
+                dia_facturacion=row.get('dia_facturacion'),
+                dia_vencimiento=row.get('dia_vencimiento'),
+            )
+        else:
+            update_fields = []
+            for field, val in (
+                ('banco', row.get('banco', tarjeta.banco)),
+                ('tipo', row.get('tipo') or tarjeta.tipo),
+                ('ultimos_4_digitos', row.get('ultimos_4_digitos') or tarjeta.ultimos_4_digitos),
+                ('numero_cuenta', row.get('numero_cuenta') or tarjeta.numero_cuenta),
+                ('dia_facturacion', row.get('dia_facturacion')),
+                ('dia_vencimiento', row.get('dia_vencimiento')),
+            ):
+                if getattr(tarjeta, field) != val:
+                    setattr(tarjeta, field, val)
+                    update_fields.append(field)
+            if update_fields:
+                tarjeta.save(update_fields=update_fields)
         mapa[old_id] = tarjeta.pk
     return mapa
 
@@ -212,12 +269,26 @@ def _importar_cuentas(rows, espacio, usuario, usuario_cache):
     for row in rows:
         old_id = row['_id']
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
-        cuenta = CuentaPersonal.objects.create(
-            usuario=u,
-            nombre=row['nombre'],
-            descripcion=row.get('descripcion', ''),
-            visible_familia=row.get('visible_familia', False),
-        )
+        cuenta = CuentaPersonal.objects.filter(usuario=u, nombre=row['nombre']).first()
+        if cuenta is None:
+            cuenta = CuentaPersonal.objects.create(
+                usuario=u,
+                nombre=row['nombre'],
+                descripcion=row.get('descripcion', ''),
+                visible_familia=row.get('visible_familia', False),
+            )
+        else:
+            update_fields = []
+            desc = row.get('descripcion', cuenta.descripcion)
+            vis = row.get('visible_familia', cuenta.visible_familia)
+            if cuenta.descripcion != desc:
+                cuenta.descripcion = desc
+                update_fields.append('descripcion')
+            if cuenta.visible_familia != vis:
+                cuenta.visible_familia = vis
+                update_fields.append('visible_familia')
+            if update_fields:
+                cuenta.save(update_fields=update_fields)
         mapa[old_id] = cuenta.pk
     return mapa
 
@@ -259,6 +330,21 @@ def _importar_categorias(rows, espacio, usuario, usuario_cache, map_cuenta):
     mapa = {}
     for row in parents_first:
         old_id = row['_id']
+        # Categorías globales del sistema: reutilizar, no clonar al espacio.
+        if row.get('es_global'):
+            cat = Categoria.objects.filter(
+                espacio__isnull=True,
+                nombre=row['nombre'],
+                tipo=row['tipo'],
+            ).first()
+            if cat is None:
+                raise ImportError(
+                    f'Categoría global no encontrada en destino: '
+                    f'{row["nombre"]} ({row["tipo"]}).'
+                )
+            mapa[old_id] = cat.pk
+            continue
+
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
         padre_id = row.get('categoria_padre_id')
         cuenta_id = row.get('cuenta_personal_id')
@@ -275,6 +361,15 @@ def _importar_categorias(rows, espacio, usuario, usuario_cache, map_cuenta):
     return mapa
 
 
+def _require_map(mapa, old_id, etiqueta):
+    if old_id is None:
+        return None
+    new_id = mapa.get(old_id)
+    if new_id is None:
+        raise ImportError(f'{etiqueta} no remapeada (id origen {old_id}).')
+    return new_id
+
+
 def _importar_movimientos(
     rows, espacio, usuario, usuario_cache,
     map_cat, map_metodo, map_tarjeta, map_viaje, map_cuenta,
@@ -286,15 +381,40 @@ def _importar_movimientos(
 
         cat_id = map_cat.get(row['categoria_id'])
         if cat_id is None:
-            cat_id = row['categoria_id']
+            # Exports antiguos sin categorías globales embebidas.
+            existente = Categoria.objects.filter(
+                pk=row['categoria_id'], espacio__isnull=True,
+            ).first()
+            if existente is None:
+                raise ImportError(
+                    f'Categoría no remapeada (id origen {row["categoria_id"]}).'
+                )
+            cat_id = existente.pk
 
         metodo_id = map_metodo.get(row['metodo_pago_id'])
         if metodo_id is None:
-            metodo_id = row['metodo_pago_id']
+            existente_m = MetodoPago.objects.filter(pk=row['metodo_pago_id']).first()
+            if existente_m is None:
+                raise ImportError(
+                    f'Método de pago no remapeado (id origen {row["metodo_pago_id"]}).'
+                )
+            metodo_id = existente_m.pk
 
-        tarjeta_id = map_tarjeta.get(row.get('tarjeta_id')) if row.get('tarjeta_id') else None
-        viaje_id = map_viaje.get(row.get('viaje_id')) if row.get('viaje_id') else None
-        cuenta_id = map_cuenta.get(row.get('cuenta_id')) if row.get('cuenta_id') else None
+        tarjeta_id = (
+            _require_map(map_tarjeta, row.get('tarjeta_id'), 'Tarjeta')
+            if row.get('tarjeta_id')
+            else None
+        )
+        viaje_id = (
+            _require_map(map_viaje, row.get('viaje_id'), 'Viaje')
+            if row.get('viaje_id')
+            else None
+        )
+        cuenta_id = (
+            _require_map(map_cuenta, row.get('cuenta_id'), 'Cuenta')
+            if row.get('cuenta_id')
+            else None
+        )
 
         mov = Movimiento(
             espacio=espacio,
@@ -361,9 +481,7 @@ def _importar_presupuestos(rows, espacio, usuario, usuario_cache, map_cat):
     count = 0
     for row in rows:
         u = _resolver_usuario(row.get('usuario_email'), espacio, usuario, usuario_cache)
-        cat_id = map_cat.get(row['categoria_id'])
-        if cat_id is None:
-            cat_id = row['categoria_id']
+        cat_id = _require_map(map_cat, row['categoria_id'], 'Categoría de presupuesto')
         Presupuesto.objects.create(
             espacio=espacio,
             usuario=u,
@@ -381,9 +499,7 @@ def _importar_presupuestos_viaje(rows, map_viaje, map_cat):
         viaje_id = map_viaje.get(row['viaje_id'])
         if viaje_id is None:
             continue
-        cat_id = map_cat.get(row['categoria_id'])
-        if cat_id is None:
-            cat_id = row['categoria_id']
+        cat_id = _require_map(map_cat, row['categoria_id'], 'Categoría de presupuesto de viaje')
         PresupuestoViaje.objects.create(
             viaje_id=viaje_id,
             categoria_id=cat_id,

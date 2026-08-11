@@ -66,6 +66,7 @@ def _ser_categoria(cat):
         'nombre': cat.nombre,
         'tipo': cat.tipo,
         'es_inversion': cat.es_inversion,
+        'es_global': cat.espacio_id is None,
         'usuario_email': cat.usuario.email if cat.usuario_id else None,
         'cuenta_personal_id': cat.cuenta_personal_id,
         'categoria_padre_id': cat.categoria_padre_id,
@@ -179,7 +180,7 @@ def _ser_presupuesto_viaje(pv):
 def exportar_espacio(espacio) -> dict:
     """Exporta todos los datos de un espacio a un dict JSON-serializable."""
 
-    categorias = list(
+    categorias_espacio = list(
         Categoria.objects.filter(espacio=espacio)
         .select_related('usuario')
     )
@@ -208,6 +209,15 @@ def exportar_espacio(espacio) -> dict:
     viaje_ids = [v.pk for v in viajes]
     presupuestos_viaje = list(
         PresupuestoViaje.objects.filter(viaje_id__in=viaje_ids)
+    )
+
+    # Incluir categorías globales referenciadas (no se clonan al importar).
+    cat_ids = {c.pk for c in categorias_espacio}
+    cat_ids |= {m.categoria_id for m in movimientos if m.categoria_id}
+    cat_ids |= {p.categoria_id for p in presupuestos if p.categoria_id}
+    cat_ids |= {pv.categoria_id for pv in presupuestos_viaje if pv.categoria_id}
+    categorias = list(
+        Categoria.objects.filter(pk__in=cat_ids).select_related('usuario')
     )
 
     tarjeta_ids = {m.tarjeta_id for m in movimientos if m.tarjeta_id}

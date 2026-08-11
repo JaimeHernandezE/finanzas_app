@@ -749,8 +749,8 @@ export default function ConfiguracionPage() {
             <h3 className={styles.accionTitulo}>Recálculo histórico mensual</h3>
             <p className={styles.accionTexto}>
               Actualiza liquidación común, saldos por cuenta de la familia, snapshots del resumen familiar
-              por mes, vuelve a generar los saldos mensuales de tus cuentas personales y repara cuotas de tarjeta
-              para corregir posibles inconsistencias.
+              por mes y repara cuotas de tarjeta. Solo procesa meses con actividad; con mucho historial
+              puede tardar uno o dos minutos.
             </p>
           </div>
           <button
@@ -759,7 +759,7 @@ export default function ConfiguracionPage() {
             onClick={ejecutarRecalculoHistorico}
             disabled={recalculando}
           >
-            {recalculando ? 'Recalculando...' : 'Recalcular histórico'}
+            {recalculando ? 'Recalculando… (puede demorar)' : 'Recalcular histórico'}
           </button>
         </div>
         {msgRecalculo ? <p className={styles.msgOk}>{msgRecalculo}</p> : null}

@@ -2015,13 +2015,14 @@ def recalculo_historico(request):
             suprimir_notificaciones=True,
         )
     ):
-        services_recalculo.recalcular_familia_desde(espacio_id, mes_inicio)
+        meses_recalculados = services_recalculo.recalcular_familia_desde(
+            espacio_id, mes_inicio
+        )
         meses_resumen_familia = services_recalculo.backfill_resumen_historico_snapshots(
             espacio_id
         )
-    meses_saldos_usuario = services_recalculo.backfill_saldos_personales_usuario(
-        usuario.pk, espacio_id
-    )
+    # Los saldos personales ya se recalcularon en recalcular_familia_desde para todos
+    # los miembros; no repetir backfill_saldos_personales_usuario (era el doble de trabajo).
     reparacion_cuotas = services_recalculo.reparar_cuotas_credito_familia(espacio_id)
     return Response(
         {
@@ -2029,8 +2030,9 @@ def recalculo_historico(request):
             'procesado': True,
             'desde': mes_inicio.isoformat(),
             'hasta': services_recalculo.primer_dia_mes(timezone.localdate()).isoformat(),
+            'meses_recalculados': meses_recalculados,
             'meses_resumen_historico_familia': meses_resumen_familia,
-            'meses_saldos_personales_usuario': meses_saldos_usuario,
+            'meses_saldos_personales_usuario': meses_recalculados,
             'cuotas_reparadas': reparacion_cuotas,
         }
     )

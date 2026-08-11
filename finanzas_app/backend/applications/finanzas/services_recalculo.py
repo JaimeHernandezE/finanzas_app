@@ -210,30 +210,62 @@ def _efectivo_neto_personal_qs(qs):
     - Egresos: solo gastos corrientes de la cuenta (excluye categorías marcadas como inversión/patrimonio).
     Retorna (efectivo_neto, n_movimientos, ingresos_sum, egresos_sum); egresos como suma positiva.
     """
-    ingresos = Decimal('0')
-    egresos = Decimal('0')
-    n = 0
-    qs = qs.select_related('metodo_pago', 'categoria').annotate(
-        _tiene_ingreso_comun=Exists(
-            IngresoComun.objects.filter(movimiento_id=OuterRef('pk'))
+    base = qs.exclude(metodo_pago__tipo='CREDITO')
+    ing_qs = (
+        base.filter(tipo='INGRESO')
+        .annotate(
+            _tiene_ingreso_comun=Exists(
+                IngresoComun.objects.filter(movimiento_id=OuterRef('pk'))
+            )
         )
+        .filter(_tiene_ingreso_comun=False)
+        .exclude(categoria__nombre=CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN)
     )
-    for m in qs:
-        if m.metodo_pago.tipo == 'CREDITO':
-            continue
-        amt = Decimal(m.monto)
-        if m.tipo == 'INGRESO':
-            if m._tiene_ingreso_comun:
-                continue
-            if m.categoria.nombre == CATEGORIA_INGRESO_DECLARADO_FONDO_COMUN:
-                continue
-            ingresos += amt
-        else:
-            if m.categoria.es_inversion:
-                continue
-            egresos += amt
-        n += 1
+    egr_qs = base.filter(tipo='EGRESO').exclude(categoria__es_inversion=True)
+    ing_agg = ing_qs.aggregate(t=Sum('monto'), n=Count('id'))
+    egr_agg = egr_qs.aggregate(t=Sum('monto'), n=Count('id'))
+    ingresos = ing_agg['t'] if ing_agg['t'] is not None else Decimal('0')
+    egresos = egr_agg['t'] if egr_agg['t'] is not None else Decimal('0')
+    n = int(ing_agg['n'] or 0) + int(egr_agg['n'] or 0)
     return ingresos - egresos, n, ingresos, egresos
+
+
+def _meses_con_actividad_espacio(espacio_id: int, desde: date, hasta: date) -> list[date]:
+    """Meses (día 1) con movimientos, ingresos comunes o cuotas facturadas en el rango."""
+    desde = primer_dia_mes(desde)
+    hasta = primer_dia_mes(hasta)
+    if desde > hasta:
+        return []
+    fin_rango = hasta + relativedelta(months=1)
+    meses: set[date] = set()
+    for d in (
+        Movimiento.objects.filter(
+            espacio_id=espacio_id,
+            fecha__gte=desde,
+            fecha__lt=fin_rango,
+        )
+        .dates('fecha', 'month')
+    ):
+        meses.add(primer_dia_mes(d))
+    for d in (
+        IngresoComun.objects.filter(
+            espacio_id=espacio_id,
+            mes__gte=desde,
+            mes__lte=hasta,
+        )
+        .dates('mes', 'month')
+    ):
+        meses.add(primer_dia_mes(d))
+    for d in (
+        Cuota.objects.filter(
+            movimiento__espacio_id=espacio_id,
+            mes_facturacion__gte=desde,
+            mes_facturacion__lt=fin_rango,
+        )
+        .dates('mes_facturacion', 'month')
+    ):
+        meses.add(primer_dia_mes(d))
+    return sorted(m for m in meses if desde <= m <= hasta)
 
 
 def recalcular_mes_liquidacion_comun(espacio_id: int, mes_primer_dia: date) -> None:
@@ -390,14 +422,21 @@ def backfill_saldos_personales_usuario(usuario_id: int, espacio_id: int) -> int:
     return n
 
 
-def recalcular_familia_desde(espacio_id: int, mes_inicio: date) -> None:
-    """Recalcula snapshots desde mes_inicio (inclusive) hasta el mes actual."""
+def recalcular_familia_desde(espacio_id: int, mes_inicio: date) -> int:
+    """
+    Recalcula snapshots desde mes_inicio (inclusive) hasta el mes actual.
+    Solo procesa meses con actividad (movimientos, ingresos o cuotas).
+    Retorna cantidad de meses recalculados.
+    """
     mes_inicio = primer_dia_mes(mes_inicio)
     hoy = timezone.localdate()
     fin = primer_dia_mes(hoy)
-    for mes in meses_desde_hasta(mes_inicio, fin):
+    n = 0
+    for mes in _meses_con_actividad_espacio(espacio_id, mes_inicio, fin):
         recalcular_mes_liquidacion_comun(espacio_id, mes)
         recalcular_mes_saldos_personales_familia(espacio_id, mes)
+        n += 1
+    return n
 
 
 def recalcular_familia_meses(espacio_id: int, meses: Iterable[date]) -> None:
@@ -611,17 +650,13 @@ def _total_comun_neto_familia_mes(espacio_id: int, mes_pd: date) -> Decimal:
     return ing - egr
 
 
-def _gasto_comun_registrado_usuario_mes(
-    usuario_id: int, espacio_id: int, mes_pd: date
-) -> Decimal:
-    """
-    Total positivo de gastos comunes registrados en el mes (misma base que GET liquidación).
-    Egresos efectivo/débito + cuotas de crédito pendientes facturadas en el mes.
-    """
-    egr = (
+def _gastos_comunes_por_usuario_mes(espacio_id: int, mes_pd: date) -> dict[int, Decimal]:
+    """Totales de gastos comunes por usuario en el mes (efectivo/débito + cuotas pendientes)."""
+    z = Decimal('0')
+    out: dict[int, Decimal] = {}
+    egr_rows = (
         Movimiento.objects.filter(
             espacio_id=espacio_id,
-            usuario_id=usuario_id,
             ambito='COMUN',
             tipo='EGRESO',
             oculto=False,
@@ -629,12 +664,14 @@ def _gasto_comun_registrado_usuario_mes(
             fecha__month=mes_pd.month,
         )
         .exclude(metodo_pago__tipo='CREDITO')
-        .aggregate(t=Sum('monto'))['t']
+        .values('usuario_id')
+        .annotate(t=Sum('monto'))
     )
-    cuotas = (
+    for row in egr_rows:
+        out[row['usuario_id']] = row['t'] or z
+    cuota_rows = (
         Cuota.objects.filter(
             movimiento__espacio_id=espacio_id,
-            movimiento__usuario_id=usuario_id,
             movimiento__ambito='COMUN',
             movimiento__tipo='EGRESO',
             movimiento__oculto=False,
@@ -644,10 +681,25 @@ def _gasto_comun_registrado_usuario_mes(
             mes_facturacion__year=mes_pd.year,
             estado='PENDIENTE',
         )
-        .aggregate(t=Sum('monto'))['t']
+        .values('movimiento__usuario_id')
+        .annotate(t=Sum('monto'))
     )
-    total = (egr or Decimal('0')) + (cuotas or Decimal('0'))
-    return total.quantize(Decimal('0.01'))
+    for row in cuota_rows:
+        uid = row['movimiento__usuario_id']
+        out[uid] = out.get(uid, z) + (row['t'] or z)
+    return {uid: v.quantize(Decimal('0.01')) for uid, v in out.items()}
+
+
+def _gasto_comun_registrado_usuario_mes(
+    usuario_id: int, espacio_id: int, mes_pd: date
+) -> Decimal:
+    """
+    Total positivo de gastos comunes registrados en el mes (misma base que GET liquidación).
+    Egresos efectivo/débito + cuotas de crédito pendientes facturadas en el mes.
+    """
+    return _gastos_comunes_por_usuario_mes(espacio_id, mes_pd).get(
+        usuario_id, Decimal('0.00')
+    )
 
 
 def _compensacion_estilo_liquidacion(
@@ -666,10 +718,8 @@ def _compensacion_estilo_liquidacion(
         (_ingreso_comun_usuario_mes(espacio_id, uid, mes_pd) for uid in miembros_ids),
         start=Decimal('0'),
     )
-    pagados = {
-        uid: _gasto_comun_registrado_usuario_mes(uid, espacio_id, mes_pd)
-        for uid in miembros_ids
-    }
+    pagados_map = _gastos_comunes_por_usuario_mes(espacio_id, mes_pd)
+    pagados = {uid: pagados_map.get(uid, Decimal('0.00')) for uid in miembros_ids}
     total_gastos = sum(pagados.values(), start=Decimal('0'))
 
     por_usuario_comp: list[dict] = []
@@ -1215,7 +1265,7 @@ def backfill_resumen_historico_snapshots(espacio_id: int) -> int:
         return 0
     mes_fin = ultimo_mes_cerrado()
     n = 0
-    for mes_pd in meses_desde_hasta(primero, mes_fin):
+    for mes_pd in _meses_con_actividad_espacio(espacio_id, primero, mes_fin):
         if refrescar_resumen_historico_mes(espacio_id, mes_pd, registrar_cambios=False):
             n += 1
     return n

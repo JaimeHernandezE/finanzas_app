@@ -27,7 +27,6 @@ export const espaciosApi = {
     const fd = new FormData()
     fd.append('archivo', archivo)
     return client.post<ImportEspacioResult>(`/api/espacios/${espacioId}/importar/`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300_000,
     })
   },

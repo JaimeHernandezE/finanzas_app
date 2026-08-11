@@ -26,7 +26,6 @@ export const backupBdApi = {
     fd.append('archivo', archivo)
     fd.append('confirmacion', confirmacion)
     return client.post<BackupImportarResult>('/api/backup-bd/importar/', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 600_000,
     })
   },

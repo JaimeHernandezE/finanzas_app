@@ -335,7 +335,9 @@ export const finanzasApi = {
     client.get<DashboardResumenApi>('/api/finanzas/dashboard-resumen/', { params: { mes, anio } }),
 
   recalcularHistorico: () =>
-    client.post<RecalculoHistoricoResult>('/api/finanzas/recalculo/historico/'),
+    client.post<RecalculoHistoricoResult>('/api/finanzas/recalculo/historico/', {}, {
+      timeout: 600_000,
+    }),
 
   getPresupuestoMes: (params: { mes: number; anio: number; ambito: 'FAMILIAR' | 'PERSONAL'; cuenta?: number }) =>
     client.get<PresupuestoMesResponse>('/api/finanzas/presupuesto-mes/', { params }),
@@ -360,7 +362,6 @@ export const finanzasApi = {
     return client.post<ImportacionCuentaPersonalResult>(
       '/api/finanzas/importaciones/cuenta-personal/',
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 
@@ -371,7 +372,6 @@ export const finanzasApi = {
     return client.post<ImportacionCuentaPersonalResult>(
       '/api/finanzas/importaciones/honorarios/',
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 
@@ -382,7 +382,6 @@ export const finanzasApi = {
     return client.post<ImportacionSueldosResult>(
       '/api/finanzas/importaciones/sueldos/',
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 
@@ -393,7 +392,6 @@ export const finanzasApi = {
     return client.post<ImportacionGastosComunesResult>(
       '/api/finanzas/importaciones/gastos-comunes/',
       form,
-      { headers: { 'Content-Type': 'multipart/form-data' } },
     )
   },
 

@@ -100,6 +100,13 @@ client.interceptors.request.use(async (config) => {
   if (_espacioId != null) {
     config.headers['X-Espacio-Id'] = String(_espacioId)
   }
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (typeof config.headers.set === 'function') {
+      config.headers.set('Content-Type', false as unknown as string)
+    } else {
+      delete (config.headers as Record<string, unknown>)['Content-Type']
+    }
+  }
   return config
 })
 

@@ -706,54 +706,70 @@ export default function DashboardScreen() {
             {(metricas.tasaAhorro != null || metodoPago || metricas.deltaGastoPct != null) && (
               <View className="gap-3 mb-6">
                 <Text className="text-xs text-muted uppercase font-semibold">Indicadores del mes</Text>
-                <View className="flex-row gap-3">
-                  {/* Tasa de ahorro */}
-                  {metricas.tasaAhorro != null && (
-                    <View className="flex-1 bg-white rounded-2xl p-4">
-                      <Text className="text-[11px] text-muted mb-1">Tasa de ahorro</Text>
-                      <Text className={`text-2xl font-bold ${metricas.tasaAhorro >= 0 ? 'text-success' : 'text-danger'}`}>
-                        {metricas.tasaAhorro}%
-                      </Text>
-                      {metricas.tendencia.length >= 2 && (
-                        <View className="flex-row items-end gap-1 mt-2 h-[28px]">
-                          {metricas.tendencia.map((t, i) => {
-                            const maxVal = Math.max(...metricas.tendencia.map((x) => Math.abs(x.valor)), 1)
-                            const h = Math.max(Math.round((Math.abs(t.valor) / maxVal) * 24), 3)
-                            const esActualBarra = i === metricas.tendencia.length - 1
-                            return (
-                              <View key={`${t.label}-${i}`} className="items-center flex-1">
-                                <View
-                                  className={`w-full rounded-sm ${t.valor >= 0 ? (esActualBarra ? 'bg-success' : 'bg-success/40') : 'bg-danger/40'}`}
-                                  style={{ height: h }}
-                                />
-                                <Text className="text-[8px] text-muted mt-0.5">{t.label}</Text>
-                              </View>
-                            )
-                          })}
-                        </View>
-                      )}
-                    </View>
-                  )}
+                {(metricas.tasaAhorro != null || metricas.deltaGastoPct != null) && (
+                  <View
+                    className={
+                      metricas.tasaAhorro != null && metricas.deltaGastoPct != null
+                        ? 'flex-row gap-3'
+                        : undefined
+                    }
+                  >
+                    {/* Tasa de ahorro */}
+                    {metricas.tasaAhorro != null && (
+                      <View
+                        className={`${
+                          metricas.deltaGastoPct != null ? 'flex-1' : 'w-full'
+                        } bg-white rounded-2xl p-4`}
+                      >
+                        <Text className="text-[11px] text-muted mb-1">Tasa de ahorro</Text>
+                        <Text className={`text-2xl font-bold ${metricas.tasaAhorro >= 0 ? 'text-success' : 'text-danger'}`}>
+                          {metricas.tasaAhorro}%
+                        </Text>
+                        {metricas.tendencia.length >= 2 && (
+                          <View className="flex-row items-end gap-1 mt-2 h-[28px]">
+                            {metricas.tendencia.map((t, i) => {
+                              const maxVal = Math.max(...metricas.tendencia.map((x) => Math.abs(x.valor)), 1)
+                              const h = Math.max(Math.round((Math.abs(t.valor) / maxVal) * 24), 3)
+                              const esActualBarra = i === metricas.tendencia.length - 1
+                              return (
+                                <View key={`${t.label}-${i}`} className="items-center flex-1">
+                                  <View
+                                    className={`w-full rounded-sm ${t.valor >= 0 ? (esActualBarra ? 'bg-success' : 'bg-success/40') : 'bg-danger/40'}`}
+                                    style={{ height: h }}
+                                  />
+                                  <Text className="text-[8px] text-muted mt-0.5">{t.label}</Text>
+                                </View>
+                              )
+                            })}
+                          </View>
+                        )}
+                      </View>
+                    )}
 
-                  {/* Comparativa mes anterior */}
-                  {metricas.deltaGastoPct != null && (
-                    <View className="flex-1 bg-white rounded-2xl p-4">
-                      <Text className="text-[11px] text-muted mb-1">vs {metricas.mesAnteriorNombre}</Text>
-                      <View className="flex-row items-baseline gap-1">
-                        <Text className={`text-2xl font-bold ${metricas.deltaGastoPct > 0 ? 'text-danger' : 'text-success'}`}>
-                          {metricas.deltaGastoPct > 0 ? '+' : ''}{metricas.deltaGastoPct}%
+                    {/* Comparativa mes anterior */}
+                    {metricas.deltaGastoPct != null && (
+                      <View
+                        className={`${
+                          metricas.tasaAhorro != null ? 'flex-1' : 'w-full'
+                        } bg-white rounded-2xl p-4`}
+                      >
+                        <Text className="text-[11px] text-muted mb-1">vs {metricas.mesAnteriorNombre}</Text>
+                        <View className="flex-row items-baseline gap-1">
+                          <Text className={`text-2xl font-bold ${metricas.deltaGastoPct > 0 ? 'text-danger' : 'text-success'}`}>
+                            {metricas.deltaGastoPct > 0 ? '+' : ''}{metricas.deltaGastoPct}%
+                          </Text>
+                        </View>
+                        <Text className="text-[10px] text-muted mt-1 leading-snug">
+                          {metricas.deltaGastoPct > 0
+                            ? `Gastaste más que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                            : metricas.deltaGastoPct < 0
+                              ? `Gastaste menos que en ${metricas.mesAnteriorNombre.toLowerCase()}`
+                              : 'Mismo gasto que el mes pasado'}
                         </Text>
                       </View>
-                      <Text className="text-[10px] text-muted mt-1 leading-snug">
-                        {metricas.deltaGastoPct > 0
-                          ? `Gastaste más que en ${metricas.mesAnteriorNombre.toLowerCase()}`
-                          : metricas.deltaGastoPct < 0
-                            ? `Gastaste menos que en ${metricas.mesAnteriorNombre.toLowerCase()}`
-                            : 'Mismo gasto que el mes pasado'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                    )}
+                  </View>
+                )}
 
                 {/* Método de pago */}
                 {metodoPago && (

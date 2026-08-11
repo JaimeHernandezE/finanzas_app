@@ -20,6 +20,14 @@ client.interceptors.request.use((config) => {
   if (_espacioId != null) {
     config.headers['X-Espacio-Id'] = String(_espacioId)
   }
+  // FormData debe llevar boundary; no forzar application/json ni multipart sin boundary.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (typeof config.headers.set === 'function') {
+      config.headers.set('Content-Type', false as unknown as string)
+    } else {
+      delete (config.headers as Record<string, unknown>)['Content-Type']
+    }
+  }
   return config
 })
 

@@ -236,6 +236,12 @@ def espacio_importar(request, pk):
             {'error': str(e)},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    except Exception as e:
+        logger.exception('Error importando espacio id=%s usuario_id=%s', pk, usuario.pk)
+        return Response(
+            {'error': f'No se pudo importar el respaldo: {e}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     return Response({
         'mensaje': 'Importación completada.',

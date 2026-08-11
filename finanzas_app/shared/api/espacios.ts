@@ -31,7 +31,6 @@ export const espaciosApi = {
       fd.append('archivo', archivo, filename)
     }
     return client.post<ImportEspacioResult>(`/api/espacios/${espacioId}/importar/`, fd, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300_000,
     })
   },

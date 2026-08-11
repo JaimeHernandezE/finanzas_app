@@ -124,7 +124,7 @@ class TestExportar:
         assert 'archivado' in data['espacio']
 
         d = data['datos']
-        assert len(d['categorias']) == 3
+        assert len([c for c in d['categorias'] if not c.get('es_global')]) == 3
         assert len(d['movimientos']) >= 2
         assert len(d['cuotas']) == 3
         assert len(d['presupuestos']) == 1
@@ -196,7 +196,8 @@ class TestImportar:
         personal = obtener_espacio_personal(usuario)
         conteos = importar_espacio(data, personal, usuario)
 
-        assert conteos['categorias'] == 3
+        assert conteos['categorias'] >= 3
+        assert Categoria.objects.filter(espacio=personal).count() == 3
         assert conteos['movimientos'] >= 2
         assert conteos['cuotas'] == 3
         assert conteos['presupuestos'] == 1
@@ -206,6 +207,20 @@ class TestImportar:
         assert conteos['registros_valor'] == 1
         assert conteos['viajes'] == 1
         assert conteos['presupuestos_viaje'] == 1
+
+    def test_import_reemplaza_datos_existentes(self, usuario, familia):
+        espejo = _espejo(familia)
+        _poblar_espacio(espejo, usuario, familia)
+        data = exportar_espacio(espejo)
+        personal = obtener_espacio_personal(usuario)
+
+        importar_espacio(data, personal, usuario)
+        n1 = Movimiento.objects.filter(espacio=personal).count()
+        importar_espacio(data, personal, usuario)
+        n2 = Movimiento.objects.filter(espacio=personal).count()
+        assert n1 == n2
+        assert n2 >= 2
+        assert Categoria.objects.filter(espacio=personal).count() == 3
 
     def test_import_crea_nuevos_ids(self, usuario, familia):
         espejo = _espejo(familia)
@@ -410,7 +425,8 @@ class TestEndpointImportar:
         )
         assert resp.status_code == status.HTTP_200_OK
         assert resp.data['conteos']['movimientos'] >= 2
-        assert resp.data['conteos']['categorias'] == 3
+        assert resp.data['conteos']['categorias'] >= 3
+        assert Categoria.objects.filter(espacio=personal).count() == 3
 
     def test_import_sin_archivo_400(self, client, usuario, familia, auth_header):
         personal = obtener_espacio_personal(usuario)
