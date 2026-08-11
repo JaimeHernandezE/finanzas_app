@@ -104,6 +104,11 @@ const fechaIso = (anio: number, mesIndex: number, dia: number) => {
   return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+const hoyIsoLocal = () => {
+  const d = new Date()
+  return fechaIso(d.getFullYear(), d.getMonth(), d.getDate())
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Subcomponentes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -677,6 +682,7 @@ export default function PagarTarjetaPage() {
   const [incluirPorCuota, setIncluirPorCuota] = useState<Record<number, boolean>>({})
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
   const [modalConfirmacionFinalPago, setModalConfirmacionFinalPago] = useState(false)
+  const [fechaPago, setFechaPago] = useState(hoyIsoLocal)
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
   const [modalNuevoGasto, setModalNuevoGasto] = useState(false)
@@ -822,11 +828,12 @@ export default function PagarTarjetaPage() {
       }
 
       if (cuotasIncluidas.length > 0) {
+        const fecha = /^\d{4}-\d{2}-\d{2}$/.test(fechaPago) ? fechaPago : hoyIsoLocal()
         await movimientosApi.pagarTarjeta({
           tarjeta_id: tarjetaId,
           mes: mes + 1,
           anio,
-          fecha_pago: new Date().toISOString().slice(0, 10),
+          fecha_pago: fecha,
           cuota_ids: cuotasIncluidas.map(c => c.id),
         })
       }
@@ -1409,6 +1416,7 @@ export default function PagarTarjetaPage() {
             total={total}
             onRegistrar={() => {
               setErrorPago(null)
+              setFechaPago(hoyIsoLocal())
               setModalConfirmacionFinalPago(false)
               setModalConfirmarPago(true)
             }}
@@ -1464,6 +1472,16 @@ export default function PagarTarjetaPage() {
                   <br />
                   <strong>Total a pagar {formatMonto(total)}</strong>
                 </p>
+                <div className={styles.modalFechaField}>
+                  <Input
+                    label="Fecha de pago"
+                    type="date"
+                    value={fechaPago}
+                    onChange={(e) => setFechaPago(e.target.value)}
+                    disabled={guardandoPago}
+                    required
+                  />
+                </div>
                 {errorPago && (
                   <p style={{ color: '#b91c1c', fontSize: 14, marginTop: 8 }}>{errorPago}</p>
                 )}
@@ -1479,7 +1497,7 @@ export default function PagarTarjetaPage() {
                   <button
                     type="button"
                     className={styles.btnPrimary}
-                    disabled={guardandoPago}
+                    disabled={guardandoPago || !/^\d{4}-\d{2}-\d{2}$/.test(fechaPago)}
                     onClick={() => setModalConfirmacionFinalPago(true)}
                   >
                     Continuar
@@ -1491,7 +1509,7 @@ export default function PagarTarjetaPage() {
                 <h2 className={styles.modalTitulo}>Confirmación final</h2>
                 <p className={styles.modalTexto}>
                   Al aceptar, las cuotas incluidas se registrarán como pagadas y se generará un movimiento
-                  en efectivo por cada cuota pagada.
+                  en efectivo por cada cuota pagada con fecha {fechaCorta(fechaPago)}.
                   <br />
                   <br />
                   ¿Deseas continuar?

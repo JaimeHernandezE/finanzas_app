@@ -121,8 +121,83 @@ class TestCompensacionCambios:
         datos = services_recalculo.efectivo_disponible_dashboard(
             usuario, espacio=espacio_familiar
         )
-        prorrateo = datos['prorrateo_gastos_comunes_acumulado']
-        assert prorrateo > Decimal('0')
+        # 50% de 100000 de egreso efectivo (neto familiar −100000) → D = 50000
+        # No debe usar compensacion.gasto_prorrateado (debería liquidación).
+        assert datos['prorrateo_gastos_comunes_acumulado'] == Decimal('50000.00')
+        assert datos['desglose']['d'] == Decimal('50000.00')
+
+    @patch('applications.finanzas.services_recalculo.timezone.localdate')
+    def test_efectivo_d_ignora_deberia_liquidacion_con_cuota_credito(
+        self,
+        mock_hoy,
+        espacio_familiar,
+        usuario,
+        usuario_2,
+        categoria_egreso,
+        metodo_efectivo,
+        metodo_credito,
+        tarjeta,
+    ):
+        """
+        D usa la cuota del neto (sin crédito). Una cuota pendiente común infla el
+        «debería» de liquidación pero no debe aumentar D tras recálculo/backfill.
+        """
+        mock_hoy.return_value = date(2026, 3, 15)
+        mes_pd = date(2026, 2, 1)
+
+        IngresoComun.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario,
+            mes=mes_pd,
+            monto=Decimal('1000000'),
+            origen='Sueldo',
+        )
+        IngresoComun.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario_2,
+            mes=mes_pd,
+            monto=Decimal('1000000'),
+            origen='Sueldo',
+        )
+        Movimiento.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario,
+            fecha=date(2026, 2, 5),
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto=Decimal('100000'),
+            metodo_pago=metodo_efectivo,
+        )
+        Movimiento.objects.create(
+            espacio=espacio_familiar,
+            usuario=usuario,
+            fecha=date(2026, 2, 6),
+            tipo='EGRESO',
+            ambito='COMUN',
+            categoria=categoria_egreso,
+            monto=Decimal('600000'),
+            metodo_pago=metodo_credito,
+            tarjeta=tarjeta,
+            num_cuotas=1,
+        )
+
+        services_recalculo.backfill_resumen_historico_snapshots(espacio_familiar.pk)
+        snap = ResumenHistoricoMesSnapshot.objects.get(
+            espacio=espacio_familiar, mes=mes_pd
+        )
+        comp = {
+            p['usuario_id']: p for p in snap.payload['compensacion']['por_usuario']
+        }
+        # Liquidación sí incluye la cuota pendiente en el debería (700000 / 2).
+        assert Decimal(comp[usuario.pk]['gasto_prorrateado']) == Decimal('350000.00')
+
+        datos = services_recalculo.efectivo_disponible_dashboard(
+            usuario, espacio=espacio_familiar
+        )
+        # D = |50% × neto −100000| = 50000 (sin la TC).
+        assert datos['desglose']['d'] == Decimal('50000.00')
+        assert datos['prorrateo_gastos_comunes_acumulado'] == Decimal('50000.00')
 
     @patch('applications.finanzas.services_recalculo.timezone.localdate')
     def test_editar_gasto_sin_snapshot_previo_notifica(

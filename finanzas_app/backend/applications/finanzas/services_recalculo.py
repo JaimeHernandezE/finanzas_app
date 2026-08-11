@@ -727,6 +727,24 @@ def _efectivo_comun_neto_usuario_mes(usuario_id: int, espacio_id: int, mes_pd: d
     return ing - egr
 
 
+def _monto_d_desde_payload_resumen(payload: dict, usuario_id: int) -> Decimal:
+    """
+    Magnitud D (a restar) para un mes del resumen histórico.
+
+    Usa la cuota del neto familiar COMÚN (`gasto_comun_prorrateado_por_usuario`),
+    no `compensacion.gasto_prorrateado` (debería de liquidación sobre gastos brutos
+    y cuotas de crédito pendientes).
+    """
+    for row in payload.get('gasto_comun_prorrateado_por_usuario') or []:
+        if row.get('usuario_id') == usuario_id:
+            return abs(Decimal(str(row.get('total', '0'))))
+    # Snapshots muy antiguos sin lista de esperado: último recurso.
+    for row in (payload.get('compensacion') or {}).get('por_usuario') or []:
+        if row.get('usuario_id') == usuario_id:
+            return abs(Decimal(str(row.get('gasto_prorrateado', '0'))))
+    return Decimal('0')
+
+
 def efectivo_disponible_dashboard(usuario, espacio=None) -> dict:
     """
     Efectivo para el dashboard (usuario autenticado).
@@ -809,9 +827,10 @@ def efectivo_disponible_dashboard(usuario, espacio=None) -> dict:
         or z
     )
 
-    # D — Suma de gastos prorrateados (esperado) del resumen familiar.
-    # En payloads puede venir con signo negativo; siempre restamos la magnitud para no convertir
-    # "− D" en suma cuando D acumulado es negativo.
+    # D — Suma de |esperado| del neto familiar COMÚN prorrateado (meses cerrados).
+    # Debe leerse de gasto_comun_prorrateado_por_usuario (ingresos − egresos, sin crédito),
+    # no de compensacion.gasto_prorrateado (ese es el «debería» de liquidación: gastos brutos
+    # + cuotas pendientes), o el efectivo se infla al hacer backfill/recálculo histórico.
     gastos_prorrateados_resumen = z
     primero_datos = _primer_mes_datos_familia(espacio_id)
     if primero_datos:
@@ -822,11 +841,9 @@ def efectivo_disponible_dashboard(usuario, espacio=None) -> dict:
             payload_mes = _obtener_payload_resumen_mes(espacio_id, mes_pd)
             if not payload_mes:
                 continue
-            for row in payload_mes.get('compensacion', {}).get('por_usuario', []):
-                if row.get('usuario_id') == uid:
-                    gastos_prorrateados_resumen += abs(
-                        Decimal(str(row.get('gasto_prorrateado', '0')))
-                    )
+            gastos_prorrateados_resumen += _monto_d_desde_payload_resumen(
+                payload_mes, uid
+            )
     d_monto_restar = gastos_prorrateados_resumen
 
     # E — Mes actual: neto personal sin duplicar sueldos (excluye ingreso vinculado a IngresoComun) + neto común

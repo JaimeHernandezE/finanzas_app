@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
+import DateTimePicker from '@react-native-community/datetimepicker'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useTarjetas } from '@finanzas/shared/hooks/useCatalogos'
@@ -101,6 +102,16 @@ function fechaIso(anio: number, mesIndex: number, dia: number): string {
   return `${anio}-${String(mesIndex + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
+function isoADateLocal(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return new Date()
+  return new Date(y, m - 1, d)
+}
+
+function dateAIsoLocal(date: Date): string {
+  return fechaIso(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
 type DetalleMovMap = Map<number, { fecha: string; cat: string; com: string }>
 
 function camposDesdeCuotaApi(c: Cuota): { cat: string; com: string } {
@@ -154,6 +165,8 @@ export default function TarjetaPagarScreen() {
   const [cargoMonto, setCargoMonto] = useState('')
   const [modalConfirmarPago, setModalConfirmarPago] = useState(false)
   const [modalConfirmarPagoFinal, setModalConfirmarPagoFinal] = useState(false)
+  const [fechaPago, setFechaPago] = useState(() => hoyIsoEnZonaHoraria(zonaEfectiva))
+  const [showFechaPagoPicker, setShowFechaPagoPicker] = useState(false)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [exitoPostPago, setExitoPostPago] = useState(false)
   const [totalPagado, setTotalPagado] = useState(0)
@@ -619,7 +632,9 @@ export default function TarjetaPagarScreen() {
         tarjeta_id: tarjetaIdEfectivo,
         mes: mes + 1,
         anio,
-        fecha_pago: hoyIsoEnZonaHoraria(zonaEfectiva),
+        fecha_pago: /^\d{4}-\d{2}-\d{2}$/.test(fechaPago)
+          ? fechaPago
+          : hoyIsoEnZonaHoraria(zonaEfectiva),
         cuota_ids: cuotasPorPagar.map((c) => c.id),
       })
       setCargosAdicionales([])
@@ -628,6 +643,7 @@ export default function TarjetaPagarScreen() {
       setExitoPostPago(true)
       setModalConfirmarPago(false)
       setModalConfirmarPagoFinal(false)
+      setShowFechaPagoPicker(false)
       invalidateFinanzasTrasMovimiento(queryClient)
       void refetchCuotas()
       void refetchCuotasTarjeta()
@@ -1094,6 +1110,8 @@ export default function TarjetaPagarScreen() {
                     <TouchableOpacity
                       disabled={guardandoPago || total === 0 || cuotasIncluidasCount === 0}
                       onPress={() => {
+                        setFechaPago(hoyIsoEnZonaHoraria(zonaEfectiva))
+                        setShowFechaPagoPicker(false)
                         setModalConfirmarPagoFinal(false)
                         setModalConfirmarPago(true)
                       }}
@@ -1130,6 +1148,7 @@ export default function TarjetaPagarScreen() {
             animationType="fade"
             onRequestClose={() => {
               if (guardandoPago) return
+              setShowFechaPagoPicker(false)
               if (modalConfirmarPagoFinal) setModalConfirmarPagoFinal(false)
               else setModalConfirmarPago(false)
             }}
@@ -1150,18 +1169,52 @@ export default function TarjetaPagarScreen() {
                         {cuotasExcluidasCount} cuota{cuotasExcluidasCount !== 1 ? 's' : ''} se movera(n) al mes siguiente al registrar el pago
                       </Text>
                     )}
-                    <Text className="text-dark font-bold text-base mb-4">
+                    <Text className="text-dark font-bold text-base mb-3">
                       Total a pagar {formatMonto(total)}
                     </Text>
+                    <Text className="text-xs text-muted font-semibold mb-1">Fecha de pago</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowFechaPagoPicker(true)}
+                      disabled={guardandoPago}
+                      className="border border-border rounded-lg px-3 py-2.5 bg-white mb-4"
+                      accessibilityRole="button"
+                      accessibilityLabel="Seleccionar fecha de pago"
+                    >
+                      <Text className="text-dark">
+                        {fechaPago ? fechaCorta(fechaPago) : 'Seleccionar fecha'}
+                      </Text>
+                    </TouchableOpacity>
+                    {showFechaPagoPicker && (
+                      <DateTimePicker
+                        value={isoADateLocal(fechaPago)}
+                        mode="date"
+                        display="default"
+                        onValueChange={(_event, selectedDate) => {
+                          if (!selectedDate) return
+                          setFechaPago(dateAIsoLocal(selectedDate))
+                          setShowFechaPagoPicker(false)
+                        }}
+                        onDismiss={() => setShowFechaPagoPicker(false)}
+                      />
+                    )}
                     <View className="flex-row gap-3">
                       <TouchableOpacity
-                        onPress={() => setModalConfirmarPago(false)}
+                        onPress={() => {
+                          setShowFechaPagoPicker(false)
+                          setModalConfirmarPago(false)
+                        }}
+                        disabled={guardandoPago}
                         className="flex-1 border border-border rounded-xl py-3 items-center"
                       >
                         <Text className="text-dark font-semibold text-sm">Cancelar</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => setModalConfirmarPagoFinal(true)}
+                        onPress={() => {
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaPago)) return
+                          setShowFechaPagoPicker(false)
+                          setModalConfirmarPagoFinal(true)
+                        }}
+                        disabled={guardandoPago || !/^\d{4}-\d{2}-\d{2}$/.test(fechaPago)}
                         className="flex-1 bg-dark rounded-xl py-3 items-center"
                       >
                         <Text className="text-white font-semibold text-sm">Continuar</Text>
@@ -1172,7 +1225,7 @@ export default function TarjetaPagarScreen() {
                   <>
                     <Text className="text-lg font-bold text-dark mb-2">Confirmacion final</Text>
                     <Text className="text-muted text-sm mb-4">
-                      Al aceptar, las cuotas incluidas se registraran como pagadas y se generara un movimiento en efectivo por cada cuota pagada.
+                      Al aceptar, las cuotas incluidas se registraran como pagadas y se generara un movimiento en efectivo por cada cuota pagada con fecha {fechaCorta(fechaPago)}.
                     </Text>
                     <View className="flex-row gap-3">
                       <TouchableOpacity

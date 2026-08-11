@@ -334,13 +334,21 @@ class EfectivoDashboardFormulaTest(FinanzasTestBase):
             'mes': 2,
             'anio': 2026,
             'sueldos_por_usuario': [],
+            'gasto_comun_prorrateado_por_usuario': [
+                {
+                    'usuario_id': uid,
+                    'nombre': 'Test',
+                    'total': '-200000.00',
+                },
+            ],
             'compensacion': {
                 'por_usuario': [
                     {
                         'usuario_id': uid,
                         'nombre': 'Test',
+                        # «debería» de liquidación (no debe usarse para D)
                         'pagado_efectivo': '0.00',
-                        'gasto_prorrateado': '200000.00',
+                        'gasto_prorrateado': '999999.00',
                         'diferencia': '0.00',
                     },
                 ],
