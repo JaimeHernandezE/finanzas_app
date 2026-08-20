@@ -1,29 +1,46 @@
 """
-Copia presupuestos del mes anterior al mes indicado (por defecto el mes en curso).
-- Ámbito familiar: usuario null, categorías compartidas sin cuenta personal.
-- Ámbito personal: un registro por cada presupuesto personal del mes anterior
-  (cada usuario/categoría/cuenta), para todas las cuentas personales.
+Copia presupuestos del mes anterior al mes indicado (por defecto el mes civil
+en TIME_ZONE / America/Santiago).
 
-Ejecutar el día 1 de cada mes (cron) o manualmente.
-No sobrescribe: si ya existe Presupuesto para ese mes/categoría/usuario, se omite.
+- Espacio FAMILIAR: presupuestos compartidos (usuario null) y personales.
+- Espacio PERSONAL: presupuestos de ese espacio.
+
+No sobrescribe: si ya existe Presupuesto para espacio/usuario/categoría/mes, se omite.
+No toca espacios inactivos ni archivados.
 """
 
 from datetime import date
+from zoneinfo import ZoneInfo
 
 from dateutil.relativedelta import relativedelta
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.utils import timezone
 
+from applications.espacios.models import Espacio
 from applications.finanzas.models import Presupuesto
-from applications.usuarios.models import Familia
+from applications.finanzas.recalculo_context import RecalculoContext, recalculo_context
 
 
 def _primer_dia(d: date) -> date:
     return date(d.year, d.month, 1)
 
 
-def copiar_mes_familia(familia_id: int, mes_destino: date, dry_run: bool) -> tuple[int, int]:
+def mes_civil_actual(tz_name: str | None = None) -> date:
+    """Primer día del mes civil actual en la zona indicada (default: TIME_ZONE)."""
+    nombre = (tz_name or getattr(settings, 'TIME_ZONE', None) or 'America/Santiago').strip()
+    try:
+        tz = ZoneInfo(nombre)
+    except Exception:
+        tz = ZoneInfo('America/Santiago')
+    ahora = timezone.now().astimezone(tz)
+    return date(ahora.year, ahora.month, 1)
+
+
+def copiar_mes_espacio(espacio_id: int, mes_destino: date, dry_run: bool) -> tuple[int, int]:
     """
+    Copia presupuestos de mes_origen (mes anterior) a mes_destino.
     Devuelve (creados, ya_existentes_omitidos).
     """
     mes_origen = _primer_dia(mes_destino - relativedelta(months=1))
@@ -32,46 +49,14 @@ def copiar_mes_familia(familia_id: int, mes_destino: date, dry_run: bool) -> tup
     creados = 0
     omitidos = 0
 
-    qs_familiar = Presupuesto.objects.filter(
-        familia_id=familia_id,
-        usuario__isnull=True,
-        mes=mes_origen,
-        categoria__familia_id=familia_id,
-        categoria__usuario__isnull=True,
-        categoria__cuenta_personal__isnull=True,
-    ).select_related('categoria')
-
-    qs_personal = Presupuesto.objects.filter(
-        familia_id=familia_id,
-        usuario__isnull=False,
+    qs = Presupuesto.objects.filter(
+        espacio_id=espacio_id,
         mes=mes_origen,
     ).select_related('categoria', 'usuario')
 
-    for p in qs_familiar:
+    for p in qs:
         existe = Presupuesto.objects.filter(
-            familia_id=p.familia_id,
-            usuario=None,
-            categoria_id=p.categoria_id,
-            mes=mes_destino,
-        ).exists()
-        if existe:
-            omitidos += 1
-            continue
-        if dry_run:
-            creados += 1
-            continue
-        Presupuesto.objects.create(
-            familia_id=p.familia_id,
-            usuario=None,
-            categoria_id=p.categoria_id,
-            mes=mes_destino,
-            monto=p.monto,
-        )
-        creados += 1
-
-    for p in qs_personal:
-        existe = Presupuesto.objects.filter(
-            familia_id=p.familia_id,
+            espacio_id=p.espacio_id,
             usuario_id=p.usuario_id,
             categoria_id=p.categoria_id,
             mes=mes_destino,
@@ -83,7 +68,8 @@ def copiar_mes_familia(familia_id: int, mes_destino: date, dry_run: bool) -> tup
             creados += 1
             continue
         Presupuesto.objects.create(
-            familia_id=p.familia_id,
+            espacio_id=p.espacio_id,
+            origen_familia_id=p.origen_familia_id,
             usuario_id=p.usuario_id,
             categoria_id=p.categoria_id,
             mes=mes_destino,
@@ -94,10 +80,41 @@ def copiar_mes_familia(familia_id: int, mes_destino: date, dry_run: bool) -> tup
     return creados, omitidos
 
 
+def espacios_para_rollover(espacio_id: int | None = None):
+    qs = Espacio.objects.filter(activo=True, archivado=False)
+    if espacio_id is not None:
+        qs = qs.filter(pk=espacio_id)
+    return qs.order_by('id')
+
+
+def ejecutar_rollover(
+    mes_destino: date,
+    *,
+    espacio_id: int | None = None,
+    dry_run: bool = False,
+    stdout=None,
+) -> tuple[int, int]:
+    total_c = 0
+    total_o = 0
+    ctx = RecalculoContext(suprimir_notificaciones=True)
+    for espacio in espacios_para_rollover(espacio_id):
+        with recalculo_context(ctx), transaction.atomic():
+            c, o = copiar_mes_espacio(espacio.id, mes_destino, dry_run)
+        total_c += c
+        total_o += o
+        if stdout is not None and (c or o):
+            stdout.write(
+                f'  Espacio {espacio.id} ({espacio.tipo}): '
+                f'+{c} creados, {o} ya existían (omitidos).'
+            )
+    return total_c, total_o
+
+
 class Command(BaseCommand):
     help = (
         'Crea presupuestos del mes destino copiando montos del mes anterior '
-        '(familiar + personal por cuenta). Idempotente: no pisa filas ya existentes.'
+        '(familiar + personal, en todos los espacios activos). '
+        'Idempotente: no pisa filas ya existentes.'
     )
 
     def add_arguments(self, parser):
@@ -105,13 +122,13 @@ class Command(BaseCommand):
             '--mes',
             type=str,
             default=None,
-            help='Mes destino YYYY-MM-01 (default: primer día del mes actual).',
+            help='Mes destino YYYY-MM-01 (default: primer día del mes civil actual).',
         )
         parser.add_argument(
-            '--familia-id',
+            '--espacio-id',
             type=int,
             default=None,
-            help='Solo esta familia (default: todas).',
+            help='Solo este espacio (default: todos los activos no archivados).',
         )
         parser.add_argument(
             '--dry-run',
@@ -125,28 +142,20 @@ class Command(BaseCommand):
             parts = str(options['mes'])[:10].split('-')
             mes_destino = date(int(parts[0]), int(parts[1]), 1)
         else:
-            mes_destino = _primer_dia(date.today())
+            mes_destino = mes_civil_actual()
 
-        familias_qs = Familia.objects.all()
-        if options.get('familia_id'):
-            familias_qs = familias_qs.filter(pk=options['familia_id'])
-
-        total_c = 0
-        total_o = 0
-        for fam in familias_qs.order_by('id'):
-            with transaction.atomic():
-                c, o = copiar_mes_familia(fam.id, mes_destino, dry_run)
-            total_c += c
-            total_o += o
-            if c or o:
-                self.stdout.write(
-                    f'  Familia {fam.id}: +{c} creados, {o} ya existían (omitidos).'
-                )
+        total_c, total_o = ejecutar_rollover(
+            mes_destino,
+            espacio_id=options.get('espacio_id'),
+            dry_run=dry_run,
+            stdout=self.stdout,
+        )
 
         accion = 'Simulación' if dry_run else 'Listo'
+        origen = mes_destino - relativedelta(months=1)
         self.stdout.write(
             self.style.SUCCESS(
                 f'{accion}: {total_c} presupuesto(s) nuevos, {total_o} omitido(s). '
-                f'Mes destino: {mes_destino:%Y-%m}. Origen: mes anterior.'
+                f'Mes destino: {mes_destino:%Y-%m}. Origen: {origen:%Y-%m}.'
             )
         )

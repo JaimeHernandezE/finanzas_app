@@ -1,16 +1,18 @@
-name: Tareas inicio de mes (admin TZ)
+name: Tareas inicio de mes
 
 # Día 1 de cada mes a las 06:00 UTC ≈ 02:00 America/Santiago cuando el offset es UTC−4.
 # Con UTC−3 suele corresponder a ~03:00 local (desfase de una hora al cambiar horario; GitHub solo permite cron UTC).
+# Solo copia presupuestos (personal + familiar) al mes en curso. El recálculo de snapshots
+# no corre aquí: se mantiene al guardar movimientos.
 on:
   schedule:
     - cron: '0 6 1 * *'
   workflow_dispatch:
 
 jobs:
-  recalculo:
+  rollover-presupuestos:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -36,18 +38,11 @@ jobs:
             exit 1
           fi
 
-      - name: Ejecutar tareas mensuales (rollover + recálculo)
+      - name: Copiar presupuestos al mes actual
         working-directory: finanzas_app/backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           DEBUG: 'False'
           FIREBASE_SERVICE_ACCOUNT_JSON: '{}'
-          # Opcional: fija administrador explícito (si existe más de uno)
-          RECALCULO_ADMIN_ID: ${{ secrets.RECALCULO_ADMIN_ID }}
-        run: |
-          if [ -n "$RECALCULO_ADMIN_ID" ]; then
-            python manage.py recalculo_mensual_admin_tz --admin-id "$RECALCULO_ADMIN_ID"
-          else
-            python manage.py recalculo_mensual_admin_tz
-          fi
+        run: python manage.py recalculo_mensual_admin_tz

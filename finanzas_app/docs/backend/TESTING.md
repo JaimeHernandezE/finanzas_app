@@ -69,6 +69,7 @@ Fixtures compartidos:
 | `tests/test_sueldos_liquidacion.py` | Ingresos comunes: listado (familia, filtro mes/año, otra familia, 401), creación (ok, múltiples mismo mes), edición y eliminación (solo autor, 403 ajeno). Liquidación: estructura (periodo, ingresos, gastos_comunes), ingresos y gastos agrupados por usuario, suma múltiples ingresos, sin gastos personales, mes vacío, 400 sin params, otra familia, 401. |
 | `tests/test_inversiones.py` | Fondos: listado (propios y compartidos, métricas, valor actual = capital si no hay registros, no ve otra familia), creación (personal y compartido), detalle con historial. Aportes y valores: crear aporte/valor, eliminar aporte, historial mezclado y ordenado. |
 | `tests/test_viajes.py` | Viajes: listado (activos, no archivados por defecto, archivados con `?archivado=true`), crear, activar (desactiva los demás, toggle si ya activo), archivar (DELETE). Presupuestos: crear, total en detalle, eliminar. Aislamiento por familia. |
+| `tests/test_rollover_presupuestos.py` | Copia de presupuestos al mes siguiente (familiar, personal, espacio personal, idempotencia, omite archivados, aislamiento, comando de inicio de mes). |
 
 ## Cómo ejecutar los tests
 
