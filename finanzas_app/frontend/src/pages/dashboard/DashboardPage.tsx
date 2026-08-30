@@ -69,8 +69,8 @@ function montoAbs(n: unknown): number {
 }
 
 /**
- * Ingresos/egresos alineados con resumen mensual del backend
- * (`_efectivo_neto_personal_qs`: sin crédito, sin ingreso_comun, sin inversión).
+ * Ingresos/egresos para tasa de ahorro: efectivo y débito, sin TC ni inversiones.
+ * Incluye el ingreso declarado al fondo común (sueldo).
  * El endpoint cuenta-resumen-mensual no incluye el mes en curso.
  */
 function ingresosEgresosDesdeMovimientos(movs: MovimientoApi[]): { ingresos: number; egresos: number } {
@@ -79,7 +79,6 @@ function ingresosEgresosDesdeMovimientos(movs: MovimientoApi[]): { ingresos: num
   for (const m of movs) {
     if (m.metodo_pago_tipo === 'CREDITO') continue
     if (m.tipo === 'INGRESO') {
-      if (m.ingreso_comun != null) continue
       ingresos += toPesos(m.monto)
     } else {
       if (m.categoria_es_inversion) continue
@@ -680,7 +679,14 @@ export default function DashboardPage() {
   }, [cuentasPropias, cuentaTab])
   const { data: resumenMensualData } = useApi<{
     cuenta: { id: number; nombre: string }
-    meses: { mes: number; anio: number; ingresos: string; egresos: string; efectivo_neto: string }[]
+    meses: {
+      mes: number
+      anio: number
+      ingresos: string
+      ingresos_con_declarado?: string
+      egresos: string
+      efectivo_neto: string
+    }[]
     recalculo: { pendiente: boolean; dirty_from: string | null }
   } | null>(
     () => cuentaTab != null
@@ -967,7 +973,7 @@ export default function DashboardPage() {
       } else {
         const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
         if (!item) continue
-        inc = Math.round(Number(item.ingresos) || 0)
+        inc = Math.round(Number(item.ingresos_con_declarado ?? item.ingresos) || 0)
         eg = Math.abs(Math.round(Number(item.egresos) || 0))
       }
       if (inc <= 0) continue

@@ -72,14 +72,13 @@ function montoAbs(n: unknown): number {
   return Math.abs(toPesos(n))
 }
 
-/** Misma regla que el resumen mensual del backend (sin crédito / ingreso_comun / inversión). */
+/** Ingresos/egresos para tasa de ahorro (efectivo/débito, con sueldo declarado; sin TC ni inversión). */
 function ingresosEgresosDesdeMovimientos(movs: Movimiento[]): { ingresos: number; egresos: number } {
   let ingresos = 0
   let egresos = 0
   for (const m of movs) {
     if (m.metodo_pago_tipo === 'CREDITO') continue
     if (m.tipo === 'INGRESO') {
-      if (m.ingreso_comun != null) continue
       ingresos += toPesos(m.monto)
     } else {
       if (m.categoria_es_inversion) continue
@@ -364,7 +363,7 @@ export default function DashboardScreen() {
       } else {
         const item = meses.find((m) => m.mes === tMes && m.anio === tAnio)
         if (!item) continue
-        inc = Math.round(Number(item.ingresos) || 0)
+        inc = Math.round(Number(item.ingresos_con_declarado ?? item.ingresos) || 0)
         eg = Math.abs(Math.round(Number(item.egresos) || 0))
       }
       if (inc <= 0) continue

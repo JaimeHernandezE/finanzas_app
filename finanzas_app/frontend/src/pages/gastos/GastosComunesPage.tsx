@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useApi } from '@/hooks/useApi'
 import { familiaApi } from '@/api/familia'
 import { useAuth } from '@/context/AuthContext'
@@ -413,6 +414,7 @@ export default function GastosComunesPage() {
   const [rangoHasta, setRangoHasta] = useState(iniMesGc.hasta)
   const [filtroTipo,        setFiltroTipo]        = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
   const [busqueda,          setBusqueda]          = useState('')
+  const busquedaAplicada = useDebouncedValue(busqueda, 600)
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos,    setFiltrosMetodos]    = useState<string[]>([])
   const [filtrosUsuarios,   setFiltrosUsuarios]   = useState<number[]>([])
@@ -435,7 +437,7 @@ export default function GastosComunesPage() {
     ambito: 'COMUN',
     ...paramsPeriodo,
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
-    q: busqueda || undefined,
+    q: busquedaAplicada.trim() || undefined,
   })
   const movimientosTyped = useMemo(
     () =>
@@ -580,7 +582,7 @@ export default function GastosComunesPage() {
   )
 
   const puedeMostrarEtiquetaPeriodo =
-    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busquedaAplicada.trim() === ''
 
   const grupos    = groupByDate(movimientosFiltrados)
   const totalLabel = puedeMostrarEtiquetaPeriodo
@@ -588,7 +590,7 @@ export default function GastosComunesPage() {
     : 'Total (filtros activos)'
 
   const hayFiltros =
-    filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.trim() !== ''
+    filtrosActivos > 0 || filtroTipo !== 'TODOS' || busquedaAplicada.trim() !== ''
 
   if (loading) return <Cargando />
   if (error) return <ErrorCarga mensaje={error} />

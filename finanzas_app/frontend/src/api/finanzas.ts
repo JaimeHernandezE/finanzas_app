@@ -280,6 +280,7 @@ export const finanzasApi = {
         mes: number
         anio: number
         ingresos: string
+        ingresos_con_declarado?: string
         egresos: string
         efectivo_neto: string
       }[]

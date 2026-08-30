@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMovimientos } from '@/hooks/useMovimientos'
 import { useCategorias } from '@/hooks/useCatalogos'
 import { useCuentasPersonales } from '@/hooks/useCuentasPersonales'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { Cargando, ErrorCarga } from '@/components/ui'
 import { useConfig } from '@/context/ConfigContext'
 import { formatMontoNetoContribucion } from '@/utils/montoClp'
@@ -414,6 +415,7 @@ export default function CuentaPage() {
   const [rangoHasta, setRangoHasta] = useState(iniMes.hasta)
   const [filtroTipo,         setFiltroTipo]         = useState<'TODOS' | 'INGRESO' | 'EGRESO'>('TODOS')
   const [busqueda,           setBusqueda]           = useState('')
+  const busquedaAplicada = useDebouncedValue(busqueda, 600)
   const [filtrosCategorias,  setFiltrosCategorias]  = useState<string[]>([])
   const [filtrosMetodos,     setFiltrosMetodos]     = useState<string[]>([])
   const [sidebarAbierto,     setSidebarAbierto]     = useState(false)
@@ -437,7 +439,7 @@ export default function CuentaPage() {
     ambito: 'PERSONAL',
     ...paramsPeriodo,
     tipo: filtroTipo !== 'TODOS' ? filtroTipo : undefined,
-    q: busqueda || undefined,
+    q: busquedaAplicada.trim() || undefined,
   })
   const movimientosTyped = (movimientos ?? []) as Movimiento[]
 
@@ -535,7 +537,7 @@ export default function CuentaPage() {
   const grupos = groupByDate(movimientosFiltrados)
 
   const puedeMostrarEtiquetaPeriodo =
-    filtrosActivos === 0 && filtroTipo === 'TODOS' && busqueda.trim() === ''
+    filtrosActivos === 0 && filtroTipo === 'TODOS' && busquedaAplicada.trim() === ''
 
   const sumaMostrada = useMemo(
     () => movimientosFiltrados.reduce((acc, m) => acc + contribucionSaldo(m), 0),
@@ -547,7 +549,7 @@ export default function CuentaPage() {
     : 'Total (filtros activos)'
 
   const hayFiltros =
-    filtrosActivos > 0 || filtroTipo !== 'TODOS' || busqueda.trim() !== ''
+    filtrosActivos > 0 || filtroTipo !== 'TODOS' || busquedaAplicada.trim() !== ''
 
   if (cuentasLoading) return <Cargando />
   if (cuentasError) return <ErrorCarga mensaje={cuentasError} />

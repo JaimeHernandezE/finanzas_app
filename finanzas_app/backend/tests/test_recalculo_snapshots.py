@@ -172,6 +172,48 @@ class TestRecalculoSnapshots:
         meses = r2.json()['meses']
         assert any(m['mes'] == 3 and m['anio'] == 2026 for m in meses)
 
+    def test_resumen_cuenta_mensual_ingresos_con_declarado(
+        self,
+        client,
+        auth_header,
+        espacio_familiar,
+        usuario,
+        categoria_egreso,
+        metodo_efectivo,
+    ):
+        """ingresos excluye el sueldo al fondo común; ingresos_con_declarado lo incluye."""
+        IngresoComun.objects.create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            mes=date(2026, 2, 1),
+            monto='800000.00',
+            origen='Sueldo',
+        )
+        cuenta = CuentaPersonal.objects.get(usuario=usuario, nombre='Personal')
+        Movimiento.objects.create(
+            usuario=usuario,
+            espacio=espacio_familiar,
+            cuenta=cuenta,
+            fecha='2026-02-10',
+            tipo='EGRESO',
+            ambito='PERSONAL',
+            categoria=categoria_egreso,
+            monto='20000.00',
+            comentario='x',
+            metodo_pago=metodo_efectivo,
+        )
+        path = 'applications.finanzas.services_recalculo.timezone.localdate'
+        with patch(path, return_value=date(2026, 3, 15)):
+            r = client.get(
+                f'/api/finanzas/cuenta-resumen-mensual/?cuenta={cuenta.pk}',
+                **auth_header,
+            )
+        assert r.status_code == 200
+        feb = next(m for m in r.json()['meses'] if m['mes'] == 2 and m['anio'] == 2026)
+        assert Decimal(feb['ingresos']) == Decimal('0')
+        assert Decimal(feb['ingresos_con_declarado']) == Decimal('800000.00')
+        assert Decimal(feb['egresos']) == Decimal('20000.00')
+
     def test_post_movimiento_mes_antiguo_recalcula_snapshot_inmediato(
         self,
         hoy_marzo_2026,

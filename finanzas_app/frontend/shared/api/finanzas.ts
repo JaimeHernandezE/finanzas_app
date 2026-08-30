@@ -140,6 +140,8 @@ export interface CuentaResumenMensualMes {
   mes: number
   anio: number
   ingresos: string
+  /** Ingresos EF/TD incluyendo el sueldo declarado al fondo común. */
+  ingresos_con_declarado?: string
   egresos: string
   efectivo_neto: string
 }

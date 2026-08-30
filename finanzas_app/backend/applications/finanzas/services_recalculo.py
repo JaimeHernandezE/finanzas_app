@@ -230,6 +230,16 @@ def _efectivo_neto_personal_qs(qs):
     return ingresos - egresos, n, ingresos, egresos
 
 
+def _ingresos_efectivo_debito_incluyendo_declarado(qs):
+    """Ingresos EF/TD incluyendo el sueldo declarado al fondo común."""
+    t = (
+        qs.exclude(metodo_pago__tipo='CREDITO')
+        .filter(tipo='INGRESO')
+        .aggregate(t=Sum('monto'))['t']
+    )
+    return t if t is not None else Decimal('0')
+
+
 def _meses_con_actividad_espacio(espacio_id: int, desde: date, hasta: date) -> list[date]:
     """Meses (día 1) con movimientos, ingresos comunes o cuotas facturadas en el rango."""
     desde = primer_dia_mes(desde)
@@ -1333,8 +1343,9 @@ def saldo_efectivo_cuentas_desde_snapshot(usuario, espacio_id: int, mes: int, an
 def resumen_cuenta_personal_mensual(espacio_id: int, cuenta_id: int) -> list[dict]:
     """
     Por mes calendario cerrado (desde el primer movimiento en la cuenta hasta el mes anterior al actual):
-    ingresos/egresos/n neto con la misma regla que snapshots personales (sin sueldos declarados
+    ingresos/egresos/neto con la misma regla que snapshots personales (sin sueldos declarados
     en ingresos; egresos solo gastos corrientes en esa cuenta, sin categoría inversión).
+    `ingresos_con_declarado` suma además el sueldo al fondo común (para tasa de ahorro).
     No incluye el mes en curso. Solo movimientos de esta cuenta (cuenta_id) y ámbito PERSONAL.
     """
     base_q = Movimiento.objects.filter(
@@ -1356,13 +1367,15 @@ def resumen_cuenta_personal_mensual(espacio_id: int, cuenta_id: int) -> list[dic
             fecha__year=mes_pd.year,
         )
         efectivo, cnt, ing, egr = _efectivo_neto_personal_qs(sub)
-        if cnt == 0 and efectivo == Decimal('0'):
+        ing_decl = _ingresos_efectivo_debito_incluyendo_declarado(sub)
+        if cnt == 0 and efectivo == Decimal('0') and ing_decl == Decimal('0'):
             continue
         rows.append(
             {
                 'mes': mes_pd.month,
                 'anio': mes_pd.year,
                 'ingresos': str(ing),
+                'ingresos_con_declarado': str(ing_decl),
                 'egresos': str(egr),
                 'efectivo_neto': str(efectivo),
             }
@@ -1396,13 +1409,15 @@ def resumen_sin_cuenta_personal_mensual(espacio_id: int, usuario_id: int) -> lis
             fecha__year=mes_pd.year,
         )
         efectivo, cnt, ing, egr = _efectivo_neto_personal_qs(sub)
-        if cnt == 0 and efectivo == Decimal('0'):
+        ing_decl = _ingresos_efectivo_debito_incluyendo_declarado(sub)
+        if cnt == 0 and efectivo == Decimal('0') and ing_decl == Decimal('0'):
             continue
         rows.append(
             {
                 'mes': mes_pd.month,
                 'anio': mes_pd.year,
                 'ingresos': str(ing),
+                'ingresos_con_declarado': str(ing_decl),
                 'egresos': str(egr),
                 'efectivo_neto': str(efectivo),
             }
