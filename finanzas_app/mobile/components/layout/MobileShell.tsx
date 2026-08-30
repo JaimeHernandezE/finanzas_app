@@ -41,7 +41,7 @@ const ANALISIS_ITEMS: ItemNavegacion[] = [
 const MAS_ITEMS: ItemNavegacion[] = [
   { icon: '▭', label: 'Tarjetas', route: '/tarjetas', activeOn: ['/tarjetas'] },
   { icon: '◇', label: 'Asistente', route: '/(tabs)/asistente', activeOn: ['/asistente'] },
-  { icon: '△', label: 'Inversiones', activeOn: ['/inversiones'] },
+  { icon: '△', label: 'Inversiones', route: '/(tabs)/inversiones', activeOn: ['/inversiones'] },
   { icon: '◎', label: 'Viajes', activeOn: ['/viajes'] },
   { icon: '⚙', label: 'Configuración', route: '/perfil', activeOn: ['/perfil'] },
 ]

@@ -10,12 +10,19 @@ import {
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useMovimientos } from '../../../hooks/useMovimientos'
+import { useSeleccionMultiple } from '../../../hooks/useSeleccionMultiple'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useConfig } from '@finanzas/shared/context/ConfigContext'
 import { finanzasApi, type CuentaPersonalApi } from '@finanzas/shared/api/finanzas'
 import { MobileShell } from '../../../components/layout/MobileShell'
 import { MovimientosFiltrosModal } from '../../../components/movimientos/MovimientosFiltrosModal'
+import { FilaSeleccionable } from '../../../components/movimientos/FilaSeleccionable'
+import {
+  BarraSumatoriaSeleccion,
+  formatSumaSeleccion,
+  montoConSigno,
+} from '../../../components/movimientos/BarraSumatoriaSeleccion'
 import { useAuth } from '../../../context/AuthContext'
 import {
   toggleCategoriaConJerarquia,
@@ -160,6 +167,7 @@ export default function CuentaPersonalScreen() {
   const [filtrosCategorias, setFiltrosCategorias] = useState<string[]>([])
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const [eliminandoSeleccion, setEliminandoSeleccion] = useState(false)
   const categoriaParamAplicadaRef = useRef<string>('')
 
   const { data: catData } = useCategorias({
@@ -277,6 +285,28 @@ export default function CuentaPersonalScreen() {
     })
   }, [movimientosTyped, filtrosCategorias, filtrosMetodos])
 
+  const idsVisibles = useMemo(
+    () => movimientosFiltrados.map((m) => m.id),
+    [movimientosFiltrados],
+  )
+  const seleccion = useSeleccionMultiple(idsVisibles)
+
+  const sumaSeleccion = useMemo(() => {
+    if (seleccion.ids.size === 0) return 0
+    return movimientosFiltrados.reduce((acc, m) => {
+      if (!seleccion.ids.has(m.id)) return acc
+      return acc + montoConSigno(m.tipo, m.monto)
+    }, 0)
+  }, [movimientosFiltrados, seleccion.ids])
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        seleccion.limpiar()
+      }
+    }, [seleccion.limpiar]),
+  )
+
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length
   const puedeMostrarEtiquetaPeriodo =
@@ -328,6 +358,45 @@ export default function CuentaPersonalScreen() {
         },
       ]
     )
+  }
+
+  function confirmarEliminarSeleccion() {
+    const eliminables = movimientosFiltrados.filter(
+      (m) => seleccion.ids.has(m.id) && !m._sync_pending,
+    )
+    if (eliminables.length === 0) {
+      Alert.alert(
+        'No se puede eliminar',
+        'Los movimientos seleccionados aún se están sincronizando.',
+      )
+      return
+    }
+    const totalSel = seleccion.cantidad
+    const mensaje =
+      eliminables.length < totalSel
+        ? `Se eliminarán ${eliminables.length} de ${totalSel} (se omiten los que aún sincronizan). Esta acción no se puede deshacer.`
+        : `¿Eliminar ${eliminables.length} movimiento${eliminables.length === 1 ? '' : 's'}? Esta acción no se puede deshacer.`
+    Alert.alert('Eliminar selección', mensaje, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setEliminandoSeleccion(true)
+            try {
+              for (const mov of eliminables) {
+                await eliminar(mov.id)
+              }
+              seleccion.limpiar()
+              await refetch()
+            } finally {
+              setEliminandoSeleccion(false)
+            }
+          })()
+        },
+      },
+    ])
   }
 
   if (!user) {
@@ -382,7 +451,11 @@ export default function CuentaPersonalScreen() {
 
   return (
     <MobileShell title={tituloShell}>
-      <ScrollView className="flex-1 bg-surface" contentContainerStyle={{ paddingBottom: 32 }}>
+      <View className="flex-1 bg-surface">
+        <ScrollView
+          className="flex-1 bg-surface"
+          contentContainerStyle={{ paddingBottom: 32 }}
+        >
         <View className="px-5 pt-3 pb-2">
           <TouchableOpacity
             onPress={() => router.replace('/(tabs)/index' as never)}
@@ -567,60 +640,72 @@ export default function CuentaPersonalScreen() {
                       const esIngreso = mov.tipo === 'INGRESO'
                       const esCredito = mov.metodo_pago_tipo === 'CREDITO'
                       const m = montoSeguro(mov.monto)
-                      const puedeEditar = puedeEditarMovimientoEnCuenta(
-                        mov.usuario,
-                        user?.id,
-                        cuenta.es_propia,
-                      )
+                      const puedeEditar =
+                        !seleccion.activa &&
+                        puedeEditarMovimientoEnCuenta(
+                          mov.usuario,
+                          user?.id,
+                          cuenta.es_propia,
+                        )
                       const syncBloqueaEdicion = mov.id < 0 || Boolean(mov._sync_pending)
                       /** Durante el POST de alta: no eliminar; con id temporal ya sincronizado en cola offline sí se puede borrar local. */
                       const syncBloqueaEliminar = Boolean(mov._sync_pending)
+                      const seleccionado = seleccion.tiene(mov.id)
                       return (
-                        <View
+                        <FilaSeleccionable
                           key={mov.id}
-                          className={`px-4 py-3 flex-row items-center ${idx < grupo.movimientos.length - 1 ? 'border-b border-border' : ''}`}
+                          seleccionActiva={seleccion.activa}
+                          seleccionado={seleccionado}
+                          onLongPress={() => seleccion.onLongPressItem(mov.id)}
+                          onPress={() => seleccion.toggle(mov.id)}
+                          fondo="#ffffff"
+                          className={idx < grupo.movimientos.length - 1 ? 'border-b border-border' : ''}
                         >
-                          <View className="flex-1 min-w-0 mr-2">
-                            <Text className="text-dark font-medium text-sm" numberOfLines={2}>
-                              {mov.comentario || '—'}
-                            </Text>
-                            <Text className="text-muted text-xs mt-0.5">{mov.categoria_nombre}</Text>
-                          </View>
-                          <View className="items-end">
-                            <Text
-                              className={`text-sm font-semibold ${
-                                esIngreso ? 'text-success' : esCredito ? 'text-muted' : 'text-dark'
-                              }`}
-                            >
-                              {esIngreso ? '+' : esCredito ? '' : '−'}
-                              {formatMonto(m)}
-                            </Text>
-                            <View className="flex-row items-center mt-1 gap-2 flex-wrap justify-end">
-                              <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
-                                <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
-                                  {badge.label}
-                                </Text>
-                              </View>
-                              {puedeEditar && !syncBloqueaEdicion && (
-                                <TouchableOpacity
-                                  onPress={() => irEditarMovimiento(mov.id)}
-                                  hitSlop={8}
-                                  className="px-2 py-1 rounded-lg border border-border"
-                                >
-                                  <Text className="text-dark text-xs font-semibold">Editar</Text>
-                                </TouchableOpacity>
-                              )}
-                              <TouchableOpacity
-                                onPress={() => confirmarEliminar(mov)}
-                                hitSlop={8}
-                                disabled={syncBloqueaEliminar}
-                                style={{ opacity: syncBloqueaEliminar ? 0.35 : 1 }}
+                          <View className="px-4 py-3 flex-row items-center">
+                            <View className="flex-1 min-w-0 mr-2">
+                              <Text className="text-dark font-medium text-sm" numberOfLines={2}>
+                                {mov.comentario || '—'}
+                              </Text>
+                              <Text className="text-muted text-xs mt-0.5">{mov.categoria_nombre}</Text>
+                            </View>
+                            <View className="items-end">
+                              <Text
+                                className={`text-sm font-semibold ${
+                                  esIngreso ? 'text-success' : esCredito ? 'text-muted' : 'text-dark'
+                                }`}
                               >
-                                <Text className="text-danger text-sm">🗑</Text>
-                              </TouchableOpacity>
+                                {esIngreso ? '+' : esCredito ? '' : '−'}
+                                {formatMonto(m)}
+                              </Text>
+                              <View className="flex-row items-center mt-1 gap-2 flex-wrap justify-end">
+                                <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: badge.bg }}>
+                                  <Text className="text-[10px] font-semibold" style={{ color: badge.color }}>
+                                    {badge.label}
+                                  </Text>
+                                </View>
+                                {puedeEditar && !syncBloqueaEdicion && (
+                                  <TouchableOpacity
+                                    onPress={() => irEditarMovimiento(mov.id)}
+                                    hitSlop={8}
+                                    className="px-2 py-1 rounded-lg border border-border"
+                                  >
+                                    <Text className="text-dark text-xs font-semibold">Editar</Text>
+                                  </TouchableOpacity>
+                                )}
+                                {!seleccion.activa && (
+                                  <TouchableOpacity
+                                    onPress={() => confirmarEliminar(mov)}
+                                    hitSlop={8}
+                                    disabled={syncBloqueaEliminar}
+                                    style={{ opacity: syncBloqueaEliminar ? 0.35 : 1 }}
+                                  >
+                                    <Text className="text-danger text-sm">🗑</Text>
+                                  </TouchableOpacity>
+                                )}
+                              </View>
                             </View>
                           </View>
-                        </View>
+                        </FilaSeleccionable>
                       )
                     })}
                   </View>
@@ -630,6 +715,16 @@ export default function CuentaPersonalScreen() {
           </View>
         )}
       </ScrollView>
+        {seleccion.activa && (
+          <BarraSumatoriaSeleccion
+            cantidad={seleccion.cantidad}
+            sumaFirmada={formatSumaSeleccion(sumaSeleccion, formatMonto)}
+            onListo={seleccion.limpiar}
+            onEliminar={confirmarEliminarSeleccion}
+            eliminando={eliminandoSeleccion}
+          />
+        )}
+      </View>
 
       <MovimientosFiltrosModal
         visible={filtrosOpen}

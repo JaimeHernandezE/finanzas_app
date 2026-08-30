@@ -10,7 +10,7 @@ export interface Fondo {
   valorActual: number
 }
 
-export type TipoEvento = 'APORTE' | 'VALOR'
+export type TipoEvento = 'APORTE' | 'RETIRO' | 'VALOR'
 
 export interface EventoFondo {
   id: number

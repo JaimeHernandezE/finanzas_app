@@ -114,11 +114,27 @@ export interface Presupuesto {
   monto:     number
 }
 
+export interface EventoFondo {
+  id: number
+  tipo: 'APORTE' | 'RETIRO' | 'VALOR'
+  fecha: string
+  monto: string | number
+  nota?: string | null
+}
+
 export interface Fondo {
-  id:          number
-  nombre:      string
+  id: number
+  nombre: string
   descripcion: string
-  familia:     number
+  es_compartido: boolean
+  capital_total: number | string
+  valor_actual: number | string
+  ganancia: number | string
+  rentabilidad: number | string
+}
+
+export interface FondoDetalle extends Fondo {
+  historial: EventoFondo[]
 }
 
 /** Modelo API / Django (tabla Viaje) */

@@ -68,6 +68,8 @@ export default function TabsLayout() {
       <Tabs.Screen name="pendientes"       options={{ href: null }} />
       <Tabs.Screen name="asistente"        options={{ href: null }} />
       <Tabs.Screen name="cuenta/[id]"       options={{ href: null }} />
+      <Tabs.Screen name="inversiones/index" options={{ href: null }} />
+      <Tabs.Screen name="inversiones/[id]"  options={{ href: null }} />
     </Tabs>
   )
 }

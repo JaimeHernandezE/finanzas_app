@@ -10,6 +10,8 @@ $valor-icon-bg: #e8f4ff;
 $valor-icon-color: #3b82f6;
 $aporte-icon-bg: #f0fdf4;
 $aporte-icon-color: #22a06b;
+$retiro-icon-bg: #fff0f0;
+$retiro-icon-color: #ff4d4d;
 
 .page {
   padding: $space-8;
@@ -102,6 +104,41 @@ $aporte-icon-color: #22a06b;
 
 .formInlineInputNum {
   max-width: 160px;
+}
+
+.segmentedTipo {
+  display: flex;
+  border: 1px solid $borde-inversiones;
+  border-radius: $radius-base;
+  overflow: hidden;
+  height: $input-height-base;
+  min-width: 180px;
+}
+
+.segmentTipo {
+  flex: 1;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: $font-size-sm;
+  font-weight: $font-weight-medium;
+  color: $color-text-muted;
+  padding: 0 $space-3;
+  transition: background $transition-fast, color $transition-fast;
+
+  & + & {
+    border-left: 1px solid $borde-inversiones;
+  }
+
+  &:hover {
+    background: $color-bg-subtle;
+    color: $color-text;
+  }
+}
+
+.segmentTipoActive {
+  background: $color-primary;
+  color: $color-text;
 }
 
 .btnFormConfirm,
@@ -200,6 +237,12 @@ $aporte-icon-color: #22a06b;
   font-weight: $font-weight-bold;
 }
 
+.iconoRetiro {
+  background: $retiro-icon-bg;
+  color: $retiro-icon-color;
+  font-weight: $font-weight-bold;
+}
+
 .historialContent {
   flex: 1;
   min-width: 0;
@@ -231,6 +274,10 @@ $aporte-icon-color: #22a06b;
 
 .historialMontoAporte {
   color: $ganancia-positiva;
+}
+
+.historialMontoRetiro {
+  color: $ganancia-negativa;
 }
 
 .historialRight {

@@ -138,7 +138,7 @@ def fondo_detalle(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def agregar_aporte(request, pk):
-    """POST → Agrega un aporte de capital al fondo."""
+    """POST → Agrega un movimiento de capital (aporte positivo o retiro negativo)."""
     usuario, espacio, error = usuario_y_espacio(request)
     if error:
         return error
@@ -163,7 +163,7 @@ def agregar_aporte(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def eliminar_aporte(request, pk):
-    """DELETE → Elimina un aporte."""
+    """DELETE → Elimina un movimiento de capital (aporte o retiro)."""
     usuario, espacio, error = usuario_y_espacio(request)
     if error:
         return error

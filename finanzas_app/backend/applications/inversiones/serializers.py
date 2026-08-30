@@ -9,6 +9,11 @@ class AporteSerializer(serializers.ModelSerializer):
         model  = Aporte
         fields = ['id', 'fecha', 'monto', 'nota']
 
+    def validate_monto(self, value):
+        if value == 0:
+            raise serializers.ValidationError('El monto no puede ser cero.')
+        return value
+
 
 class RegistroValorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -18,11 +23,11 @@ class RegistroValorSerializer(serializers.ModelSerializer):
 
 class EventoFondoSerializer(serializers.Serializer):
     """
-    Serializer para el historial mezclado de aportes y registros de valor.
+    Serializer para el historial mezclado de movimientos de capital y valores.
     El frontend los muestra en una sola lista cronológica.
     """
     id    = serializers.IntegerField()
-    tipo  = serializers.CharField()      # 'APORTE' o 'VALOR'
+    tipo  = serializers.CharField()      # 'APORTE', 'RETIRO' o 'VALOR'
     fecha = serializers.DateField()
     monto = serializers.DecimalField(max_digits=14, decimal_places=2)
     nota  = serializers.CharField(allow_null=True)
@@ -69,7 +74,7 @@ class FondoDetalleSerializer(FondoListSerializer):
         aportes = [
             {
                 'id':    a.id,
-                'tipo':  'APORTE',
+                'tipo':  'RETIRO' if a.monto < 0 else 'APORTE',
                 'fecha': str(a.fecha),
                 'monto': str(a.monto),
                 'nota':  a.nota or None,

@@ -41,22 +41,28 @@ class Fondo(models.Model):
 
 class Aporte(models.Model):
     """
-    Registro de cada ingreso de capital nuevo a un fondo.
-    Se diferencia de RegistroValor en que representa dinero real que entra,
+    Movimiento de capital de un fondo (aporte o retiro).
+    Monto positivo = ingreso de capital; monto negativo = retiro.
+    Se diferencia de RegistroValor: dinero real que entra o sale,
     no una variación del valor de mercado.
     """
     fondo = models.ForeignKey(
         Fondo,
         on_delete=models.CASCADE,
         related_name='aportes',
-        help_text="Fondo al que ingresa este capital."
+        help_text="Fondo al que pertenece este movimiento de capital."
     )
     fecha = models.DateField()
-    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    monto = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Positivo = aporte; negativo = retiro.",
+    )
     nota  = models.CharField(max_length=255, blank=True)
 
     def __str__(self):
-        return f"Aporte ${self.monto} a {self.fondo} el {self.fecha}"
+        etiqueta = 'Retiro' if self.monto < 0 else 'Aporte'
+        return f"{etiqueta} ${self.monto} en {self.fondo} el {self.fecha}"
 
     class Meta:
         ordering = ['-fecha']
@@ -66,7 +72,8 @@ class RegistroValor(models.Model):
     """
     Snapshot periódico del valor de mercado de un fondo.
     Se usa para calcular rentabilidad: la diferencia entre el valor actual
-    del fondo y la suma de aportes realizados determina la ganancia o pérdida.
+    del fondo y la suma neta de movimientos de capital (aportes − retiros)
+    determina la ganancia o pérdida.
     """
     fondo = models.ForeignKey(
         Fondo,

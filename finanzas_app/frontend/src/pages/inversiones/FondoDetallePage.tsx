@@ -28,24 +28,55 @@ function formatFecha(fecha: string) {
   })
 }
 
+function labelEvento(tipo: EventoFondo['tipo']): string {
+  if (tipo === 'VALOR') return 'Valor actualizado'
+  if (tipo === 'RETIRO') return 'Retiro'
+  return 'Aporte'
+}
+
+function iconoEvento(tipo: EventoFondo['tipo']): string {
+  if (tipo === 'VALOR') return '▲'
+  if (tipo === 'RETIRO') return '↓'
+  return '💰'
+}
+
+function classIconoEvento(tipo: EventoFondo['tipo']): string {
+  if (tipo === 'VALOR') return styles.iconoValor
+  if (tipo === 'RETIRO') return styles.iconoRetiro
+  return styles.iconoAporte
+}
+
+function classMontoEvento(tipo: EventoFondo['tipo']): string {
+  if (tipo === 'APORTE') return styles.historialMontoAporte
+  if (tipo === 'RETIRO') return styles.historialMontoRetiro
+  return ''
+}
+
+function normalizarTipoEvento(tipo: string): EventoFondo['tipo'] {
+  if (tipo === 'VALOR') return 'VALOR'
+  if (tipo === 'RETIRO') return 'RETIRO'
+  return 'APORTE'
+}
+
 export default function FondoDetallePage() {
   const { formatMonto } = useConfig()
   const { id } = useParams<{ id: string }>()
   const { data: fondoData, loading, error, refetch } = useFondoDetalle(Number(id))
   const fondo = fondoData as FondoDetalleApi | null | undefined
 
-  const [openForm, setOpenForm] = useState<'valor' | 'aporte' | null>(null)
+  const [openForm, setOpenForm] = useState<'valor' | 'movimiento' | null>(null)
   const [formValorFecha, setFormValorFecha] = useState(hoy())
   const [formValorMonto, setFormValorMonto] = useState('')
-  const [formAporteFecha, setFormAporteFecha] = useState(hoy())
-  const [formAporteMonto, setFormAporteMonto] = useState('')
-  const [formAporteNota, setFormAporteNota] = useState('')
+  const [formMovFecha, setFormMovFecha] = useState(hoy())
+  const [formMovMonto, setFormMovMonto] = useState('')
+  const [formMovNota, setFormMovNota] = useState('')
+  const [formMovTipo, setFormMovTipo] = useState<'APORTE' | 'RETIRO'>('APORTE')
 
   const eventos: EventoFondo[] = useMemo(() => {
     const h = fondo?.historial ?? []
     return h.map((e) => ({
       id: e.id,
-      tipo: e.tipo as EventoFondo['tipo'],
+      tipo: normalizarTipoEvento(e.tipo),
       fecha: e.fecha,
       monto: Number(e.monto) || 0,
       nota: e.nota ?? undefined,
@@ -72,24 +103,26 @@ export default function FondoDetallePage() {
     refetch()
   }
 
-  const handleConfirmAporte = async () => {
-    const n = montoClpANumero(formAporteMonto)
+  const handleConfirmMovimiento = async () => {
+    const n = montoClpANumero(formMovMonto)
     if (n <= 0) return
+    const montoFirmado = formMovTipo === 'RETIRO' ? -n : n
     await inversionesApi.agregarAporte(Number(id), {
-      fecha: formAporteFecha,
-      monto: String(n),
-      nota: formAporteNota.trim() || undefined,
+      fecha: formMovFecha,
+      monto: String(montoFirmado),
+      nota: formMovNota.trim() || undefined,
     })
-    setFormAporteMonto('')
-    setFormAporteNota('')
-    setFormAporteFecha(hoy())
+    setFormMovMonto('')
+    setFormMovNota('')
+    setFormMovFecha(hoy())
+    setFormMovTipo('APORTE')
     setOpenForm(null)
     refetch()
   }
 
   const handleEliminar = async (evento: EventoFondo) => {
-    if (evento.tipo === 'APORTE') await inversionesApi.eliminarAporte(evento.id)
-    else await inversionesApi.eliminarValor(evento.id)
+    if (evento.tipo === 'VALOR') await inversionesApi.eliminarValor(evento.id)
+    else await inversionesApi.eliminarAporte(evento.id)
     refetch()
   }
 
@@ -99,11 +132,12 @@ export default function FondoDetallePage() {
     setFormValorMonto('')
   }
 
-  const openAgregarAporte = () => {
-    setOpenForm('aporte')
-    setFormAporteFecha(hoy())
-    setFormAporteMonto('')
-    setFormAporteNota('')
+  const openAgregarMovimiento = () => {
+    setOpenForm('movimiento')
+    setFormMovFecha(hoy())
+    setFormMovMonto('')
+    setFormMovNota('')
+    setFormMovTipo('APORTE')
   }
 
   if (loading) return <Cargando />
@@ -151,9 +185,9 @@ export default function FondoDetallePage() {
         <button
           type="button"
           className={styles.btnAccion}
-          onClick={openAgregarAporte}
+          onClick={openAgregarMovimiento}
         >
-          + Agregar aporte
+          + Agregar movimiento
         </button>
       </div>
 
@@ -204,50 +238,73 @@ export default function FondoDetallePage() {
         </div>
       )}
 
-      {openForm === 'aporte' && (
+      {openForm === 'movimiento' && (
         <div className={styles.formInline}>
           <div>
-            <label className={styles.formInlineLabel} htmlFor="aporte-fecha">
+            <label className={styles.formInlineLabel}>Tipo</label>
+            <div className={styles.segmentedTipo} role="group" aria-label="Tipo de movimiento">
+              <button
+                type="button"
+                className={`${styles.segmentTipo} ${
+                  formMovTipo === 'APORTE' ? styles.segmentTipoActive : ''
+                }`}
+                onClick={() => setFormMovTipo('APORTE')}
+              >
+                Aporte
+              </button>
+              <button
+                type="button"
+                className={`${styles.segmentTipo} ${
+                  formMovTipo === 'RETIRO' ? styles.segmentTipoActive : ''
+                }`}
+                onClick={() => setFormMovTipo('RETIRO')}
+              >
+                Retiro
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className={styles.formInlineLabel} htmlFor="mov-fecha">
               Fecha
             </label>
             <input
-              id="aporte-fecha"
+              id="mov-fecha"
               type="date"
               className={styles.formInlineInput}
-              value={formAporteFecha}
-              onChange={(e) => setFormAporteFecha(e.target.value)}
+              value={formMovFecha}
+              onChange={(e) => setFormMovFecha(e.target.value)}
             />
           </div>
           <div>
-            <label className={styles.formInlineLabel} htmlFor="aporte-monto">
-              Monto del aporte
+            <label className={styles.formInlineLabel} htmlFor="mov-monto">
+              {formMovTipo === 'RETIRO' ? 'Monto del retiro' : 'Monto del aporte'}
             </label>
             <InputMontoClp
               soloInput
-              id="aporte-monto"
+              id="mov-monto"
               inputClassName={styles.formInlineInputNum}
-              value={formAporteMonto}
-              onChange={setFormAporteMonto}
-              aria-label="Monto del aporte"
+              value={formMovMonto}
+              onChange={setFormMovMonto}
+              aria-label={formMovTipo === 'RETIRO' ? 'Monto del retiro' : 'Monto del aporte'}
             />
           </div>
           <div>
-            <label className={styles.formInlineLabel} htmlFor="aporte-nota">
+            <label className={styles.formInlineLabel} htmlFor="mov-nota">
               Nota (opcional)
             </label>
             <input
-              id="aporte-nota"
+              id="mov-nota"
               type="text"
               className={styles.formInlineInput}
-              value={formAporteNota}
-              onChange={(e) => setFormAporteNota(e.target.value)}
+              value={formMovNota}
+              onChange={(e) => setFormMovNota(e.target.value)}
               placeholder="Nota"
             />
           </div>
           <button
             type="button"
             className={styles.btnFormConfirm}
-            onClick={handleConfirmAporte}
+            onClick={handleConfirmMovimiento}
             aria-label="Confirmar"
           >
             ✓
@@ -275,38 +332,32 @@ export default function FondoDetallePage() {
             <button
               type="button"
               className={styles.emptyLink}
-              onClick={openRegistrarValor}
+              onClick={openAgregarMovimiento}
             >
-              Agrega el primer valor o aporte →
+              Agrega el primer valor o movimiento →
             </button>
           </div>
         ) : (
           <div className={styles.historialList}>
             {eventosOrdenados.map((ev) => (
-              <div key={ev.id} className={styles.historialItem}>
-                <div
-                  className={`${styles.iconoWrap} ${
-                    ev.tipo === 'VALOR' ? styles.iconoValor : styles.iconoAporte
-                  }`}
-                >
-                  {ev.tipo === 'VALOR' ? '▲' : '💰'}
+              <div key={`${ev.tipo}-${ev.id}`} className={styles.historialItem}>
+                <div className={`${styles.iconoWrap} ${classIconoEvento(ev.tipo)}`}>
+                  {iconoEvento(ev.tipo)}
                 </div>
                 <div className={styles.historialContent}>
                   <div className={styles.historialFecha}>
                     {formatFecha(ev.fecha)}
                   </div>
                   <div className={styles.historialLabel}>
-                    {ev.tipo === 'VALOR' ? 'Valor actualizado' : 'Aporte'}
+                    {labelEvento(ev.tipo)}
                   </div>
-                  {ev.tipo === 'APORTE' && ev.nota && (
+                  {(ev.tipo === 'APORTE' || ev.tipo === 'RETIRO') && ev.nota && (
                     <div className={styles.historialNota}>{ev.nota}</div>
                   )}
                 </div>
                 <div className={styles.historialRight}>
                   <span
-                    className={`${styles.historialMonto} ${
-                      ev.tipo === 'APORTE' ? styles.historialMontoAporte : ''
-                    }`}
+                    className={`${styles.historialMonto} ${classMontoEvento(ev.tipo)}`}
                   >
                     {formatMonto(ev.monto)}
                   </span>

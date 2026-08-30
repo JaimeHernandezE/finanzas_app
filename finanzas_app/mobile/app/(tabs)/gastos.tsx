@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useMovimientos } from '../../hooks/useMovimientos'
+import { useSeleccionMultiple } from '../../hooks/useSeleccionMultiple'
 import { useCategorias } from '@finanzas/shared/hooks/useCatalogos'
 import { useApi } from '@finanzas/shared/hooks/useApi'
 import { familiaApi } from '@finanzas/shared/api/familia'
@@ -23,6 +24,12 @@ import {
   type MovimientoFormularioRef,
 } from '../../components/movimientos/MovimientoFormulario'
 import { MovimientosFiltrosModal } from '../../components/movimientos/MovimientosFiltrosModal'
+import { FilaSeleccionable } from '../../components/movimientos/FilaSeleccionable'
+import {
+  BarraSumatoriaSeleccion,
+  formatSumaSeleccion,
+  montoConSigno,
+} from '../../components/movimientos/BarraSumatoriaSeleccion'
 import {
   toggleCategoriaConJerarquia,
   type CategoriaFiltroFila,
@@ -149,6 +156,7 @@ export default function GastosScreen() {
   const [filtrosMetodos, setFiltrosMetodos] = useState<string[]>([])
   const [filtrosUsuarios, setFiltrosUsuarios] = useState<number[]>([])
   const [filtrosOpen, setFiltrosOpen] = useState(false)
+  const [eliminandoSeleccion, setEliminandoSeleccion] = useState(false)
   const categoriaParamAplicadaRef = useRef<string>('')
 
   const { data: catData } = useCategorias({ ambito: 'FAMILIAR' })
@@ -300,6 +308,28 @@ export default function GastosScreen() {
     })
   }, [movimientosTyped, filtrosCategorias, filtrosMetodos, filtrosUsuarios])
 
+  const idsVisibles = useMemo(
+    () => movimientosFiltrados.map((m) => m.id),
+    [movimientosFiltrados],
+  )
+  const seleccion = useSeleccionMultiple(idsVisibles)
+
+  const sumaSeleccion = useMemo(() => {
+    if (seleccion.ids.size === 0) return 0
+    return movimientosFiltrados.reduce((acc, m) => {
+      if (!seleccion.ids.has(m.id)) return acc
+      return acc + montoConSigno(m.tipo, m.monto)
+    }, 0)
+  }, [movimientosFiltrados, seleccion.ids])
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        seleccion.limpiar()
+      }
+    }, [seleccion.limpiar]),
+  )
+
   const grupos = useMemo(() => groupByDate(movimientosFiltrados), [movimientosFiltrados])
 
   const filtrosActivos = filtrosCategorias.length + filtrosMetodos.length + filtrosUsuarios.length
@@ -354,6 +384,47 @@ export default function GastosScreen() {
     )
   }
 
+  function confirmarEliminarSeleccion() {
+    const propios = movimientosFiltrados.filter((m) => {
+      if (!seleccion.ids.has(m.id)) return false
+      const uid = normalizarUsuarioId(m.usuario)
+      return usuarioActualId != null && uid != null && uid === usuarioActualId
+    })
+    const totalSel = seleccion.cantidad
+    if (propios.length === 0) {
+      Alert.alert(
+        'Sin permisos',
+        'Solo puedes eliminar tus propios movimientos. Los seleccionados son de otros miembros.',
+      )
+      return
+    }
+    const mensaje =
+      propios.length < totalSel
+        ? `Se eliminarán ${propios.length} de ${totalSel} (solo los tuyos). Esta acción no se puede deshacer.`
+        : `¿Eliminar ${propios.length} movimiento${propios.length === 1 ? '' : 's'}? Esta acción no se puede deshacer.`
+    Alert.alert('Eliminar selección', mensaje, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setEliminandoSeleccion(true)
+            try {
+              for (const mov of propios) {
+                await eliminar(mov.id)
+              }
+              seleccion.limpiar()
+              await refetch()
+            } finally {
+              setEliminandoSeleccion(false)
+            }
+          })()
+        },
+      },
+    ])
+  }
+
   const tabBarBottom = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 8)
   const modalSheetMarginBottom = tabBarBottom + TAB_BAR_HEIGHT + 12
 
@@ -403,6 +474,7 @@ export default function GastosScreen() {
       usuarioMovimientoId != null &&
       usuarioMovimientoId !== usuarioActualId
     const puedeEditarEliminar =
+      !seleccion.activa &&
       usuarioActualId != null &&
       usuarioMovimientoId != null &&
       usuarioMovimientoId === usuarioActualId
@@ -410,10 +482,16 @@ export default function GastosScreen() {
       primerNombre(
         usuariosFiltro.find((u) => u.id === usuarioMovimientoId)?.nombre || mov.autor_nombre,
       ) || '—'
+    const seleccionado = seleccion.tiene(mov.id)
 
     return (
-      <View
-        className={`mx-5 border-x border-t border-border ${isLast ? 'border-b rounded-b-xl mb-1' : ''} ${esAjeno ? 'bg-[#f8f8f8]' : 'bg-white'} overflow-hidden`}
+      <FilaSeleccionable
+        seleccionActiva={seleccion.activa}
+        seleccionado={seleccionado}
+        onLongPress={() => seleccion.onLongPressItem(mov.id)}
+        onPress={() => seleccion.toggle(mov.id)}
+        fondo={esAjeno ? '#f8f8f8' : '#ffffff'}
+        className={`mx-5 border-x border-t border-border ${isLast ? 'border-b rounded-b-xl mb-1' : ''} overflow-hidden`}
       >
         <View className="px-4 py-3 flex-row items-center">
           <View className="flex-1 min-w-0 mr-2">
@@ -464,7 +542,7 @@ export default function GastosScreen() {
             </View>
           </View>
         </View>
-      </View>
+      </FilaSeleccionable>
     )
   }
 
@@ -621,6 +699,7 @@ export default function GastosScreen() {
         </View>
 
         {/* Lista */}
+        <View className="flex-1">
         {loading ? (
           <View className="py-16 items-center">
             <ActivityIndicator color="#0f0f0f" />
@@ -655,6 +734,16 @@ export default function GastosScreen() {
                 )}
               </View>
             }
+          />
+        )}
+        </View>
+        {seleccion.activa && (
+          <BarraSumatoriaSeleccion
+            cantidad={seleccion.cantidad}
+            sumaFirmada={formatSumaSeleccion(sumaSeleccion, formatMonto)}
+            onListo={seleccion.limpiar}
+            onEliminar={confirmarEliminarSeleccion}
+            eliminando={eliminandoSeleccion}
           />
         )}
       </View>
