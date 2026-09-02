@@ -142,9 +142,9 @@ export default function FondoDetalleScreen() {
   }
 
   const handleConfirmValor = async () => {
-    const monto = formValorMonto.trim().replace(',', '.')
-    if (!monto || Number(monto) < 0 || !Number.isFinite(Number(monto))) {
-      setFormError('Ingresa un valor válido.')
+    const n = montoClpANumero(formValorMonto)
+    if (n <= 0) {
+      setFormError('Ingresa un valor mayor a 0.')
       return
     }
     setGuardando(true)
@@ -152,7 +152,7 @@ export default function FondoDetalleScreen() {
     try {
       await inversionesApi.agregarValor(fondoId, {
         fecha: formValorFecha,
-        valor_cuota: monto,
+        valor_cuota: String(n),
       })
       setFormValorMonto('')
       setFormValorFecha(hoyIsoEnZonaHoraria(zonaEfectiva))
@@ -354,11 +354,11 @@ export default function FondoDetalleScreen() {
                 ) : null}
                 <Text className="text-xs text-muted font-semibold mb-1">Valor actual del fondo</Text>
                 <TextInput
-                  value={formValorMonto}
-                  onChangeText={(v) => setFormValorMonto(v.replace(/[^0-9.,]/g, ''))}
-                  placeholder="Ej: 1250,5"
+                  value={formatoMontoClpMostrar(formValorMonto)}
+                  onChangeText={(v) => setFormValorMonto(normalizarDigitosMontoClp(v))}
+                  placeholder="$0"
                   placeholderTextColor="#888884"
-                  keyboardType="decimal-pad"
+                  keyboardType="number-pad"
                   className="border border-border rounded-lg px-3 py-2.5 text-dark bg-surface text-sm mb-3"
                 />
                 {formError ? <Text className="text-danger text-sm mb-3">{formError}</Text> : null}

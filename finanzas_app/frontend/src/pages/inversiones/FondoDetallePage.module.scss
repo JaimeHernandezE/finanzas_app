@@ -89,6 +89,13 @@ $retiro-icon-color: #ff4d4d;
   animation: slideDown 250ms ease both;
 }
 
+.formError {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: $font-size-sm;
+  color: $color-danger;
+}
+
 .formInlineLabel {
   @include field-label;
   margin-bottom: 0;

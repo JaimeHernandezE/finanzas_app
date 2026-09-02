@@ -4,6 +4,7 @@ import { useFondoDetalle } from '@/hooks/useInversiones'
 import { inversionesApi } from '@/api'
 import { Cargando, ErrorCarga, InputMontoClp } from '@/components/ui'
 import { montoClpANumero } from '@/utils/montoClp'
+import { apiErrorMessage } from '@/utils/apiErrorMessage'
 import { useConfig } from '@/context/ConfigContext'
 import styles from './FondoDetallePage.module.scss'
 import type { EventoFondo } from './data'
@@ -71,6 +72,8 @@ export default function FondoDetallePage() {
   const [formMovMonto, setFormMovMonto] = useState('')
   const [formMovNota, setFormMovNota] = useState('')
   const [formMovTipo, setFormMovTipo] = useState<'APORTE' | 'RETIRO'>('APORTE')
+  const [formError, setFormError] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
 
   const eventos: EventoFondo[] = useMemo(() => {
     const h = fondo?.historial ?? []
@@ -94,42 +97,73 @@ export default function FondoDetallePage() {
   const rentabilidad = Number(fondo?.rentabilidad ?? 0)
 
   const handleConfirmValor = async () => {
-    const monto = formValorMonto
-    if (!monto || Number(monto) < 0) return
-    await inversionesApi.agregarValor(Number(id), { fecha: formValorFecha, valor_cuota: monto })
-    setFormValorMonto('')
-    setFormValorFecha(hoy())
-    setOpenForm(null)
-    refetch()
+    const n = montoClpANumero(formValorMonto)
+    if (n <= 0) {
+      setFormError('Ingresa un valor mayor a 0.')
+      return
+    }
+    setGuardando(true)
+    setFormError(null)
+    try {
+      await inversionesApi.agregarValor(Number(id), {
+        fecha: formValorFecha,
+        valor_cuota: String(n),
+      })
+      setFormValorMonto('')
+      setFormValorFecha(hoy())
+      setOpenForm(null)
+      refetch()
+    } catch (e: unknown) {
+      setFormError(apiErrorMessage(e) || 'No se pudo registrar el valor.')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   const handleConfirmMovimiento = async () => {
     const n = montoClpANumero(formMovMonto)
-    if (n <= 0) return
+    if (n <= 0) {
+      setFormError('Ingresa un monto mayor a 0.')
+      return
+    }
     const montoFirmado = formMovTipo === 'RETIRO' ? -n : n
-    await inversionesApi.agregarAporte(Number(id), {
-      fecha: formMovFecha,
-      monto: String(montoFirmado),
-      nota: formMovNota.trim() || undefined,
-    })
-    setFormMovMonto('')
-    setFormMovNota('')
-    setFormMovFecha(hoy())
-    setFormMovTipo('APORTE')
-    setOpenForm(null)
-    refetch()
+    setGuardando(true)
+    setFormError(null)
+    try {
+      await inversionesApi.agregarAporte(Number(id), {
+        fecha: formMovFecha,
+        monto: String(montoFirmado),
+        nota: formMovNota.trim() || undefined,
+      })
+      setFormMovMonto('')
+      setFormMovNota('')
+      setFormMovFecha(hoy())
+      setFormMovTipo('APORTE')
+      setOpenForm(null)
+      refetch()
+    } catch (e: unknown) {
+      setFormError(apiErrorMessage(e) || 'No se pudo registrar el movimiento.')
+    } finally {
+      setGuardando(false)
+    }
   }
 
   const handleEliminar = async (evento: EventoFondo) => {
-    if (evento.tipo === 'VALOR') await inversionesApi.eliminarValor(evento.id)
-    else await inversionesApi.eliminarAporte(evento.id)
-    refetch()
+    setFormError(null)
+    try {
+      if (evento.tipo === 'VALOR') await inversionesApi.eliminarValor(evento.id)
+      else await inversionesApi.eliminarAporte(evento.id)
+      refetch()
+    } catch (e: unknown) {
+      setFormError(apiErrorMessage(e) || 'No se pudo eliminar el registro.')
+    }
   }
 
   const openRegistrarValor = () => {
     setOpenForm('valor')
     setFormValorFecha(hoy())
     setFormValorMonto('')
+    setFormError(null)
   }
 
   const openAgregarMovimiento = () => {
@@ -138,6 +172,7 @@ export default function FondoDetallePage() {
     setFormMovMonto('')
     setFormMovNota('')
     setFormMovTipo('APORTE')
+    setFormError(null)
   }
 
   if (loading) return <Cargando />
@@ -209,20 +244,20 @@ export default function FondoDetallePage() {
             <label className={styles.formInlineLabel} htmlFor="valor-monto">
               Valor actual del fondo
             </label>
-            <input
+            <InputMontoClp
+              soloInput
               id="valor-monto"
-              type="text"
-              inputMode="decimal"
-              className={styles.formInlineInputNum}
+              inputClassName={styles.formInlineInputNum}
               value={formValorMonto}
-              onChange={(e) => setFormValorMonto(e.target.value.replace(',', '.'))}
-              placeholder="Ej: 1250,5"
+              onChange={setFormValorMonto}
+              aria-label="Valor actual del fondo"
             />
           </div>
           <button
             type="button"
             className={styles.btnFormConfirm}
             onClick={handleConfirmValor}
+            disabled={guardando}
             aria-label="Confirmar"
           >
             ✓
@@ -230,11 +265,15 @@ export default function FondoDetallePage() {
           <button
             type="button"
             className={styles.btnFormCancel}
-            onClick={() => setOpenForm(null)}
+            onClick={() => {
+              setOpenForm(null)
+              setFormError(null)
+            }}
             aria-label="Cancelar"
           >
             ✕
           </button>
+          {formError && <p className={styles.formError}>{formError}</p>}
         </div>
       )}
 
@@ -305,6 +344,7 @@ export default function FondoDetallePage() {
             type="button"
             className={styles.btnFormConfirm}
             onClick={handleConfirmMovimiento}
+            disabled={guardando}
             aria-label="Confirmar"
           >
             ✓
@@ -312,11 +352,15 @@ export default function FondoDetallePage() {
           <button
             type="button"
             className={styles.btnFormCancel}
-            onClick={() => setOpenForm(null)}
+            onClick={() => {
+              setOpenForm(null)
+              setFormError(null)
+            }}
             aria-label="Cancelar"
           >
             ✕
           </button>
+          {formError && <p className={styles.formError}>{formError}</p>}
         </div>
       )}
 
