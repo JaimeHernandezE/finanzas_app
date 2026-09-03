@@ -9,6 +9,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from django.db import IntegrityError
 from django.db.models import Sum, Q
 
 from applications.espacios.contexto import usuario_y_espacio
@@ -185,7 +186,15 @@ def eliminar_aporte(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def agregar_valor(request, pk):
-    """POST → Registra el valor actual del fondo."""
+    """
+    POST → Registra el valor del fondo para una fecha.
+
+    Idempotente por (fondo, fecha): si ya hay un registro para esa fecha se
+    actualiza. `RegistroValor` tiene unique_together ['fondo', 'fecha'], pero
+    el serializer no expone `fondo`, así que DRF no puede aplicar el
+    UniqueTogetherValidator y el insert duplicado terminaba en IntegrityError
+    sin capturar (HTTP 500) en vez de un resultado manejado.
+    """
     usuario, espacio, error = usuario_y_espacio(request)
     if error:
         return error
@@ -200,10 +209,26 @@ def agregar_valor(request, pk):
         return bloqueo
 
     serializer = RegistroValorSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(fondo=fondo)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        registro, creado = RegistroValor.objects.update_or_create(
+            fondo=fondo,
+            fecha=serializer.validated_data['fecha'],
+            defaults={'valor_cuota': serializer.validated_data['valor_cuota']},
+        )
+    except IntegrityError:
+        # Red de seguridad ante carreras entre el SELECT y el INSERT.
+        return Response(
+            {'error': 'Ya existe un valor registrado para esa fecha.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response(
+        RegistroValorSerializer(registro).data,
+        status=status.HTTP_201_CREATED if creado else status.HTTP_200_OK,
+    )
 
 
 @api_view(['DELETE'])

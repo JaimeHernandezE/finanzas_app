@@ -122,6 +122,27 @@ class TestAportesYValores:
         )
         assert res.status_code == 201
 
+    def test_agregar_valor_fecha_repetida_actualiza_sin_error(
+        self, client, auth_header, fondo, registro_valor
+    ):
+        """
+        Regresión: unique_together ['fondo', 'fecha'] reventaba con IntegrityError
+        (HTTP 500) porque el serializer no expone `fondo` y DRF omite el
+        UniqueTogetherValidator. Reenviar la misma fecha debe actualizar el valor.
+        """
+        res = client.post(
+            f'/api/inversiones/fondos/{fondo.id}/valores/',
+            data={'fecha': str(registro_valor.fecha), 'valor_cuota': '6100000.00'},
+            content_type='application/json',
+            **auth_header,
+        )
+        assert res.status_code == 200
+        assert RegistroValor.objects.filter(
+            fondo=fondo, fecha=registro_valor.fecha
+        ).count() == 1
+        registro_valor.refresh_from_db()
+        assert registro_valor.valor_cuota == Decimal('6100000.00')
+
     def test_eliminar_aporte(self, client, auth_header, aporte):
         res = client.delete(
             f'/api/inversiones/aportes/{aporte.id}/',
