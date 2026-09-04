@@ -59,13 +59,18 @@ class Aporte(models.Model):
         help_text="Positivo = aporte; negativo = retiro.",
     )
     nota  = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Instante de creación. Permite descartar reenvíos del mismo "
+                  "movimiento cuando el cliente reintenta tras un timeout.",
+    )
 
     def __str__(self):
         etiqueta = 'Retiro' if self.monto < 0 else 'Aporte'
         return f"{etiqueta} ${self.monto} en {self.fondo} el {self.fecha}"
 
     class Meta:
-        ordering = ['-fecha']
+        ordering = ['-fecha', '-created_at']
 
 
 class RegistroValor(models.Model):

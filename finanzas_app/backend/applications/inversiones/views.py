@@ -9,10 +9,12 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError
 from django.db.models import Q
+from django.utils import timezone
 
 from applications.espacios.contexto import usuario_y_espacio
 
@@ -21,6 +23,11 @@ from .serializers import (
     FondoListSerializer, FondoDetalleSerializer,
     AporteSerializer, RegistroValorSerializer,
 )
+
+
+# Ventana en la que un movimiento de capital idéntico se trata como reenvío
+# del mismo y no como uno nuevo.
+VENTANA_DUPLICADO_APORTE = timedelta(seconds=60)
 
 
 def _bloqueo_escritura(espacio):
@@ -162,7 +169,17 @@ def fondo_detalle(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def agregar_aporte(request, pk):
-    """POST → Agrega un movimiento de capital (aporte positivo o retiro negativo)."""
+    """
+    POST → Agrega un movimiento de capital (aporte positivo o retiro negativo).
+
+    Descarta reenvíos: si en los últimos `VENTANA_DUPLICADO_APORTE` segundos ya
+    se creó un movimiento idéntico (misma fecha, monto y nota) en este fondo, se
+    devuelve ese en vez de crear otro. Cubre el caso en que el cliente aborta
+    por timeout una petición que el servidor sí completó y el usuario reintenta.
+
+    La ventana es corta a propósito: dos movimientos realmente idénticos
+    separados por más de un minuto se consideran distintos y se registran ambos.
+    """
     usuario, espacio, error = usuario_y_espacio(request)
     if error:
         return error
@@ -177,10 +194,26 @@ def agregar_aporte(request, pk):
         return bloqueo
 
     serializer = AporteSerializer(data=request.data)
-    if serializer.is_valid():
-        serializer.save(fondo=fondo)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    reciente = (
+        Aporte.objects
+        .filter(
+            fondo=fondo,
+            fecha=serializer.validated_data['fecha'],
+            monto=serializer.validated_data['monto'],
+            nota=serializer.validated_data.get('nota', ''),
+            created_at__gte=timezone.now() - VENTANA_DUPLICADO_APORTE,
+        )
+        .order_by('-created_at')
+        .first()
+    )
+    if reciente is not None:
+        return Response(AporteSerializer(reciente).data, status=status.HTTP_200_OK)
+
+    serializer.save(fondo=fondo)
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['DELETE'])

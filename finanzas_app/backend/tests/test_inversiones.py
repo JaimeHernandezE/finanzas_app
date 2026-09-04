@@ -1,7 +1,9 @@
 # backend/tests/test_inversiones.py
 
 import pytest
+from datetime import timedelta
 from decimal import Decimal
+from django.utils import timezone
 from applications.inversiones.models import Fondo, Aporte, RegistroValor
 
 
@@ -144,6 +146,62 @@ class TestAportesYValores:
         )
         assert res.status_code == 201
         assert Aporte.objects.filter(fondo=fondo).count() == 1
+
+    def test_reenvio_de_aporte_identico_no_duplica(self, client, auth_header, fondo):
+        """
+        Regresión: si el cliente aborta por timeout una petición que el servidor
+        sí completó, el reintento del usuario duplicaba el movimiento. Dentro de
+        la ventana corta el reenvío devuelve el existente con 200.
+        """
+        cuerpo = {'fecha': '2026-03-10', 'monto': '500000.00', 'nota': 'Aporte marzo'}
+        primera = client.post(
+            f'/api/inversiones/fondos/{fondo.id}/aportes/',
+            data=cuerpo, content_type='application/json', **auth_header,
+        )
+        assert primera.status_code == 201
+
+        reenvio = client.post(
+            f'/api/inversiones/fondos/{fondo.id}/aportes/',
+            data=cuerpo, content_type='application/json', **auth_header,
+        )
+        assert reenvio.status_code == 200
+        assert reenvio.json()['id'] == primera.json()['id']
+        assert Aporte.objects.filter(fondo=fondo).count() == 1
+
+    def test_aporte_identico_fuera_de_ventana_si_se_registra(
+        self, client, auth_header, fondo
+    ):
+        """Pasada la ventana, dos movimientos idénticos son dos movimientos distintos."""
+        from applications.inversiones import views as vistas_inversiones
+
+        cuerpo = {'fecha': '2026-03-10', 'monto': '500000.00', 'nota': 'Aporte marzo'}
+        client.post(
+            f'/api/inversiones/fondos/{fondo.id}/aportes/',
+            data=cuerpo, content_type='application/json', **auth_header,
+        )
+        # Envejecer el registro más allá de la ventana.
+        Aporte.objects.filter(fondo=fondo).update(
+            created_at=timezone.now() - vistas_inversiones.VENTANA_DUPLICADO_APORTE
+            - timedelta(seconds=1)
+        )
+
+        segunda = client.post(
+            f'/api/inversiones/fondos/{fondo.id}/aportes/',
+            data=cuerpo, content_type='application/json', **auth_header,
+        )
+        assert segunda.status_code == 201
+        assert Aporte.objects.filter(fondo=fondo).count() == 2
+
+    def test_aporte_con_distinto_monto_no_se_descarta(self, client, auth_header, fondo):
+        """Sólo se descarta el movimiento idéntico, no cualquiera cercano en el tiempo."""
+        for monto in ('500000.00', '750000.00'):
+            res = client.post(
+                f'/api/inversiones/fondos/{fondo.id}/aportes/',
+                data={'fecha': '2026-03-10', 'monto': monto, 'nota': 'Aporte marzo'},
+                content_type='application/json', **auth_header,
+            )
+            assert res.status_code == 201
+        assert Aporte.objects.filter(fondo=fondo).count() == 2
 
     def test_agregar_valor(self, client, auth_header, fondo):
         res = client.post(
