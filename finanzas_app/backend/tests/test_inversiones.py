@@ -58,6 +58,38 @@ class TestFondosListado:
         assert Decimal(datos['ganancia'])      == Decimal('980000.00')
         assert Decimal(datos['rentabilidad'])  == Decimal('19.60')
 
+    def test_aporte_posterior_al_ultimo_valor_suma_al_valor_actual(
+        self, client, auth_header, fondo, aporte, registro_valor
+    ):
+        """
+        Un aporte posterior al último snapshot de valor debe sumarse al valor
+        actual. El snapshot es una foto de mercado a esa fecha: el dinero que
+        entró después no está en él, y sin el ajuste el aporte aparecía como
+        una pérdida por su monto completo.
+        """
+        Aporte.objects.create(
+            fondo=fondo, fecha='2026-03-10', monto='1000000.00', nota='Aporte nuevo'
+        )
+        res = client.get('/api/inversiones/fondos/', **auth_header)
+        datos = res.json()[0]
+        # capital 5.000.000 + 1.000.000; valor 5.980.000 (1 mar) + 1.000.000 (10 mar)
+        assert Decimal(datos['capital_total']) == Decimal('6000000.00')
+        assert Decimal(datos['valor_actual']) == Decimal('6980000.00')
+        assert Decimal(datos['ganancia']) == Decimal('980000.00')
+
+    def test_retiro_posterior_al_ultimo_valor_resta_del_valor_actual(
+        self, client, auth_header, fondo, aporte, registro_valor
+    ):
+        """Un retiro (monto negativo) posterior al snapshot descuenta del valor actual."""
+        Aporte.objects.create(
+            fondo=fondo, fecha='2026-03-10', monto='-500000.00', nota='Retiro'
+        )
+        res = client.get('/api/inversiones/fondos/', **auth_header)
+        datos = res.json()[0]
+        assert Decimal(datos['capital_total']) == Decimal('4500000.00')
+        assert Decimal(datos['valor_actual']) == Decimal('5480000.00')
+        assert Decimal(datos['ganancia']) == Decimal('980000.00')
+
     def test_fondo_sin_registros_valor_usa_capital_como_valor_actual(
         self, client, auth_header, fondo, aporte
     ):

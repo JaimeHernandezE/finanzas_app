@@ -9,8 +9,10 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from decimal import Decimal
+
 from django.db import IntegrityError
-from django.db.models import Sum, Q
+from django.db.models import Q
 
 from applications.espacios.contexto import usuario_y_espacio
 
@@ -35,10 +37,31 @@ def calcular_metricas(fondo):
     """
     Calcula capital total, valor actual, ganancia y rentabilidad de un fondo.
     Se añaden como atributos al objeto para que los serializers los lean.
+
+    `valor_actual` parte del último snapshot de mercado, pero le suma los
+    movimientos de capital posteriores a esa fecha: ese dinero entró (o salió)
+    después de la foto y por definición no está reflejado en ella. Sin el
+    ajuste, un aporte reciente aparece como pérdida por su monto completo hasta
+    que se registre un valor nuevo.
+
+    Se recorre en Python lo ya precargado con `prefetch_related` en las vistas;
+    usar aggregate/order_by aquí ignoraría esa caché y dispararía consultas por
+    cada fondo del listado.
     """
-    capital = fondo.aportes.aggregate(total=Sum('monto'))['total'] or 0
-    ultimo_valor = fondo.registros_valor.order_by('-fecha').first()
-    valor_actual = ultimo_valor.valor_cuota if ultimo_valor else capital
+    aportes = list(fondo.aportes.all())
+    capital = sum((a.monto for a in aportes), Decimal('0'))
+
+    registros = list(fondo.registros_valor.all())
+    ultimo_valor = max(registros, key=lambda r: r.fecha) if registros else None
+
+    if ultimo_valor is None:
+        valor_actual = capital
+    else:
+        movimientos_posteriores = sum(
+            (a.monto for a in aportes if a.fecha > ultimo_valor.fecha),
+            Decimal('0'),
+        )
+        valor_actual = ultimo_valor.valor_cuota + movimientos_posteriores
 
     ganancia = valor_actual - capital
     rentabilidad = (ganancia / capital * 100) if capital > 0 else 0
