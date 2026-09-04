@@ -115,12 +115,25 @@ export default function FondoDetalleScreen() {
   const rentabilidad = montoNum(fondo?.rentabilidad)
   const esGananciaPositiva = ganancia >= 0
 
+  /**
+   * Refresca los datos tras una escritura ya confirmada por el servidor.
+   *
+   * Nunca propaga: si el refresco falla (timeout, red intermitente) la
+   * escritura igual se guardó, y dejar que el error suba hacía que la UI
+   * dijera "no se pudo guardar". El usuario reintentaba y duplicaba el
+   * movimiento. Como mucho quedan datos algo desactualizados hasta el
+   * siguiente refresco.
+   */
   const invalidar = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['fondos'] })
-    if (idValido) {
-      await queryClient.invalidateQueries({ queryKey: ['fondo', fondoId] })
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['fondos'] })
+      if (idValido) {
+        await queryClient.invalidateQueries({ queryKey: ['fondo', fondoId] })
+      }
+      await refetch()
+    } catch {
+      /* la escritura ya está hecha; el refresco se reintenta al volver a la pantalla */
     }
-    await refetch()
   }
 
   const openRegistrarValor = () => {

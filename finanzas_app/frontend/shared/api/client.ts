@@ -92,7 +92,12 @@ function normalizeApiPath(baseURL: string | undefined, url: string | undefined):
 client.interceptors.request.use(async (config) => {
   config.baseURL = getApiBaseUrl()
   config.url = normalizeApiPath(config.baseURL, config.url)
-  config.timeout = getApiTimeoutMs()
+  // Sólo aplicar el timeout global si la petición no pidió uno propio: pisarlo
+  // aquí anulaba los timeouts largos declarados por endpoint (p. ej. el
+  // asistente pide 90s y en móvil moría a los 10s).
+  if (config.timeout == null || config.timeout === 0) {
+    config.timeout = getApiTimeoutMs()
+  }
   const token = await getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
