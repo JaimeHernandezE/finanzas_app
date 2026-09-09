@@ -389,6 +389,95 @@ class TestCapturaBot:
         assert p.comercio == 'María López'
         assert p.numero_cuenta == '9876543210'
 
+    def test_parser_transferencia_bci_formato_real(self):
+        """
+        Formato real de transferencias@bci.cl. Cubre tres cosas que fallaban:
+        la cuenta de origen no se extraía ("desde tu cuenta N°" no calzaba),
+        el banco quedaba GENERICO y el comentario arrastraba el marcador
+        "Sin mensaje".
+        """
+        body = (
+            'Realizaste una transferencia de fondos desde tu cuenta N° 79834843\n'
+            'Datos de tu transferencia\n'
+            'Monto transferido $9.790\n'
+            'Nombre del destinatario Jaime Calderón\n'
+            'Banco de destino Mercado Pago\n'
+            'Cuenta de destino 1089106230\n'
+            'Fecha de abono 08/09/2026\n'
+            'Mensaje Sin mensaje\n'
+            'Número de comprobante 1226294130\n'
+            'Te recomendamos no ingresar a tu Banco en'
+        )
+        p = parse_email(
+            subject='Comprobante de transferencia',
+            body=body,
+            from_addr='transferencias@bci.cl',
+        )
+        assert p is not None
+        assert p.es_transferencia is True
+        assert p.monto == Decimal('9790.00')
+        assert p.fecha == date(2026, 9, 8)
+        assert p.banco == 'BCI'
+        assert p.comercio == 'Jaime Calderón'
+        assert p.numero_cuenta == '79834843'
+        # La cuenta de destino es la del receptor: usarla resolvería la
+        # tarjeta equivocada.
+        assert p.numero_cuenta != '1089106230'
+
+    def test_parser_transferencia_bci_con_mensaje(self):
+        """Con mensaje real, el comentario es "destinatario - mensaje"."""
+        body = (
+            'Realizaste una transferencia de fondos desde tu cuenta N° 79834843\n'
+            'Monto transferido $9.790\n'
+            'Nombre del destinatario Jaime Calderón\n'
+            'Cuenta de destino 1089106230\n'
+            'Fecha de abono 08/09/2026\n'
+            'Mensaje Arriendo septiembre\n'
+        )
+        p = parse_email(
+            subject='Comprobante de transferencia',
+            body=body,
+            from_addr='transferencias@bci.cl',
+        )
+        assert p is not None
+        assert p.comercio == 'Jaime Calderón - Arriendo septiembre'
+
+    def test_parser_transferencia_ignora_cuenta_de_destino(self):
+        """Sin cuenta de origen identificable, no se cae en la de destino."""
+        body = (
+            'Transferiste $5.000\n'
+            'Destinatario: Ana Soto\n'
+            'Cuenta de destino: 1089106230\n'
+            'Fecha 08/09/2026\n'
+        )
+        p = parse_email(
+            subject='Transferencia',
+            body=body,
+            from_addr='transferencias@bci.cl',
+        )
+        assert p is not None
+        assert p.numero_cuenta == ''
+
+    def test_resolver_tarjeta_por_cuenta_con_ultimos_4(self, usuario):
+        """
+        Guardar solo los últimos 4 dígitos de la cuenta basta para el match:
+        el resolver cae al sufijo cuando no hay coincidencia exacta. Evita
+        almacenar el número completo.
+        """
+        from applications.finanzas.models import Tarjeta
+        from applications.finanzas.services.captura import resolver_tarjeta_por_cuenta
+
+        tarjeta = Tarjeta.objects.create(
+            usuario=usuario, nombre='BCI Débito', banco='BCI',
+            tipo='DEBITO', ultimos_4_digitos='9803', numero_cuenta='4843',
+        )
+        assert resolver_tarjeta_por_cuenta(
+            usuario=usuario, numero_cuenta='79834843',
+        ).pk == tarjeta.pk
+        assert resolver_tarjeta_por_cuenta(
+            usuario=usuario, numero_cuenta='11112222',
+        ) is None
+
     def test_parser_compra_no_se_trata_como_transferencia(self):
         body = (
             'Te informamos de una compra en comercio nacional con tu tarjeta de débito.\n'

@@ -381,8 +381,24 @@ def _destinatario_desde_texto(texto: str) -> str:
     )
 
 
+#: Marcadores que los bancos escriben cuando el campo viene vacío. Sin esto el
+#: comentario terminaba como "Jaime Calderón - Sin mensaje".
+_VALORES_VACIOS = frozenset({
+    'sin mensaje',
+    'sin comentario',
+    'sin glosa',
+    'sin motivo',
+    'sin descripción',
+    'sin descripcion',
+    'no aplica',
+    'n/a',
+    '-',
+    '--',
+})
+
+
 def _mensaje_transferencia_desde_texto(texto: str) -> str:
-    return _valor_etiquetado(
+    valor = _valor_etiquetado(
         texto,
         (
             r'mensaje',
@@ -391,17 +407,47 @@ def _mensaje_transferencia_desde_texto(texto: str) -> str:
             r'motivo',
         ),
     )
+    if valor.strip().lower() in _VALORES_VACIOS:
+        return ''
+    return valor
+
+
+#: Contexto que delata que un número de cuenta es el del receptor.
+_CONTEXTO_CUENTA_DESTINO = re.compile(
+    r'destino|destinatari|beneficiari|abono\s+a', re.IGNORECASE,
+)
 
 
 def _numero_cuenta_desde_texto(texto: str) -> str:
-    patterns = [
-        r'(?:cuenta\s+de\s+origen|desde\s+(?:la\s+)?cuenta|n[uú]mero\s+de\s+cuenta|'
-        r'n[°º]?\s*de\s*cuenta|cuenta\s+origen|n[uú]mero\s+cuenta|'
-        r'cuenta\s+cargada|cuenta)\s*:?\s*([\d\s.\-]{4,40})',
+    """
+    Número de la cuenta de ORIGEN, es decir la del propio usuario.
+
+    Nunca debe devolver la cuenta de destino: es la del receptor, y usarla para
+    resolver la tarjeta asociaría el movimiento a la cuenta equivocada. Por eso
+    primero se prueban etiquetas inequívocas de origen y recién después una
+    genérica, descartando la que venga precedida de contexto de destino.
+    """
+    numero = r'(\d[\d\s.\-]{3,39})'
+    especificos = [
+        # BCI: "Realizaste una transferencia ... desde tu cuenta N° 79834843"
+        rf'desde\s+(?:tu|la|mi|su)\s+cuenta\s*(?:corriente\s*)?'
+        rf'(?:n[°º]\s*|n[uú]mero\s*)?:?\s*{numero}',
+        rf'cuenta\s+(?:de\s+)?origen\s*:?\s*{numero}',
+        rf'cuenta\s+cargada\s*:?\s*{numero}',
+        rf'n[uú]mero\s+de\s+cuenta\s*:?\s*{numero}',
+        rf'n[uú]mero\s+cuenta\s*:?\s*{numero}',
     ]
-    for pat in patterns:
+    for pat in especificos:
         m = re.search(pat, texto, re.IGNORECASE | re.MULTILINE)
         if not m:
+            continue
+        digits = _solo_digitos(m.group(1))
+        if len(digits) >= 4:
+            return digits
+
+    for m in re.finditer(rf'cuenta\s*:?\s*{numero}', texto, re.IGNORECASE):
+        previo = texto[max(0, m.start() - 40):m.start()]
+        if _CONTEXTO_CUENTA_DESTINO.search(previo):
             continue
         digits = _solo_digitos(m.group(1))
         if len(digits) >= 4:
@@ -541,23 +587,36 @@ def parse_bancoestado(subject: str, body: str) -> GastoParseado | None:
     )
 
 
-_PARSERS_POR_REMITENTE: list[tuple[re.Pattern, Callable[[str, str], GastoParseado | None]]] = [
-    (re.compile(r'bci\.cl|banco\s*bci', re.I), parse_bci),
-    (re.compile(r'santander\.cl|banco\s*santander', re.I), parse_santander),
+#: (patrón de remitente, banco, parser de compras). El banco se declara aquí
+#: para poder etiquetar también las transferencias, que se desvían antes del
+#: dispatch por banco y quedaban siempre como GENERICO.
+_PARSERS_POR_REMITENTE: list[tuple[re.Pattern, str, Callable[[str, str], GastoParseado | None]]] = [
+    (re.compile(r'bci\.cl|banco\s*bci', re.I), 'BCI', parse_bci),
+    (re.compile(r'santander\.cl|banco\s*santander', re.I), 'SANTANDER', parse_santander),
     (
         re.compile(r'bancoestado\.cl|banco\s*estado|correo\.bancoestado', re.I),
+        'BANCOESTADO',
         parse_bancoestado,
     ),
 ]
+
+
+def _banco_desde_remitente(from_addr: str, subject: str = '') -> str:
+    blob = f'{from_addr} {subject}'
+    for pattern, banco, _parser in _PARSERS_POR_REMITENTE:
+        if pattern.search(blob):
+            return banco
+    return 'GENERICO'
 
 
 def parse_email(*, subject: str, body: str, from_addr: str = '') -> GastoParseado | None:
     if _parece_transferencia(subject, body):
         parsed_tef = parse_transferencia_generico(subject, body)
         if parsed_tef:
+            parsed_tef.banco = _banco_desde_remitente(from_addr, subject)
             return parsed_tef
     blob = f'{from_addr} {subject}'
-    for pattern, parser in _PARSERS_POR_REMITENTE:
+    for pattern, _banco, parser in _PARSERS_POR_REMITENTE:
         if pattern.search(blob):
             parsed = parser(subject, body)
             if parsed:
