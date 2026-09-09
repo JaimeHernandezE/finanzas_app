@@ -310,9 +310,11 @@ class TestCapturaBot:
         El `.replace('.', '')` incondicional anterior convertía 49.99 en 4999.
         Se decide por el último separador: 1-2 cifras es decimal, 3 es miles.
         """
-        from applications.finanzas.services.captura.parsers import _normalizar_numero
+        from applications.finanzas.services.captura.parsers.comunes import (
+            normalizar_numero,
+        )
 
-        assert _normalizar_numero(crudo) == esperado
+        assert normalizar_numero(crudo) == esperado
 
     def test_resolver_tarjeta_prefieres_tipo(self, usuario):
         from applications.finanzas.models import Tarjeta
