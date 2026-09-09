@@ -31,7 +31,7 @@ from applications.finanzas.services.captura import (
     resolver_tarjeta_por_ultimos_4,
 )
 from applications.finanzas.services.captura.parsers import parse_email
-from applications.finanzas.services.captura.tipo_cambio import convertir_a_clp
+from applications.tipo_cambio import convertir, moneda_base
 
 
 @dataclass
@@ -269,20 +269,22 @@ def _procesar_mensajes(
         # que se conserva el original y se marca como estimación para revisarlo
         # al confirmar el pendiente.
         monto_pendiente = parsed.monto
-        moneda = (getattr(parsed, 'moneda', '') or 'CLP').upper()
-        if moneda != 'CLP':
+        moneda = (getattr(parsed, 'moneda', '') or '').upper()
+        if moneda and moneda != moneda_base():
             payload['moneda_original'] = moneda
             payload['monto_original'] = str(parsed.monto)
-            conversion = convertir_a_clp(parsed.monto, moneda, fecha_gasto)
+            # `convertir` devuelve None tanto si la moneda no está soportada
+            # como si la fuente no respondió; ambos casos quedan marcados.
+            conversion = convertir(parsed.monto, moneda, fecha_gasto)
             if conversion is not None:
-                monto_pendiente = conversion['monto_clp']
+                monto_pendiente = conversion['monto_convertido']
                 payload['monto_estimado'] = True
                 payload['tipo_cambio'] = str(conversion['tipo_cambio'])
                 payload['tipo_cambio_fecha'] = conversion['tipo_cambio_fecha'].isoformat()
                 payload['tipo_cambio_fuente'] = conversion['tipo_cambio_fuente']
             else:
                 # Sin tasa (servicio caído): se deja el monto en su moneda y se
-                # marca, en vez de guardar una cifra que parecería pesos.
+                # marca, en vez de guardar una cifra que parecería moneda base.
                 payload['conversion_fallida'] = True
 
         _, outcome = crear_pendiente_con_outcome(
