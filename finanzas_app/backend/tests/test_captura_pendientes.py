@@ -458,6 +458,91 @@ class TestCapturaBot:
         assert p is not None
         assert p.numero_cuenta == ''
 
+    def test_parser_bancoestado_compra_prosa(self):
+        """
+        BancoEstado no usa tabla: el comercio va embebido en la frase, entre
+        "en" y "asociado", y trae el prefijo del procesador (DL*).
+        """
+        body = (
+            'JAIME OSVALDO HERNANDEZ\n\n'
+            'Se ha realizado compra e-commerce por $ 5.500 en '
+            'DL*GOOGLE YOUTUBE SANTIAGO CL asociado a su tarjeta de Débito '
+            'terminada en **** 2569 el día 05/09/2026 a las 07:08 hrs.'
+        )
+        p = parse_email(
+            subject='Notificación de compra - BancoEstado',
+            body=body,
+            from_addr='notificaciones@correo.bancoestado.cl',
+        )
+        assert p is not None
+        assert p.monto == Decimal('5500.00')
+        assert p.comercio == 'DL*GOOGLE YOUTUBE SANTIAGO CL'
+        assert p.ultimos_4 == '2569'
+        assert p.tipo_tarjeta == 'DEBITO'
+        assert p.fecha == date(2026, 9, 5)
+        assert p.hora is not None and p.hora.strftime('%H:%M') == '07:08'
+        assert p.banco == 'BANCOESTADO'
+
+    def test_parser_bancoestado_tef_toma_cuenta_de_origen(self):
+        """
+        El comprobante TEF repite el rótulo "N° de cuenta" en los bloques
+        "Desde:" y "Hacia:". Debe quedarse con el primero (el propio) y no con
+        el del receptor. El destinatario viene rotulado solo como "Nombre".
+        """
+        body = (
+            'Comprobante de Transferencia Electronica de Fondos (TEF)\n'
+            'Acabas de realizar una Transferencia Electronica, con los siguientes datos:\n'
+            'Monto transferido: $2.197.935\n'
+            'Desde:\n'
+            'Producto : Cuenta Pro\n'
+            'N° de cuenta : 38171625821\n'
+            'N° de TEF : 7048780\n'
+            'Fecha y Hora de TEF : 04/09/2026 16:34:08\n'
+            'Hacia:\n'
+            'Nombre : Jaime Hernandez\n'
+            'RUT : 16.494.835-8\n'
+            'Banco : Bci/machbank\n'
+            'N° de cuenta : 79834843\n'
+            'Producto : Cuenta Corriente\n'
+            'E-mail : -\n'
+            'Comentario :\n'
+            'Infórmese sobre la garantía legal de los depósitos en su banco'
+        )
+        p = parse_email(
+            subject='Comprobante de Transferencia Electronica de Fondos (TEF)',
+            body=body,
+            from_addr='noreply@correo.bancoestado.cl',
+        )
+        assert p is not None
+        assert p.es_transferencia is True
+        assert p.monto == Decimal('2197935.00')
+        assert p.banco == 'BANCOESTADO'
+        assert p.numero_cuenta == '38171625821'
+        assert p.numero_cuenta != '79834843'
+        # Comentario vacío: no debe arrastrar la línea siguiente del correo.
+        assert p.comercio == 'Jaime Hernandez'
+
+    def test_parser_bancoestado_tef_con_comentario(self):
+        body = (
+            'Acabas de realizar una Transferencia Electronica\n'
+            'Monto transferido: $2.197.935\n'
+            'Desde:\n'
+            'N° de cuenta : 38171625821\n'
+            'Fecha y Hora de TEF : 04/09/2026 16:34:08\n'
+            'Hacia:\n'
+            'Nombre : Jaime Hernandez\n'
+            'N° de cuenta : 79834843\n'
+            'Comentario : Pago arriendo\n'
+        )
+        p = parse_email(
+            subject='Comprobante TEF',
+            body=body,
+            from_addr='noreply@correo.bancoestado.cl',
+        )
+        assert p is not None
+        assert p.comercio == 'Jaime Hernandez - Pago arriendo'
+        assert p.numero_cuenta == '38171625821'
+
     def test_resolver_tarjeta_por_cuenta_con_ultimos_4(self, usuario):
         """
         Guardar solo los últimos 4 dígitos de la cuenta basta para el match:

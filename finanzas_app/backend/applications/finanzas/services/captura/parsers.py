@@ -11,9 +11,12 @@ from typing import Callable, Literal
 
 _COMERCIOS_GENERICOS = frozenset({
     'comercio nacional',
+    'comercio internacional',
     'compra nacional',
+    'compra internacional',
     'comercio',
     'nacional',
+    'internacional',
     'establecimiento',
     'compra',
     'consumo',
@@ -260,8 +263,11 @@ def _comercio_desde_subject(subject: str) -> str:
 def _comercio_etiquetado(texto: str) -> str:
     """Prioriza filas tipo 'Comercio: ALINER LTDA' / 'Comercio ALINER LTDA' del cuerpo."""
     patterns = [
+        # Fila etiquetada en su propia línea: se toma el resto de la línea sin
+        # filtrar caracteres. Los descriptores de tarjeta traen símbolos
+        # (RAILWAY +14157077675 US, DL*GOOGLE) que una lista blanca corta.
         r'(?:^|\n|\r)\s*(?:comercio|establecimiento|merchant)\s*:?\s*'
-        r'([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&\'\-]{2,80}?)(?=\s*(?:\n|\r|$|monto|fecha|hora|tarjeta|n[uú]mero))',
+        r'([^\n\r]{2,80}?)(?=\s*(?:\n|\r|$))',
         r'(?:comercio|establecimiento|merchant)\s*:\s*([^\n\r]{2,80})',
         r'(?:comercio|establecimiento|merchant)\s+'
         r'([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&\'\-]{2,80}?)(?=\s*(?:\n|\r|$|si no quieres|bci\.cl))',
@@ -281,11 +287,13 @@ def _comercio_desde_texto(texto: str, subject: str = '') -> str:
     if etiquetado:
         return etiquetado
 
+    # `*` es habitual en el identificador del procesador (DL*GOOGLE, SQ *CAFE,
+    # PAYPAL *STEAM); sin él la captura se cortaba antes del nombre real.
     patterns = [
         r'(?:compra|consumo)\s+(?:realizad[ao]\s+)?(?:en|en el)\s+'
-        r'([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&\'-]{3,80})',
-        r'(?:en|en el)\s+([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&\'-]{3,80}?)\s+'
-        r'(?:por|con\s+tarjeta|el\s+\d|a\s+las|monto)',
+        r'([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&*\'-]{3,80})',
+        r'(?:en|en el)\s+([A-Za-z0-9ÁÉÍÓÚáéíóúÑñ .&*\'-]{3,80}?)\s+'
+        r'(?:por|con\s+tarjeta|asociad[oa]|el\s+\d|a\s+las|monto)',
     ]
     for pat in patterns:
         m = re.search(pat, texto, re.IGNORECASE)
@@ -353,9 +361,12 @@ def _parece_transferencia(subject: str, body: str) -> bool:
 
 def _valor_etiquetado(texto: str, etiquetas: tuple[str, ...]) -> str:
     for etiqueta in etiquetas:
+        # El valor debe ir en la MISMA línea que la etiqueta: con `\s*` el
+        # salto de línea se consumía y una fila vacía ("Comentario :") tomaba
+        # la línea siguiente, que suele ser el pie del correo.
         pat = (
-            rf'(?:^|\n|\r)\s*{etiqueta}\s*:?\s*'
-            rf'([^\n\r]{{2,120}}?)(?=\s*(?:\n|\r|$))'
+            rf'(?:^|\n|\r)[ \t]*{etiqueta}[ \t]*:?[ \t]*'
+            rf'([^\n\r]{{2,120}}?)(?=[ \t]*(?:\n|\r|$))'
         )
         m = re.search(pat, texto, re.IGNORECASE | re.MULTILINE)
         if not m:
@@ -377,6 +388,9 @@ def _destinatario_desde_texto(texto: str) -> str:
             r'transferencia\s+a',
             r'transferido\s+a',
             r'a\s+nombre\s+de',
+            # BancoEstado rotula la fila solo como "Nombre", bajo "Hacia:".
+            # Va al final para no ganarle a las etiquetas inequívocas.
+            r'nombre',
         ),
     )
 
@@ -434,6 +448,10 @@ def _numero_cuenta_desde_texto(texto: str) -> str:
         rf'(?:n[°º]\s*|n[uú]mero\s*)?:?\s*{numero}',
         rf'cuenta\s+(?:de\s+)?origen\s*:?\s*{numero}',
         rf'cuenta\s+cargada\s*:?\s*{numero}',
+        # BancoEstado TEF: bloque "Desde:" con la fila "N° de cuenta : ...".
+        # El mismo rótulo se repite en el bloque "Hacia:", así que se toma la
+        # primera aparición, que es la de origen.
+        rf'n[°º]\s*de\s+cuenta\s*:?\s*{numero}',
         rf'n[uú]mero\s+de\s+cuenta\s*:?\s*{numero}',
         rf'n[uú]mero\s+cuenta\s*:?\s*{numero}',
     ]
@@ -573,7 +591,24 @@ def parse_bancoestado(subject: str, body: str) -> GastoParseado | None:
     monto = _monto_desde_texto(texto)
     if monto is None:
         return None
-    comercio, fecha, hora, ultimos, tipo = _campos_comunes(subject, body)
+    # BancoEstado no usa tabla sino prosa: "Se ha realizado compra e-commerce
+    # por $ 5.500 en DL*GOOGLE YOUTUBE SANTIAGO CL asociado a su tarjeta de
+    # Débito terminada en **** 2569 el día ... a las ... hrs.". El comercio va
+    # entre "en" y "asociado", delimitado con precisión para no depender de la
+    # clase de caracteres genérica.
+    comercio = ''
+    m = re.search(
+        r'\ben\s+(.+?)\s+asociad[oa]\s+a\s+su\s+tarjeta',
+        texto,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if m:
+        candidato = _limpiar_comercio(m.group(1))
+        if not _es_comercio_generico(candidato):
+            comercio = candidato
+    if not comercio:
+        comercio = _comercio_desde_texto(texto, subject)
+    _, fecha, hora, ultimos, tipo = _campos_comunes(subject, body)
     return GastoParseado(
         monto=monto,
         comercio=comercio,
