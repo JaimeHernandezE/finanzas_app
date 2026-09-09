@@ -494,12 +494,19 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
     ultimos_4 = serializers.SerializerMethodField()
     banco = serializers.SerializerMethodField()
     es_transferencia = serializers.SerializerMethodField()
+    moneda_original = serializers.SerializerMethodField()
+    monto_original = serializers.SerializerMethodField()
+    monto_estimado = serializers.SerializerMethodField()
+    tipo_cambio = serializers.SerializerMethodField()
+    tipo_cambio_fecha = serializers.SerializerMethodField()
 
     class Meta:
         model = MovimientoPendiente
         fields = [
             'id', 'origen', 'tipo', 'monto', 'fecha', 'hora', 'comercio',
             'ultimos_4', 'banco', 'es_transferencia',
+            'moneda_original', 'monto_original', 'monto_estimado',
+            'tipo_cambio', 'tipo_cambio_fecha',
             'categoria_sugerida', 'categoria_sugerida_nombre',
             'ambito_sugerido',
             'metodo_pago_sugerido', 'metodo_pago_sugerido_tipo',
@@ -516,6 +523,31 @@ class MovimientoPendienteSerializer(serializers.ModelSerializer):
         payload = obj.payload_original or {}
         hora = (payload.get('hora') or '').strip()
         return hora or None
+
+    def get_moneda_original(self, obj):
+        payload = obj.payload_original or {}
+        return (payload.get('moneda_original') or '').strip() or None
+
+    def get_monto_original(self, obj):
+        payload = obj.payload_original or {}
+        return (payload.get('monto_original') or '').strip() or None
+
+    def get_monto_estimado(self, obj):
+        """
+        True cuando `monto` es una conversión estimada desde otra moneda: el
+        banco cobra a su propio tipo de cambio al liquidar, así que conviene
+        revisarlo antes de confirmar.
+        """
+        payload = obj.payload_original or {}
+        return bool(payload.get('monto_estimado'))
+
+    def get_tipo_cambio(self, obj):
+        payload = obj.payload_original or {}
+        return (payload.get('tipo_cambio') or '').strip() or None
+
+    def get_tipo_cambio_fecha(self, obj):
+        payload = obj.payload_original or {}
+        return (payload.get('tipo_cambio_fecha') or '').strip() or None
 
     def get_ultimos_4(self, obj):
         payload = obj.payload_original or {}

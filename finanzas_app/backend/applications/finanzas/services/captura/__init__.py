@@ -281,6 +281,22 @@ def crear_pendiente_con_outcome(
     return pendiente, OUTCOME_CREADO
 
 
+def comentario_desde_pendiente(pendiente: MovimientoPendiente) -> str:
+    """
+    Comentario por defecto del movimiento: "comercio - hora".
+
+    Se usa cuando el cliente confirma sin enviar un comentario propio (por
+    ejemplo el bot de Telegram/WhatsApp). La hora viene en `payload_original`
+    porque el modelo solo guarda la fecha.
+    """
+    payload = pendiente.payload_original or {}
+    partes = [(pendiente.comercio or '').strip()]
+    hora = (payload.get('hora') or '').strip()
+    if hora:
+        partes.append(hora[:5])
+    return ' - '.join(p for p in partes if p)
+
+
 def _payload_confirmacion(
     pendiente: MovimientoPendiente,
     overrides: dict[str, Any] | None,
@@ -301,7 +317,7 @@ def _payload_confirmacion(
     )
     comentario = o.get('comentario')
     if comentario is None:
-        comentario = pendiente.comercio or ''
+        comentario = comentario_desde_pendiente(pendiente)
 
     data: dict[str, Any] = {
         'fecha': o.get('fecha') or pendiente.fecha,

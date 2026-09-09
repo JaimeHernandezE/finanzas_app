@@ -31,6 +31,7 @@ from applications.finanzas.services.captura import (
     resolver_tarjeta_por_ultimos_4,
 )
 from applications.finanzas.services.captura.parsers import parse_email
+from applications.finanzas.services.captura.tipo_cambio import convertir_a_clp
 
 
 @dataclass
@@ -248,6 +249,7 @@ def _procesar_mensajes(
                 else metodo_default
             )
         hora_str = parsed.hora.strftime('%H:%M') if parsed.hora else ''
+        fecha_gasto = parsed.fecha or timezone.localdate()
         payload = {
             'subject': subject,
             'from': from_addr,
@@ -262,12 +264,33 @@ def _procesar_mensajes(
         if numero_cuenta:
             payload['numero_cuenta'] = numero_cuenta
 
+        # Compra en moneda extranjera: se estima el equivalente en pesos con el
+        # tipo de cambio del día. El monto real lo fija el banco al liquidar, así
+        # que se conserva el original y se marca como estimación para revisarlo
+        # al confirmar el pendiente.
+        monto_pendiente = parsed.monto
+        moneda = (getattr(parsed, 'moneda', '') or 'CLP').upper()
+        if moneda != 'CLP':
+            payload['moneda_original'] = moneda
+            payload['monto_original'] = str(parsed.monto)
+            conversion = convertir_a_clp(parsed.monto, moneda, fecha_gasto)
+            if conversion is not None:
+                monto_pendiente = conversion['monto_clp']
+                payload['monto_estimado'] = True
+                payload['tipo_cambio'] = str(conversion['tipo_cambio'])
+                payload['tipo_cambio_fecha'] = conversion['tipo_cambio_fecha'].isoformat()
+                payload['tipo_cambio_fuente'] = conversion['tipo_cambio_fuente']
+            else:
+                # Sin tasa (servicio caído): se deja el monto en su moneda y se
+                # marca, en vez de guardar una cifra que parecería pesos.
+                payload['conversion_fallida'] = True
+
         _, outcome = crear_pendiente_con_outcome(
             usuario=usuario,
             espacio=espacio,
             origen=MovimientoPendiente.ORIGEN_EMAIL_BANCO,
-            monto=parsed.monto,
-            fecha=parsed.fecha or timezone.localdate(),
+            monto=monto_pendiente,
+            fecha=fecha_gasto,
             comercio=parsed.comercio,
             metodo_pago_sugerido=metodo,
             tarjeta_sugerida=tarjeta,

@@ -36,34 +36,92 @@ class GastoParseado:
     confianza: float = 0.7
     numero_cuenta: str = ''
     es_transferencia: bool = False
+    #: Moneda en que venía el correo. `monto` queda en esta moneda; la
+    #: conversión a la moneda base ocurre más tarde, en el ingest, porque
+    #: requiere consultar el tipo de cambio por red.
+    moneda: str = 'CLP'
+
+
+#: Símbolos/códigos de moneda que pueden preceder al monto en un correo bancario.
+_SIMBOLO_MONEDA = r'(?:US\$|U\$S|USD|CLP|EUR|€|\$)'
+
+
+def _normalizar_numero(raw: str) -> Decimal | None:
+    """
+    Convierte un número escrito en formato chileno (1.234.567,89) o
+    estadounidense (1,234,567.89) a Decimal.
+
+    Se decide por el último separador presente: si lo siguen una o dos cifras
+    es el decimal; si lo siguen tres, es separador de miles. Antes se hacía
+    `.replace('.', '')` incondicional, lo que convertía un `49.99` en 4999.
+    """
+    s = (raw or '').strip()
+    if not s:
+        return None
+
+    corte = max(s.rfind('.'), s.rfind(','))
+    if corte == -1:
+        entero, decimales = s, ''
+    else:
+        candidatos = s[corte + 1:]
+        if len(candidatos) in (1, 2) and candidatos.isdigit():
+            entero, decimales = s[:corte], candidatos
+        else:
+            entero, decimales = s, ''
+
+    entero = re.sub(r'\D', '', entero)
+    if not entero and not decimales:
+        return None
+    try:
+        return Decimal(f'{entero or "0"}.{decimales or "0"}').quantize(Decimal('0.01'))
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _monto_desde_texto(texto: str) -> Decimal | None:
     # Preferir fila etiquetada "Monto"
     m = re.search(
-        r'(?:^|\n|\r)\s*monto\s*:?\s*\$?\s*([\d.]+(?:,\d{1,2})?)',
+        rf'(?:^|\n|\r)\s*monto\s*:?\s*{_SIMBOLO_MONEDA}?\s*(\d[\d.,]*)',
         texto,
         re.IGNORECASE | re.MULTILINE,
     )
     if m:
-        raw = m.group(1).replace('.', '').replace(',', '.')
-        try:
-            return Decimal(raw).quantize(Decimal('0.01'))
-        except (InvalidOperation, ValueError):
-            pass
+        monto = _normalizar_numero(m.group(1))
+        if monto is not None:
+            return monto
     patterns = [
-        r'\$\s*([\d.]+(?:,\d{1,2})?)',
-        r'(?:monto|por)\s*:?\s*\$?\s*([\d.]+(?:,\d{1,2})?)',
+        rf'{_SIMBOLO_MONEDA}\s*(\d[\d.,]*)',
+        rf'(?:monto|por)\s*:?\s*{_SIMBOLO_MONEDA}?\s*(\d[\d.,]*)',
     ]
     for pat in patterns:
         m = re.search(pat, texto, re.IGNORECASE)
         if m:
-            raw = m.group(1).replace('.', '').replace(',', '.')
-            try:
-                return Decimal(raw).quantize(Decimal('0.01'))
-            except (InvalidOperation, ValueError):
-                continue
+            monto = _normalizar_numero(m.group(1))
+            if monto is not None:
+                return monto
     return None
+
+
+def _moneda_desde_texto(texto: str) -> str:
+    """
+    Detecta la moneda del monto. CLP por defecto: los correos nacionales
+    escriben `$` sin prefijo.
+    """
+    m = re.search(
+        rf'(?:^|\n|\r)\s*monto\s*:?\s*({_SIMBOLO_MONEDA})',
+        texto,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if not m:
+        # Sin fila etiquetada, buscar un código explícito en el cuerpo. No se
+        # busca `$` suelto: en Chile denota pesos.
+        m = re.search(r'(US\$|U\$S|USD|EUR|€)', texto, re.IGNORECASE)
+    token = (m.group(1) if m else '').upper().replace(' ', '')
+    if token in ('US$', 'U$S', 'USD'):
+        return 'USD'
+    if token in ('EUR', '€'):
+        return 'EUR'
+    return 'CLP'
 
 
 def _ultimos_4(texto: str) -> str:
@@ -439,6 +497,7 @@ def parse_bci(subject: str, body: str) -> GastoParseado | None:
         ultimos_4=ultimos,
         tipo_tarjeta=tipo,
         banco='BCI',
+        moneda=_moneda_desde_texto(texto),
         raw_subject=subject,
         confianza=0.8,
     )

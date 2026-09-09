@@ -71,10 +71,11 @@ function metaTarjetaBanco(p: {
   return partes.length ? ` · ${partes.join(' · ')}` : ''
 }
 
+/** Comentario del movimiento: "comercio - hora" (hora omitida si no viene). */
 function comentarioDesdeEdit(e: EditState, hora: string | null | undefined): string {
   const partes = [e.comercio.trim()]
   if (hora) partes.push(hora.slice(0, 5))
-  return partes.filter(Boolean).join(' · ')
+  return partes.filter(Boolean).join(' - ')
 }
 
 export default function PendientesPage() {

@@ -251,6 +251,69 @@ class TestCapturaBot:
         assert 'notificaci' not in (p.comercio or '').lower()
         assert 'nacional' not in (p.comercio or '').lower()
 
+    def test_parser_bci_credito_internacional_usd(self):
+        """
+        Formato real BCI de compra internacional: el monto viene en USD con
+        coma decimal. Antes no se parseaba (el patrón exigía `$`) y el correo
+        se descartaba entero.
+        """
+        body = (
+            'Realizaste una compra en comercio internacional con tu tarjeta de crédito.\n'
+            'Número tarjeta crédito ****3972\n'
+            'Monto USD 5,00\n'
+            'Fecha 08/09/2026\n'
+            'Hora 17:54 horas\n'
+            'Comercio RAILWAY +14157077675 US\n'
+            'Si no quieres recibir notificaciones en tu correo electrónico '
+            'puedes modificar tus preferencias en Bci.cl'
+        )
+        p = parse_email(
+            subject='Notificación de compra internacional',
+            body=body,
+            from_addr='contacto@bci.cl',
+        )
+        assert p is not None
+        assert p.moneda == 'USD'
+        # El parser no convierte: deja el monto en su moneda de origen.
+        assert p.monto == Decimal('5.00')
+        assert p.ultimos_4 == '3972'
+        assert p.tipo_tarjeta == 'CREDITO'
+        assert p.hora is not None and p.hora.hour == 17 and p.hora.minute == 54
+        assert p.fecha == date(2026, 9, 8)
+        assert 'railway' in (p.comercio or '').lower()
+
+    def test_parser_moneda_por_defecto_es_clp(self):
+        """Un correo nacional no debe quedar marcado con moneda extranjera."""
+        p = parse_email(
+            subject='Notificación de uso de tu tarjeta de débito',
+            body='Monto $5.990\nFecha 15/07/2026\nComercio ALINER LTDA',
+            from_addr='contacto@bci.cl',
+        )
+        assert p is not None
+        assert p.moneda == 'CLP'
+        assert p.monto == Decimal('5990.00')
+
+    @pytest.mark.parametrize(
+        'crudo,esperado',
+        [
+            ('5.990', Decimal('5990.00')),      # miles a la chilena
+            ('1.234.567', Decimal('1234567.00')),
+            ('5,00', Decimal('5.00')),          # decimal a la chilena
+            ('1.234,56', Decimal('1234.56')),
+            ('49.99', Decimal('49.99')),        # decimal a la estadounidense
+            ('1,234.56', Decimal('1234.56')),
+            ('1,234,567.89', Decimal('1234567.89')),
+        ],
+    )
+    def test_normalizar_numero_distingue_formatos(self, crudo, esperado):
+        """
+        El `.replace('.', '')` incondicional anterior convertía 49.99 en 4999.
+        Se decide por el último separador: 1-2 cifras es decimal, 3 es miles.
+        """
+        from applications.finanzas.services.captura.parsers import _normalizar_numero
+
+        assert _normalizar_numero(crudo) == esperado
+
     def test_resolver_tarjeta_prefieres_tipo(self, usuario):
         from applications.finanzas.models import Tarjeta
         from applications.finanzas.services.captura import resolver_tarjeta_por_ultimos_4
